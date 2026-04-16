@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ApplyFlow</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-badge">AF</div>
+          <div>
+            <h1>ApplyFlow</h1>
+            <p>Semi-auto Job Search Agent</p>
+          </div>
+          <div id="current-user" class="muted">Not signed in</div>
+          <button id="logout-button" class="button" type="button" style="display:none;">Logout</button>
+        </div>
+        <nav class="nav">
+          <a href="#/dashboard">Dashboard</a>
+          <a href="#/jobs">Jobs</a>
+          <a href="#/prep">Prep</a>
+          <a href="#/governance">Governance</a>
+          <a href="#/interviews">Interviews</a>
+          <a href="#/profile">Profile</a>
+        </nav>
+      </aside>
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h2 id="page-title">Dashboard</h2>
+            <p id="page-subtitle">闭环优先，先推进再优化。</p>
+          </div>
+          <a class="primary-link" href="#/jobs">查看岗位工作台</a>
+        </header>
+        <section id="app"></section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

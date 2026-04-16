@@ -1,0 +1,30 @@
+{
+  "name": "applyflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ApplyFlow MVP skeleton - semi-automatic job search execution agent",
+  "engines": {
+    "node": ">=20.3.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:jd-fetcher": "node scripts/jd-fetcher-server.js",
+    "dev": "node server.js",
+    "jd-fetcher": "node scripts/jd-fetcher-server.js",
+    "jd-fetcher:start": "node scripts/jd-fetcher-server.js",
+    "migrate:json-store": "node scripts/migrate-json-store.js",
+    "export:d1-seed": "node scripts/export-d1-seed.js",
+    "cf:dev": "wrangler dev --config wrangler.jsonc",
+    "cf:deploy": "wrangler deploy --config wrangler.jsonc",
+    "cf:d1:execute:schema:local": "wrangler d1 execute APPLYFLOW_DB --config wrangler.jsonc --file cloudflare/d1/schema.sql",
+    "cf:d1:execute:seed:local": "wrangler d1 execute APPLYFLOW_DB --config wrangler.jsonc --file cloudflare/d1/seed.sql",
+    "cf:d1:execute:schema:remote": "wrangler d1 execute APPLYFLOW_DB --config wrangler.jsonc --remote --file cloudflare/d1/schema.sql",
+    "cf:d1:execute:seed:remote": "wrangler d1 execute APPLYFLOW_DB --config wrangler.jsonc --remote --file cloudflare/d1/seed.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.15.2"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

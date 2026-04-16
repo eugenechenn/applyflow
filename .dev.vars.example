@@ -1,0 +1,7 @@
+LLM_PROVIDER=openai
+LLM_API_KEY=your_llm_api_key
+LLM_MODEL=gpt-4o-mini
+LLM_TIMEOUT_MS=15000
+LLM_BASE_URL=https://api.openai.com/v1
+SESSION_SECRET=replace_with_a_long_random_secret
+JD_FETCHER_URL=http://127.0.0.1:4123/fetch

@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "applyflow",
+  "main": "cloudflare/worker-entry.js",
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "APPLYFLOW_DB",
+      "database_name": "applyflow",
+      "database_id": "6b1e6220-aaa8-41c5-bdeb-a86e4f37719f"
+    }
+  ],
+  "vars": {
+    "APPLYFLOW_RUNTIME": "cloudflare",
+    "APPLYFLOW_DB_PROVIDER": "d1",
+    "CLOUDFLARE_D1_BINDING": "APPLYFLOW_DB",
+    "LLM_PROVIDER": "openai-compatible",
+    "LLM_BASE_URL": "https://open.bigmodel.cn/api/paas/v4/",
+    "LLM_MODEL": "glm-4.5-air",
+    "SESSION_COOKIE_NAME": "applyflow_session",
+    "SESSION_COOKIE_SAMESITE": "Lax",
+    "SESSION_COOKIE_SECURE": "true"
+  }
+}

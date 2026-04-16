@@ -1,0 +1,696 @@
+const demoData = {
+  profile: {
+    id: "profile_001",
+    fullName: "Alex Chen",
+    headline: "MBA candidate pivoting into AI-native product roles",
+    yearsOfExperience: 6,
+    education: "MBA, Fudan University; B.A. in Economics",
+    location: "Shanghai",
+    targetRoles: ["AI Product Manager", "Product Strategy", "Business Operations"],
+    targetIndustries: ["AI SaaS", "Enterprise Software", "Consumer Internet"],
+    preferredLocations: ["Shanghai", "Beijing", "Shenzhen", "Remote"],
+    workModes: ["hybrid", "remote"],
+    salaryExpectation: "RMB 35k-50k / month",
+    summary:
+      "Cross-functional operator with strategy, growth, and product execution experience. Strong at structuring ambiguous problems, aligning stakeholders, and turning analysis into execution.",
+    strengths: [
+      "Structured problem solving",
+      "0-to-1 product planning",
+      "Cross-functional execution",
+      "Stakeholder communication"
+    ],
+    coreSkills: ["Product strategy", "Growth analysis", "User research", "SQL", "AI workflow design"],
+    keyProjects: [
+      {
+        id: "proj_001",
+        name: "AI Sales Enablement Pilot",
+        role: "Product + Operations Lead",
+        bullets: [
+          "Defined pilot workflow for sales call prep and objection handling",
+          "Coordinated product, operations, and enablement teams to ship within 6 weeks"
+        ],
+        metrics: ["Reduced prep time by 40%", "Improved pilot adoption to 68% of target reps"]
+      },
+      {
+        id: "proj_002",
+        name: "Marketplace Conversion Diagnostic",
+        role: "Strategy Manager",
+        bullets: [
+          "Built funnel diagnosis model to identify conversion leakage",
+          "Presented quarterly growth priorities to BU leadership"
+        ],
+        metrics: ["Lifted checkout conversion by 9%", "Prioritized 3 roadmap bets"]
+      }
+    ],
+    constraints: ["Avoid pure implementation-only roles", "Avoid heavy travel roles"],
+    baseResume: "Alex Chen base resume content ...",
+    learnedStrengths: ["Structured problem solving"],
+    learnedSkillGaps: ["Technical collaboration depth"],
+    successSignals: ["AI-native product framing lands well in interviews"],
+    policyPreferences: {
+      manualPreferredRoles: [],
+      ignoredRiskyRoles: [],
+      riskToleranceOverride: ""
+    },
+    createdAt: "2026-04-14T09:00:00.000Z",
+    updatedAt: "2026-04-14T09:00:00.000Z"
+  },
+  strategyProfile: {
+    id: "strategy_001",
+    preferredRoles: ["AI Product Manager", "Product Strategy"],
+    riskyRoles: ["Operations"],
+    successPatterns: [
+      "AI-native product roles convert better when product ownership is explicit.",
+      "Strategy-heavy roles work when they still preserve product adjacency."
+    ],
+    failurePatterns: [
+      "Operational leadership roles dilute the AI PM story and convert poorly."
+    ],
+    scoreBias: {
+      roleBiases: {
+        "AI Product Manager": 6,
+        "Product Strategy": 2,
+        Operations: -4
+      },
+      industryBiases: {
+        AI: 6,
+        Strategy: 1,
+        Advertising: -6
+      }
+    },
+    positiveSignals: [
+      "AI-native product roles have the highest interview credibility.",
+      "Strategy-heavy roles can still work when product adjacency is clear."
+    ],
+    cautionSignals: [
+      "Pure ops leadership roles create low conversion and high story dilution risk."
+    ],
+    learnedFromInterviews: [
+      "Sharpen technical collaboration stories before deeper rounds."
+    ],
+    updatedAt: "2026-04-14T09:00:00.000Z"
+  },
+  globalStrategyPolicy: {
+    id: "policy_001",
+    version: 1,
+    appliedProposalId: "proposal_001",
+    preferredRoles: ["AI Product Manager", "Product Strategy"],
+    riskyRoles: ["Operations"],
+    targetRolesPriority: ["AI Product Manager", "Product Strategy"],
+    avoidPatterns: ["Operations leadership", "Advertising specialization"],
+    preferredIndustries: ["AI", "Enterprise Software"],
+    riskyIndustries: ["Advertising"],
+    preferredLocations: ["Shanghai", "Beijing", "Remote"],
+    riskyLocations: ["Shenzhen"],
+    successPatterns: [
+      "AI-native product roles convert better when product ownership is explicit.",
+      "Strategy-heavy roles work when they still preserve product adjacency."
+    ],
+    failurePatterns: [
+      "Operational leadership roles dilute the AI PM story and convert poorly."
+    ],
+    riskTolerance: "medium",
+    focusMode: "focused",
+    policySummary:
+      "Keep the pipeline concentrated on AI PM and product-strategy roles with clear product ownership; avoid operational leadership distractions.",
+    lastUpdatedAt: "2026-04-14T09:00:00.000Z",
+    updatedAt: "2026-04-14T09:00:00.000Z"
+  },
+  policyHistory: [
+    {
+      id: "policylog_001",
+      proposalId: "proposal_001",
+      previousPolicySnapshot: null,
+      nextPolicySnapshot: {
+        id: "policy_001",
+        version: 1,
+        appliedProposalId: "proposal_001",
+        preferredRoles: ["AI Product Manager", "Product Strategy"],
+        riskyRoles: ["Operations"],
+        preferredIndustries: ["AI", "Enterprise Software"],
+        riskyIndustries: ["Advertising"],
+        preferredLocations: ["Shanghai", "Beijing", "Remote"],
+        riskyLocations: ["Shenzhen"],
+        successPatterns: [
+          "AI-native product roles convert better when product ownership is explicit."
+        ],
+        failurePatterns: [
+          "Operational leadership roles dilute the AI PM story and convert poorly."
+        ],
+        targetRolesPriority: ["AI Product Manager", "Product Strategy"],
+        avoidPatterns: ["Operations leadership", "Advertising specialization"],
+        riskTolerance: "medium",
+        focusMode: "focused",
+        policySummary:
+          "Keep the pipeline concentrated on AI PM and product-strategy roles with clear product ownership; avoid operational leadership distractions.",
+        lastUpdatedAt: "2026-04-14T09:00:00.000Z",
+        updatedAt: "2026-04-14T09:00:00.000Z"
+      },
+      summary: "Applied the initial policy after interview reflection and historical pipeline review.",
+      createdAt: "2026-04-14T09:00:00.000Z"
+    }
+  ],
+  policyProposals: [
+    {
+      id: "proposal_001",
+      createdAt: "2026-04-14T09:00:00.000Z",
+      triggerType: "interview_reflection",
+      triggerSourceId: "reflection_001",
+      oldPolicySnapshot: null,
+      proposedPolicySnapshot: {
+        id: "policy_001",
+        version: 1,
+        appliedProposalId: "proposal_001",
+        preferredRoles: ["AI Product Manager", "Product Strategy"],
+        riskyRoles: ["Operations"],
+        preferredIndustries: ["AI", "Enterprise Software"],
+        riskyIndustries: ["Advertising"],
+        preferredLocations: ["Shanghai", "Beijing", "Remote"],
+        riskyLocations: ["Shenzhen"],
+        successPatterns: [
+          "AI-native product roles convert better when product ownership is explicit."
+        ],
+        failurePatterns: [
+          "Operational leadership roles dilute the AI PM story and convert poorly."
+        ],
+        targetRolesPriority: ["AI Product Manager", "Product Strategy"],
+        avoidPatterns: ["Operations leadership", "Advertising specialization"],
+        riskTolerance: "medium",
+        focusMode: "focused",
+        policySummary:
+          "Keep the pipeline concentrated on AI PM and product-strategy roles with clear product ownership; avoid operational leadership distractions.",
+        lastUpdatedAt: "2026-04-14T09:00:00.000Z",
+        updatedAt: "2026-04-14T09:00:00.000Z"
+      },
+      diffSummary: [
+        "Added AI Product Manager to preferredRoles.",
+        "Added Product Strategy to preferredRoles.",
+        "Changed focus mode from unset to focused."
+      ],
+      reasonSummary: "Policy narrowed toward AI PM and Product Strategy after positive interview reflection.",
+      status: "applied",
+      reviewerNote: "Initial baseline accepted.",
+      appliedAt: "2026-04-14T09:00:00.000Z",
+      revertedAt: null
+    },
+    {
+      id: "proposal_002",
+      createdAt: "2026-04-15T08:00:00.000Z",
+      triggerType: "bad_case",
+      triggerSourceId: "job_003",
+      oldPolicySnapshot: {
+        id: "policy_001",
+        version: 1,
+        appliedProposalId: "proposal_001",
+        preferredRoles: ["AI Product Manager", "Product Strategy"],
+        riskyRoles: ["Operations"],
+        preferredIndustries: ["AI", "Enterprise Software"],
+        riskyIndustries: ["Advertising"],
+        preferredLocations: ["Shanghai", "Beijing", "Remote"],
+        riskyLocations: ["Shenzhen"],
+        successPatterns: [
+          "AI-native product roles convert better when product ownership is explicit."
+        ],
+        failurePatterns: [
+          "Operational leadership roles dilute the AI PM story and convert poorly."
+        ],
+        targetRolesPriority: ["AI Product Manager", "Product Strategy"],
+        avoidPatterns: ["Operations leadership", "Advertising specialization"],
+        riskTolerance: "medium",
+        focusMode: "focused",
+        policySummary:
+          "Keep the pipeline concentrated on AI PM and product-strategy roles with clear product ownership; avoid operational leadership distractions.",
+        lastUpdatedAt: "2026-04-14T09:00:00.000Z",
+        updatedAt: "2026-04-14T09:00:00.000Z"
+      },
+      proposedPolicySnapshot: {
+        id: "policy_001",
+        version: 1,
+        appliedProposalId: "proposal_001",
+        preferredRoles: ["AI Product Manager", "Product Strategy"],
+        riskyRoles: ["Operations"],
+        preferredIndustries: ["AI", "Enterprise Software"],
+        riskyIndustries: ["Advertising"],
+        preferredLocations: ["Shanghai", "Beijing", "Remote"],
+        riskyLocations: ["Shenzhen"],
+        successPatterns: [
+          "AI-native product roles convert better when product ownership is explicit."
+        ],
+        failurePatterns: [
+          "Operational leadership roles dilute the AI PM story and convert poorly.",
+          "Advertising-heavy operational roles show poor leverage."
+        ],
+        targetRolesPriority: ["AI Product Manager", "Product Strategy"],
+        avoidPatterns: [
+          "Operations leadership",
+          "Advertising specialization",
+          "Advertising-heavy operational roles show poor leverage."
+        ],
+        riskTolerance: "medium",
+        focusMode: "focused",
+        policySummary:
+          "Stay highly concentrated on AI PM and Product Strategy roles and further downrank ad-heavy ops patterns.",
+        lastUpdatedAt: "2026-04-15T08:00:00.000Z",
+        updatedAt: "2026-04-15T08:00:00.000Z"
+      },
+      diffSummary: [
+        "Added Advertising-heavy operational roles show poor leverage. to failurePatterns.",
+        "Added Advertising-heavy operational roles show poor leverage. to avoidPatterns."
+      ],
+      reasonSummary: "Marked ad-heavy operational roles as riskier after consecutive low-value outcomes.",
+      status: "pending",
+      reviewerNote: null,
+      appliedAt: null,
+      revertedAt: null
+    }
+  ],
+  policyAuditLogs: [
+    {
+      id: "audit_001",
+      timestamp: "2026-04-14T09:00:00.000Z",
+      eventType: "proposal_created",
+      actor: "system",
+      relatedProposalId: "proposal_001",
+      summary: "Policy narrowed toward AI PM and Product Strategy after positive interview reflection."
+    },
+    {
+      id: "audit_002",
+      timestamp: "2026-04-14T09:00:00.000Z",
+      eventType: "proposal_approved",
+      actor: "user",
+      relatedProposalId: "proposal_001",
+      summary: "Approved proposal proposal_001."
+    },
+    {
+      id: "audit_003",
+      timestamp: "2026-04-14T09:00:00.000Z",
+      eventType: "policy_applied",
+      actor: "user",
+      relatedProposalId: "proposal_001",
+      summary: "Applied policy proposal proposal_001."
+    }
+  ],
+  jobs: [
+    {
+      id: "job_001",
+      source: "url",
+      sourceLabel: "LinkedIn",
+      url: "https://jobs.example.com/openai-pm",
+      company: "NovaMind AI",
+      title: "AI Product Manager",
+      location: "Shanghai",
+      department: "Product",
+      employmentType: "Full-time",
+      salaryRange: "RMB 40k-55k / month",
+      jdRaw: "Lead AI workflow products, partner with engineering and GTM, define roadmap, ship agentic experiences.",
+      jdStructured: {
+        summary: "Own AI workflow product strategy for enterprise users.",
+        responsibilities: [
+          "Define product roadmap for AI-assisted workflow tools",
+          "Work with engineering, design, and GTM",
+          "Turn customer pain points into product requirements"
+        ],
+        requirements: [
+          "4+ years in product or strategy",
+          "Experience with AI/LLM product workflows",
+          "Strong stakeholder management"
+        ],
+        preferredQualifications: [
+          "MBA or consulting background",
+          "Experience shipping internal AI tooling"
+        ],
+        keywords: ["AI product", "workflow", "LLM", "enterprise", "roadmap"],
+        riskFlags: ["Needs stronger technical narrative for engineering collaboration"]
+      },
+      status: "ready_to_apply",
+      priority: "high",
+      fitAssessmentId: "fit_001",
+      applicationPrepId: "prep_001",
+      notes: "Strong match and high motivation.",
+      createdAt: "2026-04-12T10:00:00.000Z",
+      updatedAt: "2026-04-14T08:00:00.000Z"
+    },
+    {
+      id: "job_002",
+      source: "manual",
+      sourceLabel: "Boss直聘",
+      company: "Northstar Commerce",
+      title: "Senior Product Strategy Manager",
+      location: "Beijing",
+      department: "Strategy",
+      employmentType: "Full-time",
+      salaryRange: "RMB 32k-45k / month",
+      jdRaw: "Drive marketplace strategy, run executive analysis, define growth bets, occasional owner of strategic projects.",
+      jdStructured: {
+        summary: "Strategy-heavy role with some product adjacency.",
+        responsibilities: [
+          "Conduct market and competitor analysis",
+          "Support annual planning and strategic initiatives",
+          "Coordinate cross-functional business reviews"
+        ],
+        requirements: [
+          "5+ years in consulting, strategy, or operations",
+          "Strong communication and executive storytelling"
+        ],
+        preferredQualifications: [
+          "Marketplace or e-commerce experience",
+          "Advanced SQL and financial modeling"
+        ],
+        keywords: ["strategy", "market analysis", "growth", "executive communication"],
+        riskFlags: ["Less direct product ownership", "May not strengthen AI PM narrative"]
+      },
+      status: "to_prepare",
+      priority: "medium",
+      fitAssessmentId: "fit_002",
+      notes: "Useful backup option but may dilute PM story.",
+      createdAt: "2026-04-13T09:30:00.000Z",
+      updatedAt: "2026-04-14T08:30:00.000Z"
+    },
+    {
+      id: "job_003",
+      source: "url",
+      sourceLabel: "Company Site",
+      url: "https://jobs.example.com/ads-ops-director",
+      company: "BluePeak Media",
+      title: "Director of Advertising Operations",
+      location: "Shenzhen",
+      department: "Operations",
+      employmentType: "Full-time",
+      salaryRange: "RMB 50k-65k / month",
+      jdRaw: "Own large advertising operations team, deep ad tech tooling, 10+ years management, strong media sales ops background.",
+      jdStructured: {
+        summary: "Senior ops leadership role requiring deep ad-tech specialization.",
+        responsibilities: [
+          "Lead large ops team",
+          "Own advertiser delivery quality",
+          "Manage revenue operations processes"
+        ],
+        requirements: [
+          "10+ years advertising operations experience",
+          "People management at scale",
+          "Deep ad-tech platform knowledge"
+        ],
+        preferredQualifications: ["Media agency network", "Direct monetization ownership"],
+        keywords: ["ad ops", "media", "team leadership", "revenue ops"],
+        riskFlags: [
+          "Experience gap too large",
+          "Not aligned with AI PM direction",
+          "Leadership scope too senior"
+        ]
+      },
+      status: "archived",
+      priority: "low",
+      fitAssessmentId: "fit_003",
+      notes: "Not recommended.",
+      createdAt: "2026-04-11T07:00:00.000Z",
+      updatedAt: "2026-04-14T08:45:00.000Z"
+    }
+  ],
+  fitAssessments: [
+    {
+      id: "fit_001",
+      jobId: "job_001",
+      profileId: "profile_001",
+      fitScore: 84,
+      recommendation: "apply",
+      strategyDecision: "proceed",
+      strategyReasoning: "Strong alignment with successful AI product patterns, so this role should move forward aggressively.",
+      historyInfluenceSummary: "Boosted due to previous success in AI Product Manager roles.",
+      policyInfluenceSummary: "Boosted because this role family is part of the current global focus.",
+      decisionBreakdown: {
+        baseScore: 73,
+        historyAdjustment: 5,
+        policyAdjustment: 6,
+        finalScore: 84,
+        finalDecision: "proceed"
+      },
+      activePolicyVersion: "policy_001@1",
+      policyProposalId: "proposal_001",
+      overrideApplied: false,
+      overrideSummary: null,
+      confidence: 0.82,
+      decisionSummary: "Strong match with good story coherence for AI PM pivot.",
+      whyApply: [
+        "Role values strategy + execution, which fits profile well",
+        "AI workflow experience can be reframed credibly",
+        "Location and compensation fit target range"
+      ],
+      keyGaps: ["Need clearer examples of PM-engineering collaboration"],
+      riskFlags: ["Interview may test technical depth"],
+      suggestedAction: "Proceed and tailor resume toward AI workflow shipping experience.",
+      editable: true,
+      createdAt: "2026-04-12T10:05:00.000Z",
+      updatedAt: "2026-04-12T10:05:00.000Z"
+    },
+    {
+      id: "fit_002",
+      jobId: "job_002",
+      profileId: "profile_001",
+      fitScore: 68,
+      recommendation: "cautious",
+      strategyDecision: "cautious_proceed",
+      strategyReasoning: "Viable as a secondary option, but it should be prepared with stronger narrative control.",
+      historyInfluenceSummary: "History is mildly favorable for Product Strategy roles, but conversion is still less reliable than AI PM.",
+      policyInfluenceSummary: "This role is still within the focus band, but receives a smaller policy boost than core AI PM roles.",
+      decisionBreakdown: {
+        baseScore: 61,
+        historyAdjustment: 2,
+        policyAdjustment: 5,
+        finalScore: 68,
+        finalDecision: "cautious_proceed"
+      },
+      activePolicyVersion: "policy_001@1",
+      policyProposalId: "proposal_001",
+      overrideApplied: false,
+      overrideSummary: null,
+      confidence: 0.77,
+      decisionSummary: "Reasonable fit as a backup role, but weaker alignment with long-term AI PM narrative.",
+      whyApply: [
+        "Strong overlap with structured analysis and executive communication",
+        "Background likely credible for strategy-heavy work"
+      ],
+      keyGaps: [
+        "Limited marketplace depth",
+        "Role may not strengthen desired product positioning"
+      ],
+      riskFlags: ["Could dilute AI-native product story if pursued too heavily"],
+      suggestedAction: "Only proceed if weekly pipeline is thin; tailor toward strategy outcomes.",
+      editable: true,
+      createdAt: "2026-04-13T09:35:00.000Z",
+      updatedAt: "2026-04-13T09:35:00.000Z"
+    },
+    {
+      id: "fit_003",
+      jobId: "job_003",
+      profileId: "profile_001",
+      fitScore: 28,
+      recommendation: "skip",
+      strategyDecision: "avoid",
+      strategyReasoning: "Historical failures and current mismatch suggest this role should be avoided, not just scored lower.",
+      historyInfluenceSummary: "Reduced because similar Operations roles had weak conversion and produced bad-case signals.",
+      policyInfluenceSummary: "Downranked because the global policy has learned this pattern is usually low leverage.",
+      decisionBreakdown: {
+        baseScore: 42,
+        historyAdjustment: -6,
+        policyAdjustment: -8,
+        finalScore: 28,
+        finalDecision: "avoid"
+      },
+      activePolicyVersion: "policy_001@1",
+      policyProposalId: "proposal_001",
+      overrideApplied: false,
+      overrideSummary: null,
+      confidence: 0.9,
+      decisionSummary: "Role is materially misaligned on domain, seniority, and leadership scope.",
+      whyApply: [],
+      keyGaps: [
+        "No ad-tech operations specialization",
+        "Insufficient people leadership scope",
+        "Not aligned with AI PM direction"
+      ],
+      riskFlags: ["High opportunity cost", "Very low conversion probability"],
+      suggestedAction: "Do not apply; archive and focus on better-fit roles.",
+      editable: true,
+      createdAt: "2026-04-11T07:10:00.000Z",
+      updatedAt: "2026-04-11T07:10:00.000Z"
+    }
+  ],
+  applicationPreps: [
+    {
+      id: "prep_001",
+      jobId: "job_001",
+      profileId: "profile_001",
+      version: 1,
+      resumeTailoring: {
+        targetKeywords: ["AI workflow", "enterprise product", "cross-functional execution"],
+        rewriteBullets: [
+          {
+            source: "Defined pilot workflow for sales call prep and objection handling",
+            rewritten:
+              "Designed an AI-assisted sales workflow pilot that translated ambiguous workflow pain points into a shippable product and operations plan."
+          },
+          {
+            source: "Presented quarterly growth priorities to BU leadership",
+            rewritten:
+              "Synthesized funnel insights into roadmap recommendations for business leadership, balancing user value, feasibility, and adoption risk."
+          }
+        ]
+      },
+      selfIntro: {
+        short:
+          "I come from a strategy and execution background, and over the last few years I've increasingly worked on turning messy operational problems into scalable product workflows, especially in AI-assisted environments.",
+        medium:
+          "My background sits at the intersection of strategy, operations, and product execution. What excites me about this role is that it needs someone who can structure ambiguous user pain points, align cross-functional teams, and turn AI capabilities into real workflow improvements."
+      },
+      qaDraft: [
+        {
+          question: "Why this role?",
+          draftAnswer:
+            "It combines AI-native problem solving with product ownership, which is exactly where my recent work has been trending."
+        },
+        {
+          question: "Where are you still growing?",
+          draftAnswer:
+            "I am continuing to deepen technical fluency with model behavior and system design, while already contributing strongly on product framing and cross-functional execution."
+        }
+      ],
+      coverNote:
+        "Interested in this role because it sits at the center of AI workflow design, product strategy, and cross-functional shipping.",
+      checklist: [
+        { key: "resume_reviewed", label: "Resume bullets reviewed", completed: true },
+        { key: "intro_ready", label: "Self intro prepared", completed: true },
+        { key: "qa_ready", label: "Q&A draft reviewed", completed: true },
+        { key: "submission_path_ready", label: "Submission path confirmed", completed: false }
+      ],
+      createdAt: "2026-04-13T14:00:00.000Z",
+      updatedAt: "2026-04-13T14:00:00.000Z"
+    }
+  ],
+  applicationTasks: [
+    {
+      id: "task_001",
+      jobId: "job_001",
+      type: "submit_application",
+      title: "Submit NovaMind AI application",
+      status: "todo",
+      dueAt: "2026-04-15T09:00:00.000Z",
+      note: "Finalize submission path and verify resume PDF.",
+      createdAt: "2026-04-14T08:00:00.000Z",
+      updatedAt: "2026-04-14T08:00:00.000Z"
+    },
+    {
+      id: "task_002",
+      jobId: "job_002",
+      type: "tailor_resume",
+      title: "Decide whether to prepare strategy-focused resume version",
+      status: "todo",
+      dueAt: "2026-04-16T09:00:00.000Z",
+      createdAt: "2026-04-14T08:30:00.000Z",
+      updatedAt: "2026-04-14T08:30:00.000Z"
+    }
+  ],
+  interviewReflections: [
+    {
+      id: "reflection_001",
+      jobId: "job_001",
+      profileId: "profile_001",
+      roundName: "Hiring Manager Screen",
+      interviewerType: "Hiring Manager",
+      interviewDate: "2026-04-10T06:00:00.000Z",
+      questionsAsked: [
+        "Tell me about a workflow you improved with AI",
+        "How do you work with engineering on ambiguous requirements?"
+      ],
+      answerHighlights: [
+        "Gave a strong example of AI sales workflow pilot",
+        "Showed structured prioritization thinking"
+      ],
+      failureReasons: ["Technical collaboration example was still too high-level"],
+      successSignals: ["Business framing was strong", "AI workflow example landed well"],
+      skillGaps: ["Technical collaboration storytelling"],
+      weakSpots: [
+        "Technical collaboration example was still too high-level",
+        "Could quantify user problem discovery process more clearly"
+      ],
+      strengthsObserved: ["Strong communication", "Clear business framing"],
+      improvementActions: [
+        "Prepare one engineering collaboration story with tighter details",
+        "Add concrete user research and iteration examples"
+      ],
+      strategyFeedback: [
+        "Continue leaning into AI workflow product roles",
+        "Strengthen technical PM story before deeper panel loops"
+      ],
+      summary: "Positive screen overall with clear PM potential, but technical collaboration story needs sharpening.",
+      createdAt: "2026-04-10T10:00:00.000Z",
+      updatedAt: "2026-04-10T10:00:00.000Z"
+    }
+  ],
+  activityLogs: [
+    {
+      id: "log_001",
+      entityType: "job",
+      entityId: "job_001",
+      type: "job_created",
+      action: "job_created",
+      actor: "system",
+      jobId: "job_001",
+      summary: "Ingested NovaMind AI role from LinkedIn URL.",
+      agentName: "Job Ingestion Agent",
+      inputSummary: "Imported LinkedIn role into the shared pipeline.",
+      outputSummary: "Structured NovaMind AI Product Manager job created.",
+      decisionReason: "Normalize the inbound role so evaluation can operate on a consistent Job object.",
+      metadata: { sourceLabel: "LinkedIn" },
+      createdAt: "2026-04-12T10:00:00.000Z",
+      timestamp: "2026-04-12T10:00:00.000Z"
+    },
+    {
+      id: "log_002",
+      entityType: "fit_assessment",
+      entityId: "fit_001",
+      type: "fit_generated",
+      action: "fit_generated",
+      actor: "system",
+      jobId: "job_001",
+      summary: "Generated apply fit assessment for NovaMind AI role.",
+      agentName: "Fit Evaluation Agent",
+      inputSummary: "Compared NovaMind role against AI PM target profile and preferred locations.",
+      outputSummary: "fitScore=84, recommendation=apply, nextStatus=to_prepare.",
+      decisionReason: "Role aligns well with target direction and is worth preparing for.",
+      policyInfluenceSummary: "Boosted because this role family is part of the current global focus.",
+      decisionBreakdown: {
+        baseScore: 73,
+        historyAdjustment: 5,
+        policyAdjustment: 6,
+        finalScore: 84,
+        finalDecision: "proceed"
+      },
+      activePolicyVersion: "policy_001@1",
+      policyProposalId: "proposal_001",
+      overrideApplied: false,
+      overrideSummary: null,
+      metadata: { fitScore: 84, recommendation: "apply" },
+      createdAt: "2026-04-12T10:05:00.000Z",
+      timestamp: "2026-04-12T10:05:00.000Z"
+    },
+    {
+      id: "log_003",
+      entityType: "application_prep",
+      entityId: "prep_001",
+      type: "prep_saved",
+      action: "prep_saved",
+      actor: "system",
+      jobId: "job_001",
+      summary: "Prepared tailored resume bullets and interview draft for NovaMind AI.",
+      agentName: "Application Prep Agent",
+      inputSummary: "Used job keywords and profile projects to draft prep content.",
+      outputSummary: "Generated tailored bullets, self intro, and Q&A draft for review.",
+      decisionReason: "Prep stays editable so the user remains the final approver before submission.",
+      createdAt: "2026-04-13T14:00:00.000Z",
+      timestamp: "2026-04-13T14:00:00.000Z"
+    }
+  ],
+  badCases: []
+};
+
+module.exports = { demoData };

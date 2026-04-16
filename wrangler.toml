@@ -1,0 +1,27 @@
+name = "applyflow"
+main = "cloudflare/worker-entry.js"
+compatibility_date = "2026-04-15"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "APPLYFLOW_DB"
+database_name = "applyflow"
+database_id = "replace-with-your-d1-database-id"
+
+[vars]
+APPLYFLOW_RUNTIME = "cloudflare"
+APPLYFLOW_DB_PROVIDER = "d1"
+CLOUDFLARE_D1_BINDING = "APPLYFLOW_DB"
+LLM_PROVIDER = "openai"
+LLM_BASE_URL = "https://api.openai.com/v1"
+LLM_MODEL = "gpt-4o-mini"
+SESSION_COOKIE_NAME = "applyflow_session"
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = "true"
+
+# Secrets should be added with:
+# wrangler secret put LLM_API_KEY
+# wrangler secret put SESSION_SECRET
