@@ -18,6 +18,7 @@ function isPdfFile(fileName = "", mimeType = "") {
 
 function normalizeWhitespace(text = "") {
   return String(text || "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ")
     .replace(/\r/g, "\n")
     .replace(/\t/g, " ")
     .replace(/\u00a0/g, " ")
@@ -46,6 +47,7 @@ function looksLikePdfNoise(line = "") {
   if (/^(xref|trailer|startxref)$/i.test(value)) return true;
   if (/^\d+ \d+ obj$/i.test(value)) return true;
   if (/^endobj$/i.test(value)) return true;
+  if (/^stream$/i.test(value) || /^endstream$/i.test(value)) return true;
   if (/^<<.*>>$/i.test(value)) return true;
   if (/^<\?xml/i.test(value)) return true;
   if (/^<x:xmpmeta/i.test(value)) return true;
@@ -54,7 +56,7 @@ function looksLikePdfNoise(line = "") {
   if (/^<pdf:/i.test(value)) return true;
   if (/^<xmp:/i.test(value)) return true;
   if (/^\/([A-Za-z]+)(\s|$)/.test(value)) return true;
-  if (/\b(Catalog|Pages|Metadata|Font|ProcSet|MediaBox|Type|Subtype)\b/.test(value) && value.length < 160) return true;
+  if (/\b(Catalog|Pages|Metadata|Font|ProcSet|MediaBox|Type|Subtype|FlateDecode|Length)\b/.test(value) && value.length < 200) return true;
   if (/^[A-Za-z0-9+\/]{80,}={0,2}$/.test(value)) return true;
   return false;
 }
@@ -66,7 +68,8 @@ function cleanExtractedText(rawText = "") {
     const withoutTags = line
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/gi, " ")
-      .replace(/--\s*\d+\s+of\s+\d+\s*--/gi, " ");
+      .replace(/--\s*\d+\s+of\s+\d+\s*--/gi, " ")
+      .replace(/Page\s+\d+\s+of\s+\d+/gi, " ");
     const normalized = normalizeWhitespace(withoutTags);
     if (!normalized) continue;
     cleanedLines.push(normalized);
@@ -96,10 +99,81 @@ function cleanExtractedText(rawText = "") {
   return truncateText(merged.join("\n\n"), MAX_CLEANED_TEXT_LENGTH);
 }
 
+function countMatches(text = "", patterns = []) {
+  return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function evaluateResumeTextQuality(rawText = "", cleanedText = "") {
+  const safeRaw = String(rawText || "");
+  const safeCleaned = String(cleanedText || "");
+  const contactSignals = countMatches(safeCleaned, [
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+    /(?:\+?\d[\d\s\-()]{7,}\d)/,
+    /linkedin/i,
+    /github/i
+  ]);
+  const sectionSignals = countMatches(safeCleaned, [
+    /\b(summary|profile|about)\b/i,
+    /\b(experience|employment|work history)\b/i,
+    /\b(skills|competencies|tooling)\b/i,
+    /\b(education|academic)\b/i,
+    /\b(projects?)\b/i,
+    /简介|概述|个人总结|工作经验|经历|技能|教育|项目/
+  ]);
+  const resumeSignals = countMatches(safeCleaned, [
+    /manager|product|analyst|strategy|operations|growth|designer|engineer/i,
+    /university|college|academy|bachelor|master|mba|博士|硕士|本科|大学/i,
+    /sql|python|excel|figma|analysis|roadmap|experimentation|stakeholder/i
+  ]);
+  const noiseSignals = countMatches(`${safeRaw}\n${safeCleaned}`, [
+    /^%PDF-/im,
+    /^\d+ \d+ obj$/im,
+    /^xref$/im,
+    /^trailer$/im,
+    /^endobj$/im,
+    /\/Type\s*\/Catalog/i,
+    /<x:xmpmeta/i,
+    /<rdf:RDF/i
+  ]);
+  const cleanedLength = safeCleaned.length;
+  const rawLength = safeRaw.length;
+  const signalScore = contactSignals + sectionSignals + resumeSignals;
+  const noiseRatio = rawLength > 0 ? Math.min(1, noiseSignals * 18 / Math.max(rawLength, 1)) : 0;
+
+  let score = 0;
+  if (cleanedLength >= 1600) score += 40;
+  else if (cleanedLength >= 800) score += 30;
+  else if (cleanedLength >= 250) score += 20;
+  else if (cleanedLength >= 120) score += 12;
+  else if (cleanedLength >= 60) score += 6;
+
+  score += Math.min(signalScore * 8, 40);
+  score -= Math.min(Math.round(noiseRatio * 100), 30);
+  score = Math.max(0, Math.min(100, score));
+
+  const label = score >= 75 ? "high" : score >= 45 ? "medium" : "low";
+  const usable = cleanedLength >= 120 && signalScore >= 2 && noiseRatio < 0.35;
+
+  return {
+    score,
+    label,
+    usable,
+    cleanedLength,
+    signalScore,
+    noiseRatio,
+    contactSignals,
+    sectionSignals,
+    resumeSignals,
+    reasons: [
+      `cleanedLength=${cleanedLength}`,
+      `signalScore=${signalScore}`,
+      `noiseRatio=${noiseRatio.toFixed(3)}`
+    ]
+  };
+}
+
 function inferParseQuality({ rawText = "", cleanedText = "", structuredProfile = {} }) {
-  const rawLength = rawText.length;
-  const cleanedLength = cleanedText.length;
-  const noisePenalty = rawLength > 0 ? Math.max(0, 1 - cleanedLength / rawLength) : 1;
+  const quality = evaluateResumeTextQuality(rawText, cleanedText);
   const structureSignals = [
     structuredProfile.summary,
     ...(structuredProfile.experience || []),
@@ -107,19 +181,9 @@ function inferParseQuality({ rawText = "", cleanedText = "", structuredProfile =
     ...(structuredProfile.skills || []),
     ...(structuredProfile.education || [])
   ].filter(Boolean).length;
-
-  let score = 0;
-  if (cleanedLength >= 1800) score += 45;
-  else if (cleanedLength >= 900) score += 32;
-  else if (cleanedLength >= 300) score += 18;
-  else if (cleanedLength >= 80) score += 8;
-
-  score += Math.min(structureSignals * 5, 35);
-  score += Math.max(0, 20 - Math.round(noisePenalty * 20));
-  score = Math.max(0, Math.min(100, score));
-
+  const score = Math.max(0, Math.min(100, quality.score + Math.min(structureSignals * 4, 16)));
   const label = score >= 75 ? "high" : score >= 45 ? "medium" : "low";
-  return { score, label };
+  return { score, label, usable: quality.usable, reasons: quality.reasons };
 }
 
 function scoreHeading(line = "") {
@@ -255,37 +319,57 @@ async function extractTextFromDocx(buffer) {
   return normalizeWhitespace(result.value || "");
 }
 
-async function extractTextFromPdf(buffer) {
-  try {
-    const parser = new PDFParse({ data: buffer });
-    const parsed = await parser.getText();
-    await parser.destroy();
-    const text = normalizeWhitespace(parsed?.text || "");
-    if (text && text.length >= 40 && !/^%PDF-/i.test(text)) {
-      return {
-        text,
-        extractionMethod: "pdf-parse"
-      };
-    }
-  } catch (error) {
-    console.warn("[resume-parser] pdf-parse failed, falling back to pdfjs-dist", {
-      message: error?.message || String(error)
-    });
-  }
+function extractFallbackBinaryText(buffer) {
+  const utf8Text = buffer.toString("utf8");
+  const latin1Text = buffer.toString("latin1");
+  const utf8Cleaned = cleanExtractedText(utf8Text);
+  const latin1Cleaned = cleanExtractedText(latin1Text);
+  return utf8Cleaned.length >= latin1Cleaned.length ? { rawText: utf8Text, cleanedText: utf8Cleaned } : { rawText: latin1Text, cleanedText: latin1Cleaned };
+}
 
+async function tryPdfParseStage(buffer, meta = {}) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const parsed = await parser.getText();
+    const rawText = normalizeWhitespace(parsed?.text || "");
+    const cleanedText = cleanExtractedText(rawText);
+    const quality = evaluateResumeTextQuality(rawText, cleanedText);
+    console.info("[resume-parser] pdf stage result", {
+      stage: "A_pdf-parse",
+      ...meta,
+      rawLength: rawText.length,
+      cleanedLength: cleanedText.length,
+      qualityScore: quality.score,
+      qualityLabel: quality.label,
+      usable: quality.usable
+    });
+    return {
+      ok: quality.usable,
+      rawText,
+      cleanedText,
+      quality,
+      extractionMethod: "pdf-parse"
+    };
+  } finally {
+    await parser.destroy().catch(() => null);
+  }
+}
+
+async function tryPdfJsStage(buffer, meta = {}) {
   globalThis.DOMMatrix ||= class DOMMatrix {};
   globalThis.ImageData ||= class ImageData {};
   globalThis.Path2D ||= class Path2D {};
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(buffer),
+    disableWorker: true,
+    worker: null,
     useWorkerFetch: false,
     isEvalSupported: false,
     useSystemFonts: true
   });
   const pdf = await loadingTask.promise;
   const pages = [];
-
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const textContent = await page.getTextContent();
@@ -296,10 +380,84 @@ async function extractTextFromPdf(buffer) {
       .trim();
     if (pageText) pages.push(pageText);
   }
+  const rawText = normalizeWhitespace(pages.join("\n\n"));
+  const cleanedText = cleanExtractedText(rawText);
+  const quality = evaluateResumeTextQuality(rawText, cleanedText);
+  console.info("[resume-parser] pdf stage result", {
+    stage: "B_pdfjs-dist",
+    ...meta,
+    rawLength: rawText.length,
+    cleanedLength: cleanedText.length,
+    qualityScore: quality.score,
+    qualityLabel: quality.label,
+    usable: quality.usable
+  });
+  return {
+    ok: quality.usable,
+    rawText,
+    cleanedText,
+    quality,
+    extractionMethod: "pdfjs-dist"
+  };
+}
+
+async function extractTextFromPdf(buffer, meta = {}) {
+  console.info("[resume-parser] entering PDF pipeline", {
+    ...meta,
+    bufferBytes: buffer.length
+  });
+
+  try {
+    const stageA = await tryPdfParseStage(buffer, meta);
+    if (stageA.ok) {
+      return stageA;
+    }
+  } catch (error) {
+    console.warn("[resume-parser] pdf stage failed", {
+      stage: "A_pdf-parse",
+      ...meta,
+      reason: error?.message || String(error)
+    });
+  }
+
+  try {
+    const stageB = await tryPdfJsStage(buffer, meta);
+    if (stageB.ok) {
+      return stageB;
+    }
+
+    const fallback = extractFallbackBinaryText(buffer);
+    const fallbackQuality = evaluateResumeTextQuality(fallback.rawText, fallback.cleanedText);
+    console.warn("[resume-parser] pdf fallback selected", {
+      stage: "C_fallback_text",
+      ...meta,
+      rawLength: fallback.rawText.length,
+      cleanedLength: fallback.cleanedText.length,
+      qualityScore: fallbackQuality.score,
+      qualityLabel: fallbackQuality.label,
+      usable: fallbackQuality.usable
+    });
+    return {
+      ok: fallbackQuality.usable,
+      rawText: fallbackQuality.usable ? fallback.rawText : "",
+      cleanedText: fallback.cleanedText,
+      quality: fallbackQuality,
+      extractionMethod: fallbackQuality.usable ? "fallback_text" : "fallback_text"
+    };
+  } catch (error) {
+    console.warn("[resume-parser] pdf stage failed", {
+      stage: "B_pdfjs-dist",
+      ...meta,
+      reason: error?.message || String(error)
+    });
+  }
 
   return {
-    text: normalizeWhitespace(pages.join("\n\n")),
-    extractionMethod: "pdfjs-dist"
+    ok: false,
+    rawText: "",
+    cleanedText: "",
+    quality: evaluateResumeTextQuality("", ""),
+    extractionMethod: "fallback_text"
   };
 }
 
@@ -314,18 +472,28 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
   }
 
   let rawText = "";
+  let cleanedText = "";
   let extractionMethod = "unknown";
   let parseStatus = "parse_failed";
   let parseWarning = "";
+  let stageQuality = evaluateResumeTextQuality("", "");
+  const parseMeta = {
+    fileName: safeFileName,
+    mimeType: safeMimeType
+  };
 
   try {
     if (isDocxFile(safeFileName, safeMimeType)) {
       rawText = await extractTextFromDocx(buffer);
+      cleanedText = cleanExtractedText(rawText);
       extractionMethod = "mammoth_docx";
+      stageQuality = evaluateResumeTextQuality(rawText, cleanedText);
     } else if (isPdfFile(safeFileName, safeMimeType)) {
-      const pdfResult = await extractTextFromPdf(buffer);
-      rawText = pdfResult?.text || "";
-      extractionMethod = pdfResult?.extractionMethod || "pdfjs-dist";
+      const pdfResult = await extractTextFromPdf(buffer, parseMeta);
+      rawText = pdfResult.rawText || "";
+      cleanedText = pdfResult.cleanedText || "";
+      extractionMethod = pdfResult.extractionMethod || "fallback_text";
+      stageQuality = pdfResult.quality || evaluateResumeTextQuality(rawText, cleanedText);
     } else {
       const unsupportedError = new Error("当前仅支持 PDF 与 DOCX 简历解析。");
       unsupportedError.code = "UNSUPPORTED_RESUME_TYPE";
@@ -343,7 +511,7 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
       fileSizeBytes: buffer.byteLength,
       parseStatus,
       status: "failed",
-      parseQuality: { label: "low", score: 0 },
+      parseQuality: { label: "low", score: 0, reasons: [error?.message || "parse_failed"] },
       extractionMethod: extractionMethod === "unknown" ? "service_failed" : extractionMethod,
       parseWarning,
       rawText: "",
@@ -369,32 +537,39 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
     };
   }
 
-  const cleanedText = cleanExtractedText(rawText);
   const structuredProfile = buildStructuredProfile(cleanedText, extractionMethod);
   const parseQuality = inferParseQuality({ rawText, cleanedText, structuredProfile });
   const strongSectionCount = (structuredProfile.sections || []).filter((section) => section.content && section.content.length >= 20).length;
-  if (cleanedText.length >= 200 && parseQuality.label !== "low" && strongSectionCount >= 2) {
-    parseStatus = "parse_success";
-  } else if (extractionMethod === "pdf-parse" && cleanedText.length >= 120 && parseQuality.label !== "low" && strongSectionCount >= 2) {
+
+  if (parseQuality.usable && strongSectionCount >= 2) {
     parseStatus = "parse_success";
   } else if (cleanedText.length >= 60) {
     parseStatus = "parse_partial";
-    parseWarning = "已提取到部分可用简历内容，但结构化结果可能不完整，建议继续手动检查并优先上传 DOCX。";
+    parseWarning = extractionMethod === "fallback_text"
+      ? "自动解析质量不足，建议上传 DOCX 或手动补充关键信息。"
+      : "已提取到部分可用简历内容，但结构化结果可能不完整，建议继续手动检查并优先上传 DOCX。";
   } else {
     parseStatus = "parse_failed";
     parseWarning = "未能提取到稳定的简历正文，建议改用 DOCX 后重新上传。";
   }
 
-  if (safeMimeType === "application/pdf" && parseQuality.label === "low" && !parseWarning) {
-    parseWarning = "PDF 兼容支持已开启，但当前文件解析质量较低，推荐改传 DOCX 版本。";
+  if (safeMimeType === "application/pdf" && extractionMethod === "fallback_text") {
+    rawText = "";
   }
 
+  const safeSummary =
+    extractionMethod === "fallback_text" && parseStatus !== "parse_success"
+      ? truncateText(cleanedText || "自动解析质量不足，建议上传 DOCX 或手动补充。", MAX_SUMMARY_LENGTH)
+      : truncateText(structuredProfile.summary || cleanedText, MAX_SUMMARY_LENGTH);
+
   console.info("[resume-parser] parsed resume document", {
-    fileName: safeFileName,
-    mimeType: safeMimeType,
+    ...parseMeta,
     extractionMethod,
     parseStatus,
-    cleanedTextLength: cleanedText.length
+    rawTextLength: rawText.length,
+    cleanedTextLength: cleanedText.length,
+    stageQuality,
+    finalQuality: parseQuality
   });
 
   return {
@@ -407,9 +582,9 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
     parseQuality,
     extractionMethod,
     parseWarning,
-    rawText: truncateText(rawText, MAX_CLEANED_TEXT_LENGTH),
+    rawText: extractionMethod === "fallback_text" ? "" : truncateText(rawText, MAX_CLEANED_TEXT_LENGTH),
     cleanedText,
-    summary: truncateText(structuredProfile.summary || cleanedText, MAX_SUMMARY_LENGTH),
+    summary: safeSummary,
     structuredProfile,
     createdAt: nowIso(),
     updatedAt: nowIso()
@@ -420,8 +595,8 @@ module.exports = {
   parseResumeDocument,
   cleanExtractedText,
   buildStructuredProfile,
+  evaluateResumeTextQuality,
   MAX_FILE_BYTES,
   MAX_CLEANED_TEXT_LENGTH,
   MAX_SUMMARY_LENGTH
 };
-
