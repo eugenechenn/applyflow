@@ -1,5 +1,5 @@
 ﻿const { createServer } = require("http");
-const { parseResumeDocument } = require("../src/lib/resume/resume-parser");
+const { parseResumeDocument } = require("./lib/resume-parser.js");
 
 const DEFAULT_PORT = 4234;
 const DEFAULT_HOST = "0.0.0.0";
