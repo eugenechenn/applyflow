@@ -9,9 +9,12 @@
   "scripts": {
     "start": "node server.js",
     "start:jd-fetcher": "node scripts/jd-fetcher-server.js",
+    "start:resume-parser": "node ./scripts/resume-parser-server.js",
     "dev": "node server.js",
     "jd-fetcher": "node scripts/jd-fetcher-server.js",
     "jd-fetcher:start": "node scripts/jd-fetcher-server.js",
+    "resume-parser": "node ./scripts/resume-parser-server.js",
+    "resume-parser:start": "node ./scripts/resume-parser-server.js",
     "migrate:json-store": "node scripts/migrate-json-store.js",
     "export:d1-seed": "node scripts/export-d1-seed.js",
     "cf:dev": "wrangler dev --config wrangler.jsonc",
@@ -25,6 +28,10 @@
     "wrangler": "^4.15.2"
   },
   "dependencies": {
+    "docx": "^9.6.1",
+    "mammoth": "^1.12.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.6.205",
     "playwright": "^1.59.1"
   }
 }
