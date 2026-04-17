@@ -1,4 +1,5 @@
 ﻿const mammoth = require("mammoth");
+const { PDFParse } = require("pdf-parse");
 const { createId, nowIso } = require("../utils/id");
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -62,7 +63,10 @@ function cleanExtractedText(rawText = "") {
   const cleanedLines = [];
   for (const line of splitLines(rawText)) {
     if (looksLikePdfNoise(line)) continue;
-    const withoutTags = line.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ");
+    const withoutTags = line
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/--\s*\d+\s+of\s+\d+\s*--/gi, " ");
     const normalized = normalizeWhitespace(withoutTags);
     if (!normalized) continue;
     cleanedLines.push(normalized);
@@ -225,7 +229,7 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
   const fallbackExperienceLines = allLines.filter((line) => /\b(19|20)\d{2}\b/.test(line) || /(manager|analyst|lead|director|specialist|产品|经理|运营|分析|策略)/i.test(line));
   const fallbackEducationLines = allLines.filter((line) => /(university|college|school|academy|大学|学院|本科|硕士|博士|mba|bachelor|master)/i.test(line));
   const fallbackSkillLines = allLines.filter((line) => /(sql|python|excel|strategy|analysis|product|ai|agent|沟通|数据|实验|增长)/i.test(line));
-  const structured = {
+  return {
     ...extractContact(cleanedText),
     summary: truncateText(summaryText, 1200),
     experience: extractBulletLikeItems(getSectionText("experience") || fallbackExperienceLines.join("\n"), 10, 260),
@@ -244,7 +248,6 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
     sections,
     extractionMethod
   };
-  return structured;
 }
 
 async function extractTextFromDocx(buffer) {
@@ -253,6 +256,23 @@ async function extractTextFromDocx(buffer) {
 }
 
 async function extractTextFromPdf(buffer) {
+  try {
+    const parser = new PDFParse({ data: buffer });
+    const parsed = await parser.getText();
+    await parser.destroy();
+    const text = normalizeWhitespace(parsed?.text || "");
+    if (text && text.length >= 40 && !/^%PDF-/i.test(text)) {
+      return {
+        text,
+        extractionMethod: "pdf-parse"
+      };
+    }
+  } catch (error) {
+    console.warn("[resume-parser] pdf-parse failed, falling back to pdfjs-dist", {
+      message: error?.message || String(error)
+    });
+  }
+
   globalThis.DOMMatrix ||= class DOMMatrix {};
   globalThis.ImageData ||= class ImageData {};
   globalThis.Path2D ||= class Path2D {};
@@ -277,7 +297,10 @@ async function extractTextFromPdf(buffer) {
     if (pageText) pages.push(pageText);
   }
 
-  return normalizeWhitespace(pages.join("\n\n"));
+  return {
+    text: normalizeWhitespace(pages.join("\n\n")),
+    extractionMethod: "pdfjs-dist"
+  };
 }
 
 async function parseResumeDocument({ fileName, mimeType, base64Data }) {
@@ -300,8 +323,9 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
       rawText = await extractTextFromDocx(buffer);
       extractionMethod = "mammoth_docx";
     } else if (isPdfFile(safeFileName, safeMimeType)) {
-      rawText = await extractTextFromPdf(buffer);
-      extractionMethod = "pdfjs_pdf";
+      const pdfResult = await extractTextFromPdf(buffer);
+      rawText = pdfResult?.text || "";
+      extractionMethod = pdfResult?.extractionMethod || "pdfjs-dist";
     } else {
       const unsupportedError = new Error("当前仅支持 PDF 与 DOCX 简历解析。");
       unsupportedError.code = "UNSUPPORTED_RESUME_TYPE";
@@ -318,6 +342,7 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
       mimeType: safeMimeType,
       fileSizeBytes: buffer.byteLength,
       parseStatus,
+      status: "failed",
       parseQuality: { label: "low", score: 0 },
       extractionMethod: extractionMethod === "unknown" ? "service_failed" : extractionMethod,
       parseWarning,
@@ -350,6 +375,8 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
   const strongSectionCount = (structuredProfile.sections || []).filter((section) => section.content && section.content.length >= 20).length;
   if (cleanedText.length >= 200 && parseQuality.label !== "low" && strongSectionCount >= 2) {
     parseStatus = "parse_success";
+  } else if (extractionMethod === "pdf-parse" && cleanedText.length >= 120 && parseQuality.label !== "low" && strongSectionCount >= 2) {
+    parseStatus = "parse_success";
   } else if (cleanedText.length >= 60) {
     parseStatus = "parse_partial";
     parseWarning = "已提取到部分可用简历内容，但结构化结果可能不完整，建议继续手动检查并优先上传 DOCX。";
@@ -362,13 +389,21 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
     parseWarning = "PDF 兼容支持已开启，但当前文件解析质量较低，推荐改传 DOCX 版本。";
   }
 
+  console.info("[resume-parser] parsed resume document", {
+    fileName: safeFileName,
+    mimeType: safeMimeType,
+    extractionMethod,
+    parseStatus,
+    cleanedTextLength: cleanedText.length
+  });
+
   return {
     id: createId("resume"),
     fileName: safeFileName,
     mimeType: safeMimeType,
     fileSizeBytes: buffer.byteLength,
     parseStatus,
-    status: parseStatus.replace("parse_", ""),
+    status: parseStatus === "parse_success" ? "success" : parseStatus === "parse_partial" ? "partial" : "failed",
     parseQuality,
     extractionMethod,
     parseWarning,
@@ -389,3 +424,4 @@ module.exports = {
   MAX_CLEANED_TEXT_LENGTH,
   MAX_SUMMARY_LENGTH
 };
+
