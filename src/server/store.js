@@ -25,6 +25,78 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function trimText(value, max) {
+  const text = String(value || "");
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function containsPdfGarbage(value = "") {
+  const text = String(value || "");
+  return /%PDF-|^\d+ \d+ obj$|endobj|xref|trailer|\/Type\s*\/Catalog|<x:xmpmeta|<rdf:RDF/im.test(text);
+}
+
+function sanitizeResumeText(value = "", max = 10000) {
+  const text = trimText(value, max)
+    .replace(/%PDF-[\s\S]*/g, "")
+    .replace(/^\d+ \d+ obj$/gim, "")
+    .replace(/^endobj$/gim, "")
+    .replace(/^xref$/gim, "")
+    .replace(/^trailer$/gim, "")
+    .replace(/\/Type\s*\/Catalog/gi, "")
+    .replace(/<x:xmpmeta[\s\S]*$/gi, "")
+    .replace(/<rdf:RDF[\s\S]*$/gi, "")
+    .replace(/[ ]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function sanitizeResumeDocument(resumeDocument = {}) {
+  const structuredProfile = resumeDocument.structuredProfile || {};
+  const extractionMethod = String(resumeDocument.extractionMethod || "");
+  const parseStatus = String(resumeDocument.parseStatus || resumeDocument.status || "");
+  const incomingRawText = sanitizeResumeText(resumeDocument.rawText, 10000);
+  const incomingCleanedText = sanitizeResumeText(resumeDocument.cleanedText, 10000);
+  const incomingSummary = sanitizeResumeText(resumeDocument.summary, 2000);
+  const lowQualityFallback =
+    extractionMethod === "fallback_text" ||
+    parseStatus === "parse_failed" ||
+    (containsPdfGarbage(incomingRawText) && parseStatus !== "parse_success");
+
+  const safeStructuredProfile = {
+    ...structuredProfile,
+    summary: lowQualityFallback
+      ? ""
+      : sanitizeResumeText(structuredProfile.summary, 2000),
+    experience: Array.isArray(structuredProfile.experience) ? structuredProfile.experience.slice(0, 12).map((item) => trimText(item, 280)) : [],
+    projects: Array.isArray(structuredProfile.projects) ? structuredProfile.projects.slice(0, 10).map((item) => trimText(item, 240)) : [],
+    skills: Array.isArray(structuredProfile.skills) ? structuredProfile.skills.slice(0, 20).map((item) => trimText(item, 80)) : [],
+    education: Array.isArray(structuredProfile.education) ? structuredProfile.education.slice(0, 8).map((item) => trimText(item, 180)) : [],
+    achievements: Array.isArray(structuredProfile.achievements) ? structuredProfile.achievements.slice(0, 10).map((item) => trimText(item, 180)) : [],
+    certifications: Array.isArray(structuredProfile.certifications) ? structuredProfile.certifications.slice(0, 10).map((item) => trimText(item, 140)) : [],
+    sections: Array.isArray(structuredProfile.sections)
+      ? structuredProfile.sections.slice(0, 12).map((section) => ({
+          key: section?.key || "section",
+          heading: trimText(section?.heading, 80),
+          content: trimText(section?.content, 600)
+        }))
+      : []
+  };
+
+  return {
+    ...resumeDocument,
+    rawText: lowQualityFallback ? "" : incomingRawText,
+    cleanedText: lowQualityFallback ? incomingCleanedText.slice(0, 400) : incomingCleanedText,
+    summary: lowQualityFallback
+      ? (incomingCleanedText.slice(0, 200) || "自动解析质量不足，建议上传 DOCX 或手动补充。")
+      : incomingSummary,
+    parseWarning:
+      resumeDocument.parseWarning ||
+      (lowQualityFallback ? "自动解析质量不足，建议上传 DOCX 或手动补充关键信息。" : ""),
+    structuredProfile: safeStructuredProfile
+  };
+}
+
 function getActiveUserId() {
   return getRequestContext().userId || DEFAULT_USER_ID;
 }
@@ -128,6 +200,35 @@ function saveProfile(profile) {
   const override = getOverrideStore();
   if (override?.saveProfile) return override.saveProfile(profile);
   return getRepository().saveProfile(getActiveUserId(), { ...profile, userId: getActiveUserId() });
+}
+
+function listResumeDocuments() {
+  const override = getOverrideStore();
+  if (override?.listResumeDocuments) return override.listResumeDocuments();
+  return getRepository().listResumeDocuments(getActiveUserId()).map((resumeDocument) => sanitizeResumeDocument(resumeDocument));
+}
+
+function getResumeDocument(resumeId) {
+  const override = getOverrideStore();
+  if (override?.getResumeDocument) return override.getResumeDocument(resumeId);
+  const resumeDocument = getRepository().getResumeDocument(getActiveUserId(), resumeId);
+  return resumeDocument ? sanitizeResumeDocument(resumeDocument) : null;
+}
+
+function getLatestResumeDocument() {
+  const override = getOverrideStore();
+  if (override?.getLatestResumeDocument) return override.getLatestResumeDocument();
+  const resumeDocument = getRepository().getLatestResumeDocument(getActiveUserId());
+  return resumeDocument ? sanitizeResumeDocument(resumeDocument) : null;
+}
+
+function saveResumeDocument(resumeDocument) {
+  const override = getOverrideStore();
+  if (override?.saveResumeDocument) return override.saveResumeDocument(resumeDocument);
+  return getRepository().saveResumeDocument(getActiveUserId(), {
+    ...sanitizeResumeDocument(resumeDocument),
+    userId: getActiveUserId()
+  });
 }
 
 function getStrategyProfile() {
@@ -247,6 +348,24 @@ function saveApplicationPrep(prep) {
   return getRepository().saveApplicationPrep(getActiveUserId(), { ...prep, userId: getActiveUserId() });
 }
 
+function listTailoringOutputs() {
+  const override = getOverrideStore();
+  if (override?.listTailoringOutputs) return override.listTailoringOutputs();
+  return getRepository().listTailoringOutputs(getActiveUserId());
+}
+
+function getTailoringOutputByJobId(jobId) {
+  const override = getOverrideStore();
+  if (override?.getTailoringOutputByJobId) return override.getTailoringOutputByJobId(jobId);
+  return getRepository().getTailoringOutputByJobId(getActiveUserId(), jobId);
+}
+
+function saveTailoringOutput(output) {
+  const override = getOverrideStore();
+  if (override?.saveTailoringOutput) return override.saveTailoringOutput(output);
+  return getRepository().saveTailoringOutput(getActiveUserId(), { ...output, userId: getActiveUserId() });
+}
+
 function listTasksByJobId(jobId) {
   const override = getOverrideStore();
   if (override?.listTasksByJobId) return override.listTasksByJobId(jobId);
@@ -336,6 +455,10 @@ module.exports = {
   deleteSession,
   getProfile,
   saveProfile,
+  listResumeDocuments,
+  getResumeDocument,
+  getLatestResumeDocument,
+  saveResumeDocument,
   getStrategyProfile,
   saveStrategyProfile,
   getGlobalStrategyPolicy,
@@ -355,6 +478,9 @@ module.exports = {
   saveFitAssessment,
   getApplicationPrepByJobId,
   saveApplicationPrep,
+  listTailoringOutputs,
+  getTailoringOutputByJobId,
+  saveTailoringOutput,
   listTasksByJobId,
   listTasks,
   saveTask,

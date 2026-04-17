@@ -438,13 +438,21 @@ function createResumeViewModel(resumeDocument = null) {
     "ocr_pending": "待 OCR 处理",
     "service_failed": "解析服务失败"
   };
+  const looksLikePdfGarbage = (value) => /%PDF-|endobj|xref|trailer|\/Type\s*\/Catalog|<x:xmpmeta|<rdf:RDF/i.test(String(value || ""));
   const structuredProfile = resumeDocument?.structuredProfile || resumeDocument?.structured || {};
   const extractionMethod = resumeDocument?.extractionMethod || "未解析";
   const isFallbackText = extractionMethod === "fallback_text";
+  const summaryCandidate = structuredProfile.summary || resumeDocument?.summary || "";
+  const fallbackSummaryCandidate = String(resumeDocument?.summary || resumeDocument?.cleanedText || "");
   const safeSummary =
-    isFallbackText
-      ? String(resumeDocument?.summary || resumeDocument?.cleanedText || "自动解析质量不足，建议上传 DOCX 或手动补充。").slice(0, 200)
-      : structuredProfile.summary || resumeDocument?.summary || "";
+    isFallbackText || looksLikePdfGarbage(summaryCandidate)
+      ? (looksLikePdfGarbage(fallbackSummaryCandidate)
+          ? "自动解析质量不足，建议上传 DOCX 或手动补充。"
+          : fallbackSummaryCandidate.slice(0, 200) || "自动解析质量不足，建议上传 DOCX 或手动补充。")
+      : summaryCandidate;
+  const safeCleanedTextPreview = looksLikePdfGarbage(resumeDocument?.cleanedText)
+    ? ""
+    : String(resumeDocument?.cleanedText || "").slice(0, 600);
   return {
     exists: Boolean(resumeDocument),
     id: resumeDocument?.id || "",
@@ -467,7 +475,7 @@ function createResumeViewModel(resumeDocument = null) {
     highlights: structuredProfile.highlights || structuredProfile.achievements || [],
     experience: structuredProfile.experience || [],
     education: structuredProfile.education || [],
-    cleanedTextPreview: String(resumeDocument?.cleanedText || "").slice(0, 600),
+    cleanedTextPreview: safeCleanedTextPreview,
     isFallbackText
   };
 }
