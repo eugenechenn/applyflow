@@ -50,6 +50,10 @@ function summarizeList(items = [], fallback = "none") {
   return items.length ? items.join(" / ") : fallback;
 }
 
+function pickTopItems(items = [], max = 5) {
+  return (Array.isArray(items) ? items : []).filter(Boolean).slice(0, max);
+}
+
 function truncateText(value, max = 200) {
   const text = String(value || "").trim();
   if (!text) return "";
