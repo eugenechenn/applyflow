@@ -298,7 +298,11 @@ function humanizeAuditEvent(value) {
     proposal_rejected: "提案已拒绝",
     policy_applied: "策略已应用",
     policy_reverted: "策略已回滚",
-    user_override_applied: "人工覆盖已生效"
+    user_override_applied: "人工覆盖已生效",
+    tailoring_generated: "岗位定制简历已生成",
+    tailoring_review_saved: "定制确认结果已保存",
+    prep_saved: "申请准备已保存",
+    job_status_changed: "岗位状态已更新"
   };
   return map[value] || value || "审计事件";
 }
@@ -398,6 +402,8 @@ function createPrepViewModel({ prep = null, fitAssessment = null } = {}) {
   const checklist = prep?.checklist || [];
   const completedCount = checklist.filter((item) => item.completed).length;
   const isReady = completedCount >= 3;
+  const usedBullets = prep?.resumeTailoring?.usedBullets || prep?.resumeTailoring?.rewriteBullets || [];
+  const unusedBullets = prep?.resumeTailoring?.unusedBullets || [];
   return {
     completionStatus: isReady ? "complete" : "in_progress",
     readinessLabel: isReady ? "可进入投递" : "准备中",
@@ -409,9 +415,48 @@ function createPrepViewModel({ prep = null, fitAssessment = null } = {}) {
       fitAssessment?.strategyDecision === "cautious_proceed"
         ? `建议谨慎推进：${(fitAssessment.riskFlags || []).slice(0, 2).join(" / ") || "请优先核对关键风险"}`
         : "",
+    usedBullets,
+    unusedBullets,
     completedCount,
     checklistCount: checklist.length,
     raw: prep
+  };
+}
+
+function getFitLevel(fitAssessment = null) {
+  if (!fitAssessment) return "unknown";
+  if (fitAssessment.recommendation === "apply" || Number(fitAssessment.fitScore || 0) >= 75) return "high_fit";
+  if (fitAssessment.recommendation === "cautious" || Number(fitAssessment.fitScore || 0) >= 50) return "medium_fit";
+  return "low_fit";
+}
+
+function createFitToTailoringGuidance(fitAssessment = null) {
+  const fitLevel = getFitLevel(fitAssessment);
+  const map = {
+    high_fit: {
+      tone: "success",
+      title: "建议立即进入岗位定制工作区",
+      description: "这条岗位与当前背景较匹配，建议直接开始定制简历，把最相关的经历前置并尽快进入申请准备。"
+    },
+    medium_fit: {
+      tone: "warning",
+      title: "建议先优化 2-3 条关键经历，再决定是否继续",
+      description: "这条岗位有一定潜力，但需要更谨慎地选择与强化关键经历。先完成最重要的几条改写，再判断是否投入更多时间。"
+    },
+    low_fit: {
+      tone: "archived",
+      title: "建议暂不投入时间，可保留或手动覆盖",
+      description: "当前匹配度较低，系统不建议优先投入精力。你仍然可以进入工作区手动覆盖判断，但更建议先处理更强机会。"
+    },
+    unknown: {
+      tone: "",
+      title: "请先完成岗位评估，再决定是否进入定制工作区",
+      description: "系统还没有形成明确判断。先完成 Fit Evaluation，再决定是否值得围绕这个岗位继续优化简历。"
+    }
+  };
+  return {
+    fitLevel,
+    ...(map[fitLevel] || map.unknown)
   };
 }
 
@@ -478,6 +523,40 @@ function createResumeViewModel(resumeDocument = null) {
     cleanedTextPreview: safeCleanedTextPreview,
     isFallbackText
   };
+}
+
+function humanizeTailoringDecisionStatus(value) {
+  const map = {
+    pending: "待确认",
+    accepted: "已接受",
+    rejected: "已拒绝"
+  };
+  return map[value] || value || "待确认";
+}
+
+function humanizeDiffType(value) {
+  const map = {
+    modified: "已修改",
+    added: "已新增",
+    deleted: "已删除"
+  };
+  return map[value] || value || "有变更";
+}
+
+function createTailoringBulletViewModel(item = {}, index = 0) {
+  return {
+    bulletId: item.bulletId || `tailored_bullet_${index + 1}`,
+    before: item.before || item.source || "",
+    suggestion: item.suggestion || item.after || item.rewritten || "",
+    status: item.status || "pending",
+    reason: item.reason || "系统认为这条经历与 JD 更相关，因此建议强化。",
+    jdRequirement: item.jdRequirement || "",
+    type: item.type || "modified"
+  };
+}
+
+function getTailoringAcceptedBullets(tailoringOutput = null) {
+  return (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted");
 }
 
 function setButtonPending(button, pending, loadingLabel = "处理中...") {
@@ -624,7 +703,8 @@ function buildPrepDraft(prep) {
         { key: "qa_ready", label: "问答草稿已确认", completed: false },
         { key: "talking_points_ready", label: "面试要点已确认", completed: false },
         { key: "submit_ready", label: "投递路径已确认", completed: false }
-      ]
+      ],
+      contentWithSources: []
     };
   }
 
@@ -643,7 +723,8 @@ function buildPrepDraft(prep) {
     coverNote: prep.coverNote || "",
     talkingPoints: (prep.talkingPoints || []).join("\n"),
     outreachNote: prep.outreachNote || "",
-    checklist: prep.checklist || []
+    checklist: prep.checklist || [],
+    contentWithSources: prep.contentWithSources || []
   };
 }
 
@@ -1623,14 +1704,27 @@ function prepSnapshot(prep) {
 
   const checklist = Array.isArray(prep.checklist) ? prep.checklist : [];
   const targetKeywords = prep.resumeTailoring?.targetKeywords || [];
+  const rewriteBullets = Array.isArray(prep.resumeTailoring?.rewriteBullets) ? prep.resumeTailoring.rewriteBullets : [];
+  const contentWithSources = Array.isArray(prep.contentWithSources) ? prep.contentWithSources : [];
   const selfIntroShort = prep.selfIntro?.short || "";
   const talkingPoints = Array.isArray(prep.talkingPoints) ? prep.talkingPoints : [];
   const completedCount = checklist.filter((item) => item.completed).length;
   return `
     <p><strong>关键词：</strong>${escapeHtml(targetKeywords.join(", ") || "暂无")}</p>
+    <p><strong>已采纳的简历改写：</strong>${escapeHtml(String(rewriteBullets.length))} 条</p>
     ${prep.tailoredSummary ? `<p><strong>定制摘要：</strong>${escapeHtml(localizeDisplayContent(prep.tailoredSummary, "prep"))}</p>` : ""}
     ${prep.whyMe ? `<p><strong>为什么适合我：</strong>${escapeHtml(localizeDisplayContent(prep.whyMe, "prep"))}</p>` : ""}
     <p>${escapeHtml(localizeDisplayContent(selfIntroShort, "prep"))}</p>
+    ${
+      rewriteBullets.length
+        ? `<p><strong>当前使用的确认内容：</strong>${escapeHtml(localizeDisplayContent(rewriteBullets.slice(0, 2).map((item) => item.after || item.rewritten || item.suggestion || "").join(" / "), "resume"))}</p>`
+        : `<p class="muted">当前申请准备还没有带入任何已确认的简历改写内容。</p>`
+    }
+    ${
+      contentWithSources.length
+        ? `<p><strong>可解释来源：</strong>${escapeHtml(contentWithSources[0].title || "已生成内容")} 基于 ${escapeHtml((contentWithSources[0].sources || []).map((item) => item.label).join(" / ") || "已确认内容")} 生成</p>`
+        : ""
+    }
     ${talkingPoints.length ? `<p><strong>沟通重点：</strong>${escapeHtml(localizeDisplayContent(talkingPoints.slice(0, 2).join(" / "), "prep"))}</p>` : ""}
     <p class="muted">准备清单：已完成 ${completedCount}/${checklist.length}</p>
     <a class="button" href="#/prep/${prep.jobId}">进入申请准备编辑</a>
@@ -1659,6 +1753,8 @@ function renderNextAction(nextAction) {
         ${
           nextAction.ctaType === "open_prep"
             ? `<a class="button primary" href="#/prep/${nextAction.jobId}">${escapeHtml(nextAction.ctaLabel)}</a>`
+            : nextAction.ctaType === "tailor"
+              ? `<a class="button primary" href="#/jobs/${nextAction.jobId}/tailoring">${escapeHtml(nextAction.ctaLabel)}</a>`
             : nextAction.ctaType === "prepare"
               ? `<button class="button primary" id="next-action-prepare">${escapeHtml(nextAction.ctaLabel)}</button>`
               : nextAction.ctaType === "evaluate"
@@ -1691,6 +1787,16 @@ function renderTimeline(logs) {
                 </div>
                 <div>${escapeHtml(localizeDisplayContent(log.summary, "timeline"))}</div>
                 ${log.agentName ? `<div class="muted">执行阶段：${escapeHtml(log.actorLabel || log.agentName)}</div>` : ""}
+                ${
+                  log.metadata?.acceptedCount !== undefined || log.metadata?.rejectedCount !== undefined
+                    ? `<div class="trace-detail"><strong>人工确认结果</strong><span>已接受 ${escapeHtml(String(log.metadata?.acceptedCount || 0))} 条 / 已拒绝 ${escapeHtml(String(log.metadata?.rejectedCount || 0))} 条 / 待确认 ${escapeHtml(String(log.metadata?.pendingCount || 0))} 条</span></div>`
+                    : ""
+                }
+                ${
+                  log.metadata?.prepWillUseAcceptedOnly
+                    ? `<div class="trace-detail"><strong>后续影响</strong><span>Prep Agent 只会使用这些已接受的改写内容，未接受内容不会进入申请准备。</span></div>`
+                    : ""
+                }
                 ${log.inputSummary ? `<div class="trace-detail"><strong>系统看到的信息</strong><span>${escapeHtml(localizeDisplayContent(log.inputSummary, "timeline"))}</span></div>` : ""}
                 ${log.outputSummary ? `<div class="trace-detail"><strong>系统产出的结果</strong><span>${escapeHtml(localizeDisplayContent(log.outputSummary, "timeline"))}</span></div>` : ""}
                 ${log.decisionReason ? `<div class="trace-detail"><strong>为什么这样判断</strong><span>${escapeHtml(localizeDisplayContent(log.decisionReason, "timeline"))}</span></div>` : ""}
@@ -1822,11 +1928,18 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
     "当前还没有记录到明确的策略影响。";
   const recommendationMeta = humanizeRecommendation(fitAssessment?.recommendation);
   const strategyMeta = humanizeStrategyDecision(fitAssessment?.strategyDecision || job.strategyDecision);
+  const fitToTailoringGuidance = createFitToTailoringGuidance(fitAssessment);
   const tailoringExplainability = Array.isArray(tailoringOutput?.tailoringExplainability)
     ? tailoringOutput.tailoringExplainability
     : Array.isArray(applicationPrep?.tailoringExplainability)
       ? applicationPrep.tailoringExplainability
       : [];
+  const tailoringBulletVms = (tailoringOutput?.rewrittenBullets || []).map((item, index) =>
+    createTailoringBulletViewModel(item, index)
+  );
+  const acceptedTailoringCount = tailoringBulletVms.filter((item) => item.status === "accepted").length;
+  const pendingTailoringCount = tailoringBulletVms.filter((item) => item.status === "pending").length;
+  const diffEntries = tailoringOutput?.diff || tailoringOutput?.diffView?.diff || [];
 
   app.innerHTML = `
     ${message ? renderNotice("success", message) : ""}
@@ -1885,8 +1998,14 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
         ${renderNextAction(enhancedNextAction)}
         <div class="toolbar" style="margin-top:12px;">
           <button class="button" id="evaluate-btn">重新评估</button>
-          <button class="button" id="prepare-btn">${resumeVm.exists ? "生成岗位定制申请包" : "先上传原始简历"}</button>
-          <a class="button primary" href="#/prep/${job.id}">进入申请准备</a>
+          <button class="button" id="prepare-btn">${
+            !resumeVm.exists
+              ? "先上传原始简历"
+              : tailoringOutput
+                ? "生成申请准备包"
+                : "进入岗位定制工作区"
+          }</button>
+          <a class="button primary" href="#/jobs/${job.id}/tailoring">进入岗位定制工作区</a>
         </div>
         ${
           resumeVm.exists
@@ -1981,6 +2100,24 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
           <div class="card">
             <div class="section-head">
               <div>
+                <div class="eyebrow">下一步动作</div>
+                <h3>Fit → Tailoring 引导</h3>
+              </div>
+            </div>
+            <div class="fit-guidance-card ${fitToTailoringGuidance.tone || ""}">
+              <div class="fit-guidance-copy">
+                <strong>${escapeHtml(fitToTailoringGuidance.title)}</strong>
+                <p>${escapeHtml(fitToTailoringGuidance.description)}</p>
+              </div>
+              <div class="fit-guidance-actions">
+                <a class="button primary" href="#/jobs/${job.id}/tailoring">进入岗位定制工作区</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <div>
                 <div class="eyebrow">策略解释</div>
                 <h3>系统为什么这样判断</h3>
               </div>
@@ -2059,6 +2196,132 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
                   : ""
               }
             </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <div class="eyebrow">岗位定制简历</div>
+                <h3>定制结果、差异与人工确认</h3>
+              </div>
+            </div>
+            ${
+              tailoringOutput
+                ? `
+                  <div class="panel">
+                    <strong>定制摘要</strong>
+                    <div class="muted">${escapeHtml(localizeDisplayContent(tailoringOutput.tailoredSummary || tailoringOutput.tailoredResumePreview?.summary || "暂无定制摘要。", "resume"))}</div>
+                  </div>
+                  <div class="info-grid">
+                    <div class="panel">
+                      <strong>为什么适合我</strong>
+                      <div class="muted">${escapeHtml(localizeDisplayContent(tailoringOutput.whyMe || "暂无 why me 说明。", "fit"))}</div>
+                    </div>
+                    <div class="panel">
+                      <strong>重点关键词</strong>
+                      <div class="muted">${escapeHtml((tailoringOutput.targetingBrief?.targetKeywords || []).join(" / ") || "暂无关键词")}</div>
+                    </div>
+                    <div class="panel">
+                      <strong>选择策略</strong>
+                      <div class="muted">优先经历 ${escapeHtml(String((tailoringOutput.selectionPlan?.selectedExperienceIds || []).length))} 条 · 项目 ${escapeHtml(String((tailoringOutput.selectionPlan?.selectedProjectIds || []).length))} 条</div>
+                    </div>
+                    <div class="panel">
+                      <strong>差异摘要</strong>
+                      <div class="muted">改写 ${escapeHtml(String(tailoringOutput.diffView?.changedBulletCount || tailoringOutput.rewrittenBullets?.length || 0))} 条 · 已接受 ${escapeHtml(String(acceptedTailoringCount))} 条 · 待确认 ${escapeHtml(String(pendingTailoringCount))} 条</div>
+                    </div>
+                  </div>
+                  <details class="activity-disclosure" ${diffEntries.length ? "" : ""}>
+                    <summary>查看原始简历与定制版差异</summary>
+                    <div class="stack tailoring-diff-stack" style="margin-top:12px;">
+                      ${
+                        diffEntries.length
+                          ? diffEntries
+                              .map(
+                                (item, index) => `
+                                  <div class="panel tailoring-diff-card">
+                                    <div class="tailoring-review-head">
+                                      <strong>${escapeHtml(humanizeDiffType(item.type))} ${index + 1}</strong>
+                                      <span class="status">${escapeHtml(item.section === "summary" ? "摘要" : item.section === "why_me" ? "Why Me" : "经历")}</span>
+                                    </div>
+                                    <div class="tailoring-diff-grid">
+                                      <div class="tailoring-diff-side">
+                                        <div class="eyebrow">改动前</div>
+                                        <div class="muted">${escapeHtml(localizeDisplayContent(item.before || "暂无原始内容。", "resume"))}</div>
+                                      </div>
+                                      <div class="tailoring-diff-side">
+                                        <div class="eyebrow">改动后</div>
+                                        <div class="muted">${escapeHtml(localizeDisplayContent(item.after || "暂无改写内容。", "resume"))}</div>
+                                      </div>
+                                    </div>
+                                    <div class="muted">原因：${escapeHtml(localizeDisplayContent(item.reason || "暂无解释。", "fit"))}</div>
+                                  </div>
+                                `
+                              )
+                              .join("")
+                          : `<div class="empty">当前还没有可展示的差异项。</div>`
+                      }
+                    </div>
+                  </details>
+                  <form id="tailoring-review-form" class="stack" style="margin-top:16px;">
+                    <div class="section-head">
+                      <div>
+                        <div class="eyebrow">Human in the loop</div>
+                        <h3>逐条确认 AI 改写建议</h3>
+                      </div>
+                    </div>
+                    ${
+                      tailoringBulletVms.length && !acceptedTailoringCount
+                        ? `<div class="notice warning">你还没有接受任何改写建议。后续 Prep Agent 不会自动使用这些内容，建议至少确认 1-2 条最关键的经历改写。</div>`
+                        : ""
+                    }
+                    ${
+                      tailoringBulletVms.length
+                        ? tailoringBulletVms
+                            .map(
+                              (item, index) => `
+                                <div class="panel tailoring-review-card">
+                                  <input type="hidden" name="bulletId_${index}" value="${escapeHtml(item.bulletId)}" />
+                                  <div class="tailoring-review-head">
+                                    <strong>改写建议 ${index + 1}</strong>
+                                    <span class="status ${item.status === "accepted" ? "offer" : item.status === "rejected" ? "archived" : "pending"}">${escapeHtml(humanizeTailoringDecisionStatus(item.status))}</span>
+                                  </div>
+                                  <div class="tailoring-diff-grid">
+                                    <div class="tailoring-diff-side">
+                                      <div class="eyebrow">原始内容</div>
+                                      <div class="muted">${escapeHtml(localizeDisplayContent(item.before || "暂无原始内容。", "resume"))}</div>
+                                    </div>
+                                    <div class="tailoring-diff-side">
+                                      <div class="eyebrow">AI 建议</div>
+                                      <div class="muted">${escapeHtml(localizeDisplayContent(item.suggestion || "暂无改写建议。", "resume"))}</div>
+                                    </div>
+                                  </div>
+                                  <div class="muted">对应 JD：${escapeHtml(localizeDisplayContent(item.jdRequirement || "暂无对应要求。", "fit"))}</div>
+                                  <label>AI 改写建议
+                                    <textarea name="suggestion_${index}" rows="3">${escapeHtml(item.suggestion)}</textarea>
+                                  </label>
+                                  <label>决策
+                                    <select name="status_${index}">
+                                      <option value="pending" ${item.status === "pending" ? "selected" : ""}>待确认</option>
+                                      <option value="accepted" ${item.status === "accepted" ? "selected" : ""}>接受</option>
+                                      <option value="rejected" ${item.status === "rejected" ? "selected" : ""}>拒绝</option>
+                                    </select>
+                                  </label>
+                                  <div class="muted">为什么这样改：${escapeHtml(localizeDisplayContent(item.reason, "fit"))}</div>
+                                </div>
+                              `
+                            )
+                            .join("")
+                        : `<div class="empty">还没有生成可确认的改写建议。</div>`
+                    }
+                    ${
+                      tailoringBulletVms.length
+                        ? `<div class="toolbar"><button class="button" type="submit" id="save-tailoring-review-btn">保存简历定制确认结果</button><a class="button primary" href="#/jobs/${job.id}/tailoring">进入完整工作区</a></div>`
+                        : ""
+                    }
+                  </form>
+                `
+                : `<div class="empty">还没有生成岗位定制简历。建议从岗位详情进入完整的岗位定制工作区，在那里生成第一版并继续人工确认。<div class="toolbar" style="margin-top:12px;"><a class="button primary" href="#/jobs/${job.id}/tailoring">进入岗位定制工作区</a></div></div>`
+            }
           </div>
 
           <div class="card">
@@ -2251,14 +2514,57 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
       return;
     }
     try {
-      setButtonPending(button, true, "生成定制包中...");
-      await api(`/api/jobs/${job.id}/prepare`, { method: "POST" });
-      renderJobDetail(job.id, "岗位定制申请包已生成，可继续进入申请准备页编辑与导出。");
+      if (tailoringOutput) {
+        setButtonPending(button, true, "生成申请包中...");
+        await api(`/api/jobs/${job.id}/prepare`, { method: "POST" });
+        renderJobDetail(job.id, "岗位定制申请包已生成，可继续进入申请准备页编辑与导出。");
+      } else {
+        window.location.hash = `#/jobs/${job.id}/tailoring`;
+        return;
+      }
     } catch (error) {
       setButtonPending(button, false);
       renderJobDetail(job.id, "", error.message);
     }
   });
+
+  const tailoringReviewForm = document.getElementById("tailoring-review-form");
+  if (tailoringReviewForm) {
+    tailoringReviewForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitButton = document.getElementById("save-tailoring-review-btn");
+      try {
+        setButtonPending(submitButton, true, "保存中...");
+        const formData = new FormData(event.target);
+        const rewrittenBullets = tailoringBulletVms.map((item, index) => ({
+          bulletId: String(formData.get(`bulletId_${index}`) || item.bulletId),
+          before: item.before,
+          suggestion: String(formData.get(`suggestion_${index}`) || item.suggestion || "").trim(),
+          after: String(formData.get(`suggestion_${index}`) || item.suggestion || "").trim(),
+          rewritten: String(formData.get(`suggestion_${index}`) || item.suggestion || "").trim(),
+          status: String(formData.get(`status_${index}`) || item.status || "pending"),
+          reason: item.reason,
+          jdRequirement: item.jdRequirement,
+          type: item.type
+        }));
+        const result = await api(`/api/jobs/${job.id}/tailor/save`, {
+          method: "POST",
+          body: JSON.stringify({
+            tailoredSummary: tailoringOutput?.tailoredSummary || "",
+            whyMe: tailoringOutput?.whyMe || "",
+            rewrittenBullets
+          })
+        });
+        renderJobDetail(
+          job.id,
+          `已保存简历定制确认结果：接受 ${result.acceptedCount} 条，待确认 ${result.pendingCount} 条。`
+        );
+      } catch (error) {
+        setButtonPending(submitButton, false);
+        renderJobDetail(job.id, "", error.message);
+      }
+    });
+  }
 
   const nextActionEvaluate = document.getElementById("next-action-evaluate");
   if (nextActionEvaluate) {
@@ -2274,6 +2580,24 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
     });
   }
 
+  const nextActionTailor = document.getElementById("next-action-tailor");
+  if (nextActionTailor) {
+    nextActionTailor.addEventListener("click", async () => {
+      if (!resumeVm.exists) {
+        renderJobDetail(job.id, "", "请先在个人画像中上传原始简历，再生成岗位定制简历。");
+        return;
+      }
+      try {
+        setButtonPending(nextActionTailor, true, "生成定制简历中...");
+        await api(`/api/jobs/${job.id}/tailor`, { method: "POST" });
+        renderJobDetail(job.id, "岗位定制简历已生成。");
+      } catch (error) {
+        setButtonPending(nextActionTailor, false);
+        renderJobDetail(job.id, "", error.message);
+      }
+    });
+  }
+
   const nextActionPrepare = document.getElementById("next-action-prepare");
   if (nextActionPrepare) {
     nextActionPrepare.addEventListener("click", async () => {
@@ -2282,7 +2606,7 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
         return;
       }
       try {
-        setButtonPending(nextActionPrepare, true, "生成定制包中...");
+        setButtonPending(nextActionPrepare, true, "生成申请包中...");
         await api(`/api/jobs/${job.id}/prepare`, { method: "POST" });
         renderJobDetail(job.id, "岗位定制申请包已生成，可继续进入申请准备页编辑与导出。");
       } catch (error) {
@@ -2375,6 +2699,371 @@ async function renderJobDetail(jobId, message = "", errorMessage = "") {
   });
 }
 
+async function renderTailoringWorkspace(jobId, message = "", errorMessage = "") {
+  setActiveNav("#/jobs");
+  title.textContent = "岗位定制工作区";
+  subtitle.textContent = "围绕单个岗位管理 base resume、AI 定制结果、人工确认与后续申请准备。";
+  renderLoadingState("加载岗位定制工作区", "正在同步原始简历、定制结果与人工确认状态...");
+  const data = await api(`/api/jobs/${jobId}/tailoring-workspace`);
+  const { job, fitAssessment, tailoringOutput, applicationPrep, resumeDocument, workspace, workspaceActivity } = data;
+
+  if (!job) {
+    app.innerHTML = `
+      ${message ? renderNotice("success", message) : ""}
+      ${errorMessage ? renderNotice("error", errorMessage) : ""}
+      ${renderNotice("error", "岗位不存在，暂时无法打开岗位定制工作区。")}
+      <div class="panel">
+        <div class="toolbar">
+          <a class="button" href="#/jobs">返回岗位列表</a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const jobVm = createJobViewModel({ job, fitAssessment, nextAction: workspace?.nextAction });
+  const resumeVm = createResumeViewModel(resumeDocument);
+  const workspaceName = workspace?.name || `${job.company || "目标公司"} ${job.title || "岗位"}定制版`;
+  const baseResume = workspace?.baseResumeAsset || {};
+  const bulletVms = (tailoringOutput?.rewrittenBullets || []).map((item, index) => createTailoringBulletViewModel(item, index));
+  const acceptedCount = bulletVms.filter((item) => item.status === "accepted").length;
+  const rejectedCount = bulletVms.filter((item) => item.status === "rejected").length;
+  const pendingCount = bulletVms.filter((item) => item.status === "pending").length;
+  const diffEntries = tailoringOutput?.diffView?.bulletDiffs || tailoringOutput?.diff || [];
+  const keyRequirements = workspace?.jobSummary?.keyRequirements || [];
+  const targetKeywords = workspace?.jobSummary?.targetKeywords || [];
+  const explainability = Array.isArray(tailoringOutput?.tailoringExplainability)
+    ? tailoringOutput.tailoringExplainability
+    : [];
+
+  app.innerHTML = `
+    ${message ? renderNotice("success", message) : ""}
+    ${errorMessage ? renderNotice("error", errorMessage) : ""}
+    <div class="tailoring-workspace-shell">
+      <section class="tailoring-workspace-hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Job-driven Tailoring Workspace</div>
+          <h3 class="hero-title">${escapeHtml(jobVm.title)}</h3>
+          <p class="hero-subtitle">${escapeHtml(jobVm.company)} · ${escapeHtml(jobVm.location)} · ${escapeHtml(jobVm.displayStatus)}</p>
+          <div class="hero-meta">
+            ${statusBadge(job.status)}
+            ${fitAssessment ? semanticBadge(`匹配度 ${fitAssessment.fitScore}`, humanizeRecommendation(fitAssessment.recommendation).tone) : '<span class="status">待评估</span>'}
+            <span class="status">${escapeHtml(jobVm.strategyLabel)}</span>
+            <span class="status">版本 ${escapeHtml(String(workspace?.activeVersion || tailoringOutput?.version || 1))}</span>
+          </div>
+          <div class="panel">
+            <strong>岗位重点</strong>
+            <div class="muted">${escapeHtml(localizeDisplayContent(job.jdStructured?.summary || "当前还没有岗位摘要。", "summary"))}</div>
+            <div class="inline-meta">
+              <span>关键词：${escapeHtml(targetKeywords.join(" / ") || "暂无")}</span>
+              <span>核心要求：${escapeHtml(keyRequirements.slice(0, 3).join(" / ") || "暂无")}</span>
+            </div>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="metric-card">
+            <div class="metric-label">工作区名称</div>
+            <div class="metric workspace-name">${escapeHtml(workspaceName)}</div>
+            <div class="metric-support">每个岗位维护一份 job-specific 定制版本</div>
+          </div>
+          <div class="split-metrics">
+            <div class="metric-card">
+              <div class="metric-label">已接受</div>
+              <div class="metric">${escapeHtml(String(acceptedCount))}</div>
+              <div class="metric-support">将进入 Prep</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">待确认</div>
+              <div class="metric">${escapeHtml(String(pendingCount))}</div>
+              <div class="metric-support">需人工审核</div>
+            </div>
+          </div>
+          ${
+            !resumeVm.exists
+              ? `<div class="notice warning">你还没有上传 Base Resume。请先前往个人画像上传 PDF 或 DOCX，再生成岗位定制内容。<a class="text-link" href="#/profile">前往上传</a></div>`
+              : `<div class="card workspace-side-note"><div class="eyebrow">Base Resume</div><h4>${escapeHtml(resumeVm.fileName)}</h4><p class="muted">${escapeHtml(resumeVm.statusLabel)} · ${escapeHtml(resumeVm.extractionMethodLabel)} · 质量 ${escapeHtml(resumeVm.parseQualityLabel)}</p></div>`
+          }
+        </div>
+      </section>
+
+      <section class="card workspace-trust-note">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">使用边界</div>
+            <h3>这一步为什么值得做</h3>
+          </div>
+        </div>
+        <div class="info-grid">
+          <div class="panel">
+            <strong>左侧是你的 Base Resume</strong>
+            <div class="muted">它属于全局资产，只提供素材参考，不会因为当前岗位被直接改写。</div>
+          </div>
+          <div class="panel">
+            <strong>右侧是当前岗位专属版本</strong>
+            <div class="muted">这里的摘要、经历重排和改写建议，只服务这一个岗位，不会影响其他岗位版本。</div>
+          </div>
+          <div class="panel">
+            <strong>只有你接受的内容才会进入申请准备</strong>
+            <div class="muted">待确认或已拒绝的内容不会进入 Prep，系统会严格按你的确认结果往下游生成。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">工作区控制</div>
+            <h3>定制版本与 AI refine</h3>
+          </div>
+        </div>
+        <form id="tailoring-refine-form" class="stack">
+          <div class="split">
+            <label>工作区名称
+              <input name="workspaceName" value="${escapeHtml(workspaceName)}" maxlength="120" />
+            </label>
+            <div class="panel">
+              <strong>当前规则</strong>
+              <div class="muted">Base Resume 是全局资产；这里维护当前岗位的定制版本。后续 Prep 只会使用你已接受的改写内容。</div>
+            </div>
+          </div>
+          <label>补充 refine 指令
+            <textarea name="refinePrompt" placeholder="例如：更强调 AI PM 经验；语气更简洁；把增长案例前置；参考这个岗位更重视跨团队协作。">${escapeHtml(workspace?.lastRefinePrompt || "")}</textarea>
+          </label>
+          <div class="toolbar">
+            <button class="button primary" type="submit" id="workspace-refine-btn">${tailoringOutput ? "基于当前岗位重新定制" : "生成岗位定制简历"}</button>
+            <a class="button" href="#/jobs/${job.id}">返回岗位详情</a>
+            <a class="button" href="#/prep/${job.id}">进入申请准备</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="tailoring-workspace-main">
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">左栏</div>
+              <h3>Base Resume 结构化内容</h3>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="panel">
+              <strong>摘要</strong>
+              <div class="muted">${escapeHtml(localizeDisplayContent(baseResume.summary || resumeVm.summary || "暂无 Base Resume 摘要。", "resume"))}</div>
+            </div>
+            <div class="workspace-column-block">
+              <strong>经历</strong>
+              <ul class="list list-tight">${(baseResume.experience || []).slice(0, 8).map((item) => `<li>${escapeHtml(localizeDisplayContent(item, "resume"))}</li>`).join("") || "<li>暂无结构化经历。</li>"}</ul>
+            </div>
+            <div class="workspace-column-block">
+              <strong>项目</strong>
+              <ul class="list list-tight">${(baseResume.projects || []).slice(0, 5).map((item) => `<li>${escapeHtml(localizeDisplayContent(item, "resume"))}</li>`).join("") || "<li>暂无结构化项目。</li>"}</ul>
+            </div>
+            <div class="workspace-column-block">
+              <strong>技能与教育</strong>
+              <div class="muted">技能：${escapeHtml((baseResume.skills || []).slice(0, 10).join(" / ") || "暂无")}</div>
+              <div class="muted">教育：${escapeHtml((baseResume.education || []).slice(0, 3).join(" / ") || "暂无")}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">右栏</div>
+              <h3>Tailored Resume 内容</h3>
+            </div>
+          </div>
+          ${
+            tailoringOutput
+              ? `
+                <div class="stack">
+                  <div class="panel">
+                    <strong>定制摘要</strong>
+                    <div class="muted">${escapeHtml(localizeDisplayContent(tailoringOutput.tailoredSummary || "暂无定制摘要。", "resume"))}</div>
+                  </div>
+                  <div class="panel">
+                    <strong>Why Me</strong>
+                    <div class="muted">${escapeHtml(localizeDisplayContent(tailoringOutput.whyMe || "暂无岗位适配叙事。", "fit"))}</div>
+                  </div>
+                  <div class="workspace-column-block">
+                    <strong>定制后经历表达</strong>
+                    <ul class="list list-tight">${(tailoringOutput.tailoredResumePreview?.experienceBullets || []).slice(0, 6).map((item) => `<li>${escapeHtml(localizeDisplayContent(item, "resume"))}</li>`).join("") || "<li>还没有生成定制后的经历内容。</li>"}</ul>
+                  </div>
+                  <div class="workspace-column-block">
+                    <strong>目标关键词</strong>
+                    <div class="muted">${escapeHtml((tailoringOutput.targetingBrief?.targetKeywords || []).join(" / ") || "暂无关键词")}</div>
+                  </div>
+                </div>
+              `
+              : `<div class="empty">当前还没有该岗位的定制结果。你可以先填写补充要求，然后生成第一版岗位定制简历。</div>`
+          }
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">差异与审核</div>
+            <h3>Original vs Tailored</h3>
+          </div>
+          <div class="muted">AI 改了什么、为什么改、你确认了什么，都在这里完成。</div>
+        </div>
+        ${
+          !tailoringOutput
+            ? `<div class="empty">先生成岗位定制简历，这里才会出现逐条 diff 与人工确认。</div>`
+            : `
+              <form id="tailoring-workspace-save-form" class="stack">
+                <input type="hidden" name="workspaceName" value="${escapeHtml(workspaceName)}" />
+                <div class="workspace-review-summary">
+                  <span class="status offer">已接受 ${escapeHtml(String(acceptedCount))}</span>
+                  <span class="status archived">已拒绝 ${escapeHtml(String(rejectedCount))}</span>
+                  <span class="status to_prepare">待确认 ${escapeHtml(String(pendingCount))}</span>
+                </div>
+                <div class="stack tailoring-diff-stack">
+                  ${bulletVms.length
+                    ? bulletVms
+                        .map(
+                          (item, index) => `
+                            <div class="panel tailoring-review-card workspace-review-card">
+                              <div class="tailoring-review-head">
+                                <strong>改写建议 ${index + 1}</strong>
+                                <span class="status ${item.status === "accepted" ? "offer" : item.status === "rejected" ? "archived" : "to_prepare"}">${escapeHtml(humanizeTailoringDecisionStatus(item.status))}</span>
+                              </div>
+                              <div class="tailoring-diff-grid">
+                                <div class="tailoring-diff-side">
+                                  <div class="eyebrow">原始表达</div>
+                                  <div class="muted">${escapeHtml(localizeDisplayContent(item.before || "暂无原始表达。", "resume"))}</div>
+                                </div>
+                                <div class="tailoring-diff-side">
+                                  <div class="eyebrow">AI 定制表达</div>
+                                  <textarea name="bullet_after_${index}">${escapeHtml(item.suggestion || "暂无建议。")}</textarea>
+                                </div>
+                              </div>
+                              <div class="workspace-review-meta">
+                                <div class="muted">对应 JD：${escapeHtml(localizeDisplayContent(item.jdRequirement || "暂无对应要求。", "fit"))}</div>
+                                <div class="muted">原因：${escapeHtml(localizeDisplayContent(item.reason || "暂无改写原因。", "fit"))}</div>
+                              </div>
+                              <div class="split">
+                                <label>确认状态
+                                  <select name="bullet_status_${index}">
+                                    <option value="pending" ${item.status === "pending" ? "selected" : ""}>待确认</option>
+                                    <option value="accepted" ${item.status === "accepted" ? "selected" : ""}>接受</option>
+                                    <option value="rejected" ${item.status === "rejected" ? "selected" : ""}>拒绝</option>
+                                  </select>
+                                </label>
+                                <label>原始内容（只读参考）
+                                  <input name="bullet_before_${index}" value="${escapeHtml(item.before || "")}" readonly />
+                                </label>
+                              </div>
+                              <input type="hidden" name="bullet_id_${index}" value="${escapeHtml(item.bulletId)}" />
+                              <input type="hidden" name="bullet_reason_${index}" value="${escapeHtml(item.reason || "")}" />
+                              <input type="hidden" name="bullet_requirement_${index}" value="${escapeHtml(item.jdRequirement || "")}" />
+                            </div>
+                          `
+                        )
+                        .join("")
+                    : `<div class="empty">当前没有逐条改写建议。</div>`}
+                </div>
+                <div class="toolbar">
+                  <button class="button primary" type="submit" id="workspace-save-btn">保存人工确认结果</button>
+                  <a class="button" href="#/prep/${job.id}">用已接受内容进入 Prep</a>
+                </div>
+              </form>
+            `
+        }
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Explainability</div>
+            <h3>为什么这样改</h3>
+          </div>
+        </div>
+        ${
+          explainability.length
+            ? `<div class="stack">${explainability
+                .map(
+                  (item) => `
+                    <div class="panel">
+                      <strong>${escapeHtml(item.title || "改写理由")}</strong>
+                      <div class="muted">改动前：${escapeHtml(localizeDisplayContent(item.before || "暂无", "resume"))}</div>
+                      <div class="muted">改动后：${escapeHtml(localizeDisplayContent(item.after || "暂无", "resume"))}</div>
+                      <div class="muted">对应要求：${escapeHtml(localizeDisplayContent(item.jdRequirement || "暂无", "fit"))}</div>
+                      <div class="muted">理由：${escapeHtml(localizeDisplayContent(item.reason || "暂无", "fit"))}</div>
+                    </div>
+                  `
+                )
+                .join("")}</div>`
+            : `<div class="empty">当前还没有可展示的定制解释。生成或保存一次岗位定制结果后，这里会显示清晰的 JD → Resume 映射。</div>`
+        }
+      </section>
+
+      <details class="activity-disclosure">
+        <summary>查看工作区活动记录</summary>
+        <div class="card activity-card">
+          ${renderTimeline((workspaceActivity || []).map((log) => ({ ...createAuditEventViewModel(log), ...log })))}
+        </div>
+      </details>
+    </div>
+  `;
+
+  const refineForm = document.getElementById("tailoring-refine-form");
+  refineForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = document.getElementById("workspace-refine-btn");
+    try {
+      setButtonPending(submitButton, true, tailoringOutput ? "重新定制中..." : "生成中...");
+      const formData = new FormData(event.target);
+      await api(`/api/jobs/${job.id}/tailoring-workspace/refine`, {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceName: String(formData.get("workspaceName") || ""),
+          refinePrompt: String(formData.get("refinePrompt") || "")
+        })
+      });
+      renderTailoringWorkspace(job.id, tailoringOutput ? "岗位定制版本已更新。" : "第一版岗位定制简历已生成。");
+    } catch (error) {
+      setButtonPending(submitButton, false);
+      renderTailoringWorkspace(job.id, "", error.message);
+    }
+  });
+
+  const saveForm = document.getElementById("tailoring-workspace-save-form");
+  saveForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = document.getElementById("workspace-save-btn");
+    try {
+      setButtonPending(submitButton, true, "保存中...");
+      const formData = new FormData(event.target);
+      const rewrittenBullets = bulletVms.map((item, index) => ({
+        bulletId: String(formData.get(`bullet_id_${index}`) || item.bulletId),
+        before: String(formData.get(`bullet_before_${index}`) || item.before || ""),
+        suggestion: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        after: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        rewritten: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        status: String(formData.get(`bullet_status_${index}`) || item.status || "pending"),
+        reason: String(formData.get(`bullet_reason_${index}`) || item.reason || ""),
+        jdRequirement: String(formData.get(`bullet_requirement_${index}`) || item.jdRequirement || "")
+      }));
+      await api(`/api/jobs/${job.id}/tailoring-workspace/save`, {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceName: String(formData.get("workspaceName") || workspaceName),
+          rewrittenBullets,
+          tailoredSummary: tailoringOutput?.tailoredSummary || "",
+          whyMe: tailoringOutput?.whyMe || "",
+          refinePrompt: workspace?.lastRefinePrompt || ""
+        })
+      });
+      renderTailoringWorkspace(job.id, "岗位定制工作区已保存。");
+    } catch (error) {
+      setButtonPending(submitButton, false);
+      renderTailoringWorkspace(job.id, "", error.message);
+    }
+  });
+}
+
 async function renderPrep(jobId, message = "", errorMessage = "") {
   setActiveNav("#/prep");
   title.textContent = "申请准备";
@@ -2414,11 +3103,33 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
     : Array.isArray(applicationPrep?.tailoringExplainability)
       ? applicationPrep.tailoringExplainability
       : [];
+  const acceptedTailoringBullets = getTailoringAcceptedBullets(tailoringOutput);
+  if (!applicationPrep && acceptedTailoringBullets.length) {
+    draft.tailoredResumeBullets = acceptedTailoringBullets.map((item) => item.after || item.rewritten || "").join("\n");
+  }
   const tailoredPreview = tailoringOutput?.tailoredResumePreview || applicationPrep?.tailoredResumePreview || null;
+  const contentWithSources = Array.isArray(applicationPrep?.contentWithSources) ? applicationPrep.contentWithSources : [];
   const prepRiskNote =
     job.strategyDecision === "cautious_proceed"
       ? `这条岗位带有谨慎推进标记，建议优先处理 ${(fitAssessment?.riskFlags || []).slice(0, 2).join(" / ") || "关键风险项"}.`
       : "";
+  const sourceUsageSummary = contentWithSources.reduce(
+    (acc, item) => {
+      const title = String(item.title || "");
+      if (/摘要|summary/i.test(title)) acc.summary += 1;
+      else if (/问答|qa|q&a/i.test(title)) acc.qa += 1;
+      else if (/自我介绍|intro/i.test(title)) acc.intro += 1;
+      else acc.other += 1;
+      return acc;
+    },
+    { summary: 0, qa: 0, intro: 0, other: 0 }
+  );
+  const prepSourceHeadline = acceptedTailoringBullets.length
+    ? `本申请材料基于你已确认的 ${acceptedTailoringBullets.length} 条经历生成。`
+    : "当前还没有已确认的简历改写内容，因此这份申请材料主要依赖手动内容或原始简历信息。";
+  const prepSourceDetail = acceptedTailoringBullets.length
+    ? `其中 ${sourceUsageSummary.summary} 条用于摘要，${sourceUsageSummary.qa} 条用于问答${sourceUsageSummary.intro ? `，${sourceUsageSummary.intro} 条用于自我介绍` : ""}${prepVm.unusedBullets.length ? `，另有 ${prepVm.unusedBullets.length} 条未被使用` : ""}，未确认内容未被使用。`
+    : "请先在岗位定制工作区接受至少一条改写建议，再生成更可信的申请材料。";
 
   app.innerHTML = `
     ${message ? renderNotice("success", message) : ""}
@@ -2460,6 +3171,29 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
         </div>
       </section>
 
+      <section class="card prep-source-summary">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">来源确认</div>
+            <h3>当前申请材料如何使用你确认的内容</h3>
+          </div>
+        </div>
+        <div class="panel">
+          <strong>${escapeHtml(prepSourceHeadline)}</strong>
+          <div class="muted">${escapeHtml(prepSourceDetail)}</div>
+        </div>
+        ${
+          acceptedTailoringBullets.length
+            ? `<div class="muted">已确认内容：${escapeHtml(
+                acceptedTailoringBullets
+                  .slice(0, 3)
+                  .map((item) => localizeDisplayContent(item.after || item.rewritten || item.suggestion || "", "resume"))
+                  .join(" / ") || "暂无"
+              )}</div>`
+            : `<div class="notice warning">请先前往岗位定制工作区确认改写建议，再回来生成更可信的申请材料。</div>`
+        }
+      </section>
+
       <form id="prep-form" class="stack">
         <section class="card">
           <div class="section-head">
@@ -2495,7 +3229,7 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
             <a class="button" href="#/profile">${resumeVm.exists ? "更新原始简历" : "上传原始简历"}</a>
             ${
               !applicationPrep && resumeVm.exists
-                ? `<button class="button primary" type="button" id="generate-tailoring-btn">生成岗位定制申请包</button>`
+                ? `<button class="button primary" type="button" id="generate-tailoring-btn">${tailoringOutput ? "生成申请准备包" : "生成岗位定制简历"}</button>`
                 : ""
             }
           </div>
@@ -2505,13 +3239,31 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
           <div class="section-head">
             <div>
               <div class="eyebrow">简历定制</div>
-              <h3>简历定制</h3>
+              <h3>确认内容与引用关系</h3>
             </div>
           </div>
           <div class="stack">
             <label>目标关键词
               <input name="targetKeywords" value="${escapeHtml(draft.targetKeywords.join(", "))}" />
             </label>
+            ${
+              tailoringOutput
+                ? acceptedTailoringBullets.length
+                  ? `<div class="notice success">当前有 ${escapeHtml(String(acceptedTailoringBullets.length))} 条已接受的简历改写，Prep Agent 只会使用这些内容。</div>
+                     <div class="panel">
+                       <strong>当前已进入 Prep 的确认内容</strong>
+                       <ul class="list list-tight">${acceptedTailoringBullets
+                         .map((item) => `<li>${escapeHtml(localizeDisplayContent(item.after || item.rewritten || item.suggestion || "", "resume"))}</li>`)
+                         .join("")}</ul>
+                       ${
+                         prepVm.unusedBullets.length
+                           ? `<div class="muted" style="margin-top:10px;">未进入 Prep 的内容：${escapeHtml(String(prepVm.unusedBullets.length))} 条（包含待确认或已拒绝项）</div>`
+                           : ""
+                       }
+                     </div>`
+                  : `<div class="notice warning">你还没有接受任何一条简历改写建议。当前申请准备不会自动带入 AI 改写内容，请先回到岗位详情逐条确认。</div>`
+                : ""
+            }
             <label>定制简历要点
               <textarea name="tailoredResumeBullets">${escapeHtml(draft.tailoredResumeBullets)}</textarea>
             </label>
@@ -2532,6 +3284,17 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
               `
               : ""
           }
+          ${
+            tailoringOutput?.diffView
+              ? `
+                <div class="panel">
+                  <strong>与原始简历的差异</strong>
+                  <div class="muted">改写条数：${escapeHtml(String(tailoringOutput.diffView.changedBulletCount || 0))}</div>
+                  <div class="muted">重排顺序：${escapeHtml((tailoringOutput.selectionPlan?.orderingPlan || tailoringOutput.diffView.reorderedSections || []).join(" -> ") || "未调整")}</div>
+                </div>
+              `
+              : ""
+          }
         </section>
 
         <section class="card">
@@ -2541,6 +3304,33 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
           <h3>摘要、为什么适合我、自我介绍与问答草稿</h3>
             </div>
           </div>
+          ${
+            contentWithSources.length
+              ? `
+                <div class="panel">
+                  <strong>当前申请材料基于你确认的内容生成</strong>
+                  <div class="stack" style="margin-top:12px;">
+                    ${contentWithSources
+                      .map(
+                        (item) => `
+                          <div class="panel prep-source-card">
+                            <div class="tailoring-review-head">
+                              <strong>${escapeHtml(item.title || "生成内容")}</strong>
+                              <span class="status offer">已绑定来源</span>
+                            </div>
+                            <div class="muted">${escapeHtml(localizeDisplayContent(String(item.text || "").slice(0, 180) || "暂无内容。", "prep"))}</div>
+                            <div class="muted">基于：${escapeHtml((item.sources || []).map((source) => source.label).join(" / ") || "已确认内容")}</div>
+                          </div>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                </div>
+              `
+              : tailoringOutput
+                ? `<div class="notice warning">当前还没有可解释的引用关系。通常这是因为你还没有接受任何简历改写建议，或尚未生成申请准备包。</div>`
+                : ""
+          }
           <div class="stack">
             <label>定制摘要
               <textarea name="tailoredSummary">${escapeHtml(draft.tailoredSummary)}</textarea>
@@ -2630,6 +3420,7 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
             <button class="button primary" type="submit">保存申请准备</button>
             <button class="button" type="button" id="mark-prep-ready">标记准备完成</button>
             ${applicationPrep ? `<button class="button" type="button" id="export-docx-btn">导出 DOCX</button>` : ""}
+            <a class="text-link" href="#/jobs/${job.id}/tailoring">返回岗位定制工作区</a>
             <a class="text-link" href="#/jobs/${job.id}">返回岗位详情</a>
           </div>
         </section>
@@ -2679,9 +3470,15 @@ async function renderPrep(jobId, message = "", errorMessage = "") {
   if (generateTailoringButton) {
     generateTailoringButton.addEventListener("click", async () => {
       try {
-        setButtonPending(generateTailoringButton, true, "生成中...");
-        await api(`/api/jobs/${job.id}/prepare`, { method: "POST" });
-        renderPrep(job.id, "岗位定制申请包已生成。");
+        if (tailoringOutput) {
+          setButtonPending(generateTailoringButton, true, "生成申请包中...");
+          await api(`/api/jobs/${job.id}/prepare`, { method: "POST" });
+          renderPrep(job.id, "岗位定制申请包已生成。");
+        } else {
+          setButtonPending(generateTailoringButton, true, "生成定制简历中...");
+          await api(`/api/jobs/${job.id}/tailor`, { method: "POST" });
+          renderPrep(job.id, "岗位定制简历已生成，可继续编辑并生成申请准备包。");
+        }
       } catch (error) {
         setButtonPending(generateTailoringButton, false);
         renderPrep(job.id, "", error.message);
@@ -2985,6 +3782,10 @@ async function route() {
     }
     if (parts[0] === "jobs" && parts[1] === "new") {
       await renderNewJob();
+      return;
+    }
+    if (parts[0] === "jobs" && parts[1] && parts[2] === "tailoring") {
+      await renderTailoringWorkspace(parts[1]);
       return;
     }
     if (parts[0] === "jobs" && parts[1]) {

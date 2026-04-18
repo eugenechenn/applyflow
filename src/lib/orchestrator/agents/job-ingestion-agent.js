@@ -35,7 +35,7 @@ function extractTitle(lines, fallback) {
     ]) ||
     lines.find((line) => /product manager|strategy|analyst|operations|growth|manager/i.test(line)) ||
     fallback ||
-    "Untitled Role"
+    "未命名岗位"
   );
 }
 
@@ -48,7 +48,7 @@ function extractCompany(lines, fallback) {
       /employer[:：]\s*(.+)/i
     ]) ||
     fallback ||
-    "Unknown Company"
+    "未知公司"
   );
 }
 
@@ -62,7 +62,7 @@ function extractLocation(lines, fallback) {
     ]) ||
     lines.find((line) => /shanghai|beijing|shenzhen|hangzhou|remote|hybrid/i.test(line)) ||
     fallback ||
-    "Unknown"
+    "未知"
   );
 }
 
@@ -110,16 +110,16 @@ function detectRiskFlags(jdRaw, title, location) {
   const flags = [];
 
   if (text.includes("director") || text.includes("head of")) {
-    flags.push("Role may be senior relative to many pivoting candidates.");
+    flags.push("岗位资深度可能高于当前多数转型候选人的定位。");
   }
   if (text.includes("onsite") || text.includes("relocation")) {
-    flags.push("Location or work mode may reduce flexibility.");
+    flags.push("办公地点或工作方式可能降低灵活性。");
   }
   if (text.includes("advertising") || text.includes("ad tech")) {
-    flags.push("Domain specialization may be narrow.");
+    flags.push("岗位所处领域可能较为垂直。");
   }
   if (String(jdRaw || "").length < 120) {
-    flags.push("JD detail is limited, so parsing confidence is lower.");
+    flags.push("岗位描述信息较少，因此解析把握度会偏低。");
   }
 
   return flags;
@@ -138,29 +138,29 @@ function runRuleBasedJobIngestionAgent(payload) {
   const riskFlags = detectRiskFlags(jdRaw, title, location);
   const summaryParts = [
     title,
-    company !== "Unknown Company" ? `at ${company}` : "",
-    responsibilities[0] || requirements[0] || "role details parsed from JD"
+    company !== "未知公司" ? `公司：${company}` : "",
+    responsibilities[0] || requirements[0] || "已从岗位描述中提取基础信息"
   ].filter(Boolean);
 
   return {
     id: createId("job"),
     source: payload.source || "manual",
-    sourceLabel: payload.sourcePlatform || payload.sourceLabel || "Manual",
+    sourceLabel: payload.sourcePlatform || payload.sourceLabel || "手动录入",
     url: payload.jobUrl || payload.url,
     company,
     title,
     location,
     jdRaw,
     jdStructured: {
-      summary: `${summaryParts.join(" - ")}.`,
+      summary: `${summaryParts.join("；")}。`,
       responsibilities:
         responsibilities.length > 0
           ? responsibilities
-          : ["Responsibilities were not clearly listed; manual review recommended."],
+          : ["岗位职责没有被清晰列出，建议人工补充确认。"],
       requirements:
         requirements.length > 0
           ? requirements
-          : ["Core requirements were not clearly listed; manual review recommended."],
+          : ["核心要求没有被清晰列出，建议人工补充确认。"],
       preferredQualifications,
       keywords,
       riskFlags

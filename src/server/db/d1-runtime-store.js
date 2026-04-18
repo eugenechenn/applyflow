@@ -1,17 +1,31 @@
 const { createId } = require("../../lib/utils/id");
 
 const WORKSPACE_TABLES = [
+  { key: "resumeDocuments", table: "resume_documents", idField: "id", timeField: "updated_at", extraFields: ["status"] },
   { key: "policyHistory", table: "policy_history", idField: "id", timeField: "created_at", extraFields: [] },
   { key: "policyProposals", table: "policy_proposals", idField: "id", timeField: "created_at", extraFields: ["status"] },
   { key: "policyAuditLogs", table: "policy_audit_logs", idField: "id", timeField: "timestamp", extraFields: [] },
   { key: "jobs", table: "jobs", idField: "id", timeField: "updated_at", extraFields: ["status", "priority"] },
   { key: "fitAssessments", table: "fit_assessments", idField: "id", timeField: "updated_at", extraFields: ["job_id"] },
   { key: "applicationPreps", table: "application_preps", idField: "id", timeField: "updated_at", extraFields: ["job_id"] },
+  { key: "tailoringOutputs", table: "tailoring_outputs", idField: "id", timeField: "updated_at", extraFields: ["job_id"] },
   { key: "applicationTasks", table: "application_tasks", idField: "id", timeField: "updated_at", extraFields: ["job_id", "status"] },
   { key: "interviewReflections", table: "interview_reflections", idField: "id", timeField: "updated_at", extraFields: ["job_id"] },
   { key: "activityLogs", table: "activity_logs", idField: "id", timeField: "timestamp", extraFields: ["job_id"] },
   { key: "badCases", table: "bad_cases", idField: "id", timeField: "updated_at", extraFields: ["job_id"] }
 ];
+
+function toCamelCase(fieldName = "") {
+  return String(fieldName).replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+function getExtraFieldValue(item, fieldName) {
+  if (!item || !fieldName) return null;
+  if (item[fieldName] !== undefined) return item[fieldName];
+  const camelCaseField = toCamelCase(fieldName);
+  if (item[camelCaseField] !== undefined) return item[camelCaseField];
+  return null;
+}
 
 function parseCookies(request) {
   const header = request.headers.get("cookie") || "";
@@ -59,6 +73,7 @@ async function loadWorkspaceState(db, userId) {
   if (!userId) {
     return {
       profile: null,
+      resumeDocuments: [],
       strategyProfile: null,
       globalStrategyPolicy: null,
       policyHistory: [],
@@ -67,6 +82,7 @@ async function loadWorkspaceState(db, userId) {
       jobs: [],
       fitAssessments: [],
       applicationPreps: [],
+      tailoringOutputs: [],
       applicationTasks: [],
       interviewReflections: [],
       activityLogs: [],
@@ -77,6 +93,11 @@ async function loadWorkspaceState(db, userId) {
   const profile = await selectJsonRow(db, "SELECT json_text FROM profiles WHERE user_id = ?", [userId]);
   const strategyProfile = await selectJsonRow(db, "SELECT json_text FROM strategy_profiles WHERE user_id = ?", [userId]);
   const globalStrategyPolicy = await selectJsonRow(db, "SELECT json_text FROM global_policies WHERE user_id = ?", [userId]);
+  const resumeDocuments = await selectJsonRows(
+    db,
+    "SELECT json_text FROM resume_documents WHERE user_id = ? ORDER BY updated_at DESC",
+    [userId]
+  );
 
   const policyHistory = await selectJsonRows(
     db,
@@ -104,6 +125,11 @@ async function loadWorkspaceState(db, userId) {
     "SELECT json_text FROM application_preps WHERE user_id = ? ORDER BY updated_at DESC",
     [userId]
   );
+  const tailoringOutputs = await selectJsonRows(
+    db,
+    "SELECT json_text FROM tailoring_outputs WHERE user_id = ? ORDER BY updated_at DESC",
+    [userId]
+  );
   const applicationTasks = await selectJsonRows(
     db,
     "SELECT json_text FROM application_tasks WHERE user_id = ? ORDER BY updated_at DESC",
@@ -123,6 +149,7 @@ async function loadWorkspaceState(db, userId) {
 
   return {
     profile,
+    resumeDocuments,
     strategyProfile,
     globalStrategyPolicy,
     policyHistory,
@@ -131,6 +158,7 @@ async function loadWorkspaceState(db, userId) {
     jobs,
     fitAssessments,
     applicationPreps,
+    tailoringOutputs,
     applicationTasks,
     interviewReflections,
     activityLogs,
@@ -176,7 +204,7 @@ async function persistWorkspaceState(db, userId, workspaceState) {
       const values = [
         item[idField] || createId(table),
         userId,
-        ...extraFields.map((field) => item[field] || null),
+        ...extraFields.map((field) => getExtraFieldValue(item, field)),
         item.updatedAt || item.timestamp || item.createdAt || new Date().toISOString(),
         JSON.stringify(item)
       ];
@@ -347,6 +375,27 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
       workspaceState.profile = { ...profile, userId: currentUserId };
       return workspaceState.profile;
     },
+    listResumeDocuments() {
+      return workspaceState.resumeDocuments;
+    },
+    getResumeDocument(resumeId) {
+      return workspaceState.resumeDocuments.find((item) => item.id === resumeId) || null;
+    },
+    getLatestResumeDocument() {
+      return workspaceState.resumeDocuments[0] || null;
+    },
+    saveResumeDocument(resumeDocument) {
+      markDirty();
+      const next = { ...resumeDocument, userId: currentUserId };
+      const index = workspaceState.resumeDocuments.findIndex((item) => item.id === next.id);
+      if (index >= 0) {
+        workspaceState.resumeDocuments[index] = next;
+      } else {
+        workspaceState.resumeDocuments.unshift(next);
+      }
+      workspaceState.resumeDocuments.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      return next;
+    },
     getStrategyProfile() {
       return workspaceState.strategyProfile;
     },
@@ -415,6 +464,23 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     saveApplicationPrep(prep) {
       markDirty();
       return prepStore.save({ ...prep, userId: currentUserId });
+    },
+    listTailoringOutputs() {
+      return workspaceState.tailoringOutputs;
+    },
+    getTailoringOutputByJobId(jobId) {
+      return workspaceState.tailoringOutputs.find((item) => item.jobId === jobId) || null;
+    },
+    saveTailoringOutput(output) {
+      markDirty();
+      const existingIndex = workspaceState.tailoringOutputs.findIndex((item) => item.id === output.id || item.jobId === output.jobId);
+      const next = { ...output, userId: currentUserId };
+      if (existingIndex >= 0) {
+        workspaceState.tailoringOutputs[existingIndex] = next;
+        return next;
+      }
+      workspaceState.tailoringOutputs.unshift(next);
+      return next;
     },
     listTasksByJobId(jobId) {
       return workspaceState.applicationTasks.filter((task) => task.jobId === jobId);

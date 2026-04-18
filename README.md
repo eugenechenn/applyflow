@@ -1,298 +1,167 @@
-# ApplyFlow
+﻿# ApplyFlow
 
-ApplyFlow 是一个半自动求职执行 Agent，帮助求职者完成从岗位输入、匹配评估、申请材料准备、用户确认投递、状态跟踪，到面试复盘和策略反馈回流的一整套闭环。
+更新时间：2026-04-18
 
-## 为什么做这个项目
+ApplyFlow 是一个面向真实求职执行闭环的半自动求职工作台。它不是“自动海投机器人”，也不是单点简历润色工具，而是把岗位导入、匹配评估、申请准备、状态推进、反馈回流放进一个可追踪、可解释、可持续迭代的系统里。
 
-很多求职工具停留在“信息收集”或“给建议”，但真实求职的痛点在于执行链路断裂：
-- 岗位太多，难快速判断值不值得投
-- 每次都要重复改简历、准备自我介绍和问答
-- 投递状态分散，跟进容易漏
-- 面试经验无法沉淀到下一轮策略
+## 1. 项目定位
 
-ApplyFlow 的目标不是替用户自动投递，而是把 AI 放进求职执行流程里，帮助用户更快、更稳地推进每一步。
+ApplyFlow 当前最准确的定位是：
 
-## 为什么它是 Agent，而不是普通 AI 工具
+- 一个可部署、可多用户、具备基础 Agent 编排能力的求职执行系统
+- 一个以人机协作为核心的求职工作台，而不是全自动外投工具
+- 一个兼顾产品闭环与工程能力的 AI 岗位作品集项目
 
-ApplyFlow 不是单次问答式聊天工具，而是一个围绕共享状态和状态机运行的工作流系统：
-- 有 `Orchestrator` 统一编排多个功能 Agent
-- 有共享对象模型：`Job`、`UserProfile`、`FitAssessment`、`ApplicationPrep`、`InterviewReflection`
-- 有岗位生命周期状态机与非法流转防护
-- 有 `ActivityLog` 保留关键动作和系统输出
-- 有明确人机边界：所有高风险对外动作都由用户确认
+当前明确不做：
 
-## 核心闭环
+- 全自动海投
+- 重型浏览器自动投递
+- 复杂 RAG 平台
+- 企业级权限系统
+- 重型分布式多 Agent 框架
 
-`岗位输入 -> 匹配评估 -> 申请材料准备 -> 用户确认投递 -> 状态跟踪 -> 面试复盘 -> 反馈回流`
+## 2. 当前架构
 
-## 系统架构
+### 前端 / 主应用
 
-- `Workflow Controller / Orchestrator`
-- `Job Ingestion Agent`
-- `Fit Evaluation Agent`
-- `Application Prep Agent`
-- `Pipeline Manager Agent`
-- `Interview Reflection Agent`
+- 前端与 API 主系统运行在 Cloudflare Worker / 静态页面链路上
+- 页面包含：Dashboard、Jobs、Job Detail、Prep、Profile、Governance、Interviews
+- 前端通过轻量 view-model 层消费 API，不直接耦合后端原始字段
 
-当前版本使用 mock/stub Agent 返回结构化结果，后续可替换为真实 LLM 调用。
+### 数据层
 
-## 页面结构
+- 数据库：Cloudflare D1
+- 持久化对象包括：用户画像、岗位、评估结果、申请准备、策略、提案、审计日志、简历解析结果等
+- Worker 端通过 repository / facade 层访问数据，不直接散落 SQL
 
-- `Dashboard`
-- `Jobs`
-- `Prep`
-- `Interviews`
-- `Profile`
+### 简历解析服务
 
-页面以 `Job` 为核心对象串联，支持从列表进入详情，再进入准备、状态更新和复盘。
+- 独立运行在 Railway 的 `resume-parser` Node 服务
+- 负责 PDF / DOCX 简历文本提取、清洗、结构化与质量评估
+- Cloudflare Worker 通过外部解析服务调用，不在 Worker 内做重型文档解析
 
-## 状态机说明
+### LLM 层
 
-岗位状态：
-- `inbox`
-- `evaluating`
-- `to_prepare`
-- `ready_to_apply`
-- `applied`
-- `follow_up`
-- `interviewing`
-- `rejected`
-- `offer`
-- `archived`
+- 已支持 OpenAI-compatible provider 配置
+- 统一环境变量：`LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`
+- Job Ingestion / Fit Evaluation / Prep Generation 均支持 LLM 优先 + fallback
 
-非法流转会在 API 和 Orchestrator 层被拦截。
+## 3. 当前产品能力
 
-## 当前边界
+### 已具备的主流程能力
 
-ApplyFlow 当前明确坚持：
-- 半自动，不自动投递
-- 不做复杂浏览器自动化
-- 不做重型 RAG
-- 不编造用户经历
-- 所有外部发送和正式提交动作都由用户确认
+- 用户画像编辑与保存
+- New Job / URL 导入岗位
+- Job Ingestion
+- Fit Evaluation
+- Prep 生成与编辑
+- Job 状态推进
+- Dashboard / Jobs / Job Detail 联动
+- Governance / Policy / Audit 展示
 
-## 职位 URL Draft Import
+### 已具备的简历链路能力
 
-ApplyFlow 现在支持在 `New Job` 页面输入职位 URL，先导入一个可编辑的岗位草稿，再确认创建：
+- 用户可上传 PDF / DOCX 原始简历
+- 简历解析结果写入数据库并可回显
+- 页面优先展示结构化结果与摘要，而不是直接展示原始文本
+- 后续申请准备会优先使用简历结构化结果
 
-- 开发环境下优先使用 Playwright 真浏览器抓取
-- 可单独启动 `jd-fetcher` Node 服务，也可在本地 Node runtime 中直接调用 Playwright 模块
-- 后端优先尝试读取页面中的 `JobPosting` JSON-LD
-- 如果没有结构化 schema，则退回到通用 HTML 提取
-- 如果网页抓取失败，仍会保留 URL 和手填字段，让用户继续人工补全
+## 4. 最近已解决的问题
 
-这条能力借鉴了“先抓职位，再进入求职系统”的思路，但保持了当前 Cloudflare Worker 友好的架构，不把 Playwright 或重浏览器依赖直接塞进主运行时。
+### 已验证通过
 
-本地可选运行方式：
+- PDF 上传链路已打通：前端 -> Cloudflare Worker -> Railway resume-parser -> D1 -> 页面回显
+- 普通文本型 PDF 已可成功解析，并返回真实文本
+- 对文本型 PDF，解析方式可返回 `pdf-parse`，状态可达 `success`
+
+### 仓库中已完成，待线上重新部署验证
+
+- 对异常 / Canva-like / 非标准 PDF，已增加多阶段解析 pipeline：
+  - Stage A：`pdf-parse`
+  - Stage B：`pdfjs-dist`
+  - Stage C：低质量回退与清洗
+- 已增加清洗逻辑，避免 `%PDF-1.4`、`obj`、`xref`、`trailer` 等 PDF 结构噪音直接进入前端
+- 已在 Worker 存取层增加兜底净化：即使解析结果低质量，前端也不应再直接看到 PDF 垃圾原文
+- 已把前端简历展示逻辑收紧为：优先结构化结果，其次安全摘要，低质量回退只显示用户提示
+
+### 为什么 Cloudflare 与 Railway 需要分别部署
+
+- Railway：负责 `resume-parser`，承载 Node 文档解析能力
+- Cloudflare：负责主应用、前端、API、D1 读写与页面展示
+- 因此简历相关线上修复往往需要两边分别部署：
+  - Railway 更新解析能力
+  - Cloudflare 更新展示逻辑与持久化净化逻辑
+
+## 5. 当前系统边界
+
+### 当前可用边界
+
+- 文本型 PDF：可用
+- DOCX：通常更稳定，仍是推荐上传格式
+- 非标准 / Canva-like PDF：已有多阶段解析与清洗，但鲁棒性仍需继续提升
+
+### 当前明确未完成
+
+- 扫描型 / 图片型 PDF：仍可能失败
+- 当前没有 OCR
+- 当前没有“上传后自动二次识别图片型 PDF”的能力
+
+## 6. 当前项目状态判断
+
+当前项目已经不再是纯 demo 页面，而是：
+
+- 一个可继续迭代的产品原型
+- 一个具备部署结构、真实外部服务、持久化与多用户边界的候选产品
+- 一个在 AI 岗位面试中可讲清楚系统设计、部署拆分、失败兜底和人机边界的工程项目
+
+但它还不是生产级 SaaS，主要差距在：
+
+- 简历解析鲁棒性还未完全覆盖非标准 PDF
+- 申请准备输出质量仍需更强的 job-specific 优化
+- 多阶段 pipeline 还不是异步队列化执行系统
+- 认证、监控、可观测性仍是最小版本
+
+## 7. 本地运行与部署
+
+### 本地开发
 
 ```bash
-npm run jd-fetcher:start
+npm install
+npm run dev
 ```
 
-环境变量：
+### Railway resume-parser
 
-- `JD_FETCHER_URL`：若设置，`/api/jobs/import-url` 会优先调用独立抓取服务
-- `JD_FETCHER_PORT`：独立抓取服务端口，默认 `4123`
-- `JD_FETCHER_TIMEOUT_MS`：Playwright 页面抓取超时，默认 `20000`
-
-## 多阶段 Agent Pipeline
-
-当前 ApplyFlow 已把主链路进一步落成可感知的多阶段 pipeline，而不是只靠若干隐藏函数串起来：
-
-- `URL Import Agent`
-- `Job Ingestion Agent`
-- `Fit Evaluation Agent`
-- `Application Prep Agent`
-- `Pipeline Manager Agent`
-
-这些阶段现在会体现在：
-
-- orchestrator 中的显式 stage runner
-- Job Detail 的 pipeline stage 区块
-- Activity / decision trace 中的分阶段记录
-- URL-first intake 的 `pipelinePreview`
-
-这使 ApplyFlow 更接近一个真实 agent system，也更适合在面试里讲清楚“输入、阶段、输出、fallback、状态推进”的工程结构。
-
-## 运行方式
-
-当前仓库是一个零依赖的 mock MVP 骨架，直接运行：
+Start Command:
 
 ```bash
-npm start
+npm run start:resume-parser
 ```
 
-启动后访问：
+### Cloudflare
 
-```text
-http://localhost:3000
+```bash
+npx wrangler deploy --config wrangler.jsonc
 ```
 
-## Demo 场景
-
-仓库内置了 3 条适合展示的 demo case：
-- 1 条建议投递的 AI Product Manager 岗位
-- 1 条谨慎投递的 Product Strategy 岗位
-- 1 条不建议投递的 Advertising Operations 岗位
-
-并配套：
-- 示例用户画像
-- FitAssessment
-- ApplicationPrep
-- InterviewReflection
-- ActivityLog
-
-## 文档
-
-- 产品设计：`applyflow-project-notes/ApplyFlow_正式设计_v1_2026-04-14.md`
-- 技术设计：`docs/ApplyFlow_Technical_Design_v1.md`
-- 迁移说明：`docs/ApplyFlow_Refactor_Migration_Note.md`
-
-## 后续 Roadmap
+## 8. 当前最重要的下一步
 
 ### P0
 
-- 完善前端页面交互
-- 用真实后端持久化替代内存 store
-- 接入真实 LLM 评估与生成
-- 增强 Job Detail 和 Prep 的编辑能力
+- 完成线上简历链路的最终验收：
+  - 普通 PDF 成功解析
+  - Canva-like PDF 不再向前端暴露垃圾文本
+- 提升申请准备（Resume Tailoring / Explainability）的真实使用价值
 
 ### P1
 
-- 增加面试复盘回写画像
-- 增加 Dashboard 统计与待办逻辑
-- 引入多版本申请材料
-- 增加真实评估与 bad case logging
+- 强化岗位定制化简历优化
+- 强化申请准备包（自我介绍 / 问答 / why me / talking points）
+- 让 Prep 更接近真实求职材料工作区
 
 ### P2
 
-- 对接外部待办系统
-- 增加轻量提醒机制
-- 进一步增强演示与面试叙事材料
-## Multi-User Dev Login
-
-ApplyFlow now includes a minimal multi-user session boundary for local validation.
-
-- `alex@example.com` or `alex`: seeded demo workspace with the full sample pipeline
-- `taylor@example.com` or `taylor`: isolated second workspace for data-boundary testing
-
-Quick verification flow:
-
-1. Start the app with `npm start`
-2. Open `http://localhost:3000`
-3. Sign in as `alex@example.com`
-4. Review profile, jobs, governance, prep, and audit history
-5. Log out and sign in as `taylor@example.com`
-6. Confirm the second user cannot see Alex's data
-
-## SQLite Data Layer
-
-ApplyFlow now uses a SQLite-backed repository layer for runtime persistence instead of writing the full workspace back to `data/store.json` on every update.
-
-- Runtime database: `data/applyflow.sqlite`
-- Legacy import source: `data/store.json`
-- Migration behavior: on first boot, if the SQLite database is empty and `store.json` exists, ApplyFlow automatically imports the JSON data into SQLite
-- Repository boundary: API routes and orchestrator logic still go through `src/server/store.js`, which now delegates to the SQLite repository layer
-
-Useful commands:
-
-```bash
-npm start
-npm run migrate:json-store
-```
-
-Environment:
-
-- `APPLYFLOW_DB_FILE`: overrides the SQLite file name under `data/`
-
-## Cloudflare Deployment
-
-ApplyFlow now includes a real Cloudflare deployment path:
-
-- Worker entry: `cloudflare/worker-entry.js`
-- Static assets: `public/`
-- D1 schema: `cloudflare/d1/schema.sql`
-- D1 seed export: `cloudflare/d1/seed.sql`
-- Main config: `wrangler.jsonc`
-
-Recommended command flow:
-
-```bash
-wrangler login
-wrangler d1 create applyflow
-npm run cf:d1:execute:schema
-npm run export:d1-seed
-npm run cf:d1:execute:seed
-wrangler secret put LLM_API_KEY
-wrangler secret put SESSION_SECRET
-npm run cf:deploy
-```
-
-Helpful local commands:
-
-```bash
-npm run cf:dev
-npm run export:d1-seed
-```
-
-Secrets and config notes:
-
-- Public / non-secret config: runtime target, database provider, public origin
-- Secrets: `LLM_API_KEY`, `SESSION_SECRET`
-- Cookie hardening is controlled with `SESSION_COOKIE_SAMESITE` and `SESSION_COOKIE_SECURE`
-- Full deployment notes live in `cloudflare/README.md`
-
-## LLM Provider Configuration
-
-ApplyFlow no longer hardcodes OpenAI. The LLM layer now supports:
-
-- `LLM_PROVIDER=openai`
-- `LLM_PROVIDER=openai-compatible`
-
-Shared variables:
-
-- `LLM_PROVIDER`
-- `LLM_API_KEY`
-- `LLM_BASE_URL`
-- `LLM_MODEL`
-- `LLM_TIMEOUT_MS`
-
-OpenAI example:
-
-```bash
-LLM_PROVIDER=openai
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-```
-
-GLM example:
-
-```bash
-LLM_PROVIDER=openai-compatible
-LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
-LLM_MODEL=glm-4.5-air
-```
-
-All three core AI capabilities keep their existing fallback path:
-
-- Job Ingestion
-- Fit Evaluation
-- Prep Generation
-
-If the provider call fails, ApplyFlow logs the error, records the fallback, and continues with the rule-based path instead of breaking the UI.
-
-## 工程含金量下一步
-
-当前版本已经具备面向真实使用的工程骨架：
-
-- Worker + D1 + 多用户边界
-- repository / facade 数据隔离层
-- policy / governance / audit / override
-- LLM-first + fallback 的稳定输出链路
-- URL import abstraction，为未来 Playwright/Node importer 服务预留接口边界
-
-如果继续提升工程含金量，最值得做的 3 个方向是：
-
-1. 异步任务队列：把 ingestion / evaluation / prep 从同步请求中拆出来，适合 Cloudflare Queues 或独立 worker。
-2. 独立 importer service：把浏览器级抓取能力从 Worker 中剥离，专做职位 URL 导入和反爬处理。
-3. 更强 workflow engine：把当前 orchestrator 进一步升级为更清晰的任务状态、重试和回放系统。
+- OCR fallback
+- 异步队列 / retry / replay
+- 更强的 pipeline trace UI
+- 更完整的可观测性与生产级认证

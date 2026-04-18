@@ -73,67 +73,67 @@ function runRuleBasedFitEvaluationAgent({ job, profile, strategyProfile, globalP
 
   if (hasAnyKeyword(jobText, roleTargets)) {
     baseScore += 18;
-    whyApply.push("Job title and JD language overlap with target roles.");
+    whyApply.push("岗位名称和岗位描述与目标岗位方向高度重合。");
   }
 
   if (/product|pm|roadmap|workflow|agent|ai/.test(jobText)) {
     baseScore += 15;
-    whyApply.push("Role includes product or AI-workflow signals aligned with current direction.");
+    whyApply.push("岗位包含产品或 AI 工作流信号，和当前主方向一致。");
   }
 
   if (hasAnyKeyword(jobText, industryTargets)) {
     baseScore += 10;
-    whyApply.push("Industry context overlaps with preferred target industries.");
+    whyApply.push("行业背景与目标行业方向有明显交集。");
   }
 
   if (hasAnyKeyword(jobText, targetRolesPriority)) {
     policyAdjustment += 6;
-    whyApply.push("Global policy is actively prioritizing this role family.");
-    policyReasons.push("Boosted because this role family is part of the current global focus.");
+    whyApply.push("全局策略正在优先推进这一类岗位。");
+    policyReasons.push("这类岗位正处于当前全局聚焦方向，因此获得了策略加权。");
   }
 
   if (hasAnyKeyword(jobText, preferredIndustries)) {
     policyAdjustment += 5;
-    whyApply.push("Industry matches the current global policy focus.");
-    policyReasons.push("Boosted because similar industries are outperforming in the current pipeline.");
+    whyApply.push("岗位所在行业与当前策略聚焦行业一致。");
+    policyReasons.push("相似行业在当前求职流程中的表现更好，因此获得了策略加权。");
   }
 
   if (hasAnyKeyword(jobText, locationTargets)) {
     baseScore += 8;
-    whyApply.push("Location is within preferred target geography.");
+    whyApply.push("地点位于当前优先投递区域内。");
   } else if (locationTargets.length > 0) {
-    riskFlags.push("Location is outside the current preferred target list.");
+    riskFlags.push("岗位地点不在当前优先投递区域内。");
   }
 
   if (/director|head of|vp/.test(jobText)) {
     baseScore -= 18;
-    keyGaps.push("Seniority may be higher than current target positioning.");
+    keyGaps.push("岗位资深度可能高于当前定位。");
   }
 
   if (/advertising|ad tech|media sales/.test(jobText)) {
     baseScore -= 14;
-    keyGaps.push("Domain specialization appears far from current AI PM target path.");
+    keyGaps.push("领域专业方向与当前 AI 产品主路径距离较远。");
   }
 
   if (/10\+ years|8\+ years|12\+ years/.test(jobText) && Number(profile.yearsOfExperience || 0) < 8) {
     baseScore -= 12;
-    keyGaps.push("Required experience years may exceed current profile.");
+    keyGaps.push("岗位要求的工作年限可能高于当前画像。");
   }
 
   if (strengths.length > 0 && /strategy|stakeholder|execution|cross-functional/.test(jobText)) {
     baseScore += 8;
-    whyApply.push("Role values strengths already present in the profile.");
+    whyApply.push("岗位强调的能力与当前画像中的优势高度一致。");
   }
 
   if (hasAnyKeyword(jobText, constraints)) {
     baseScore -= 20;
-    riskFlags.push("Job text overlaps with stated profile constraints.");
+    riskFlags.push("岗位内容与个人限制条件存在重叠。");
   }
 
   if (hasAnyKeyword(jobText, avoidPatterns)) {
     policyAdjustment -= 10;
-    riskFlags.push("Global policy marks this pattern as a pipeline distraction.");
-    policyReasons.push("Downranked because the global policy has learned this pattern is usually low leverage.");
+    riskFlags.push("全局策略已将这类模式标记为分散精力的方向。");
+    policyReasons.push("这类模式通常带来的收益较低，因此被策略主动降权。");
   }
 
   const roleBiasEntry = Object.entries(roleBiases).find(([key]) => jobText.includes(String(key).toLowerCase()));
@@ -143,13 +143,13 @@ function runRuleBasedFitEvaluationAgent({ job, profile, strategyProfile, globalP
     if (roleBiasValue !== 0) {
       riskFlags.push(
         roleBiasValue > 0
-          ? `Historical performance raises confidence for ${roleBiasEntry[0]} roles.`
-          : `Historical performance lowers confidence for ${roleBiasEntry[0]} roles.`
+          ? `历史表现提升了系统对 ${roleBiasEntry[0]} 类岗位的信心。`
+          : `历史表现降低了系统对 ${roleBiasEntry[0]} 类岗位的信心。`
       );
       historyReasons.push(
         roleBiasValue > 0
-          ? `Boosted due to previous success in ${roleBiasEntry[0]} roles.`
-          : `Reduced because similar ${roleBiasEntry[0]} roles had weak conversion.`
+          ? `你在 ${roleBiasEntry[0]} 类岗位上曾有较好结果，因此本次判断被抬高。`
+          : `相似的 ${roleBiasEntry[0]} 类岗位历史转化较弱，因此本次判断被下调。`
       );
     }
   }
@@ -163,22 +163,22 @@ function runRuleBasedFitEvaluationAgent({ job, profile, strategyProfile, globalP
     if (industryBiasValue !== 0) {
       riskFlags.push(
         industryBiasValue > 0
-          ? `Past outcomes suggest stronger traction in ${industryBiasEntry[0]} contexts.`
-          : `Past outcomes suggest weaker traction in ${industryBiasEntry[0]} contexts.`
+          ? `历史结果显示你在 ${industryBiasEntry[0]} 行业场景中更容易推进。`
+          : `历史结果显示你在 ${industryBiasEntry[0]} 行业场景中的推进表现较弱。`
       );
       historyReasons.push(
         industryBiasValue > 0
-          ? `History is favorable for ${industryBiasEntry[0]} industry roles.`
-          : `History is unfavorable for ${industryBiasEntry[0]} industry roles.`
+          ? `历史数据对 ${industryBiasEntry[0]} 行业岗位更有利。`
+          : `历史数据对 ${industryBiasEntry[0]} 行业岗位不够有利。`
       );
     }
   }
 
   if (matchingBadCase) {
     historyAdjustment -= 8;
-    riskFlags.push(`Similar to a previous bad case: ${matchingBadCase.company} / ${matchingBadCase.title}.`);
-    keyGaps.push("Review prior bad case feedback before investing further effort.");
-    historyReasons.push("Lowered because similar jobs previously became bad cases.");
+    riskFlags.push(`与历史失败案例相似：${matchingBadCase.company} / ${matchingBadCase.title}。`);
+    keyGaps.push("建议先回看过往失败案例反馈，再决定是否继续投入。");
+    historyReasons.push("相似岗位曾进入失败案例库，因此本次判断被下调。");
   }
 
   let score = baseScore + historyAdjustment + policyAdjustment;
@@ -207,18 +207,18 @@ function runRuleBasedFitEvaluationAgent({ job, profile, strategyProfile, globalP
     strategyDecision,
     strategyReasoning:
     strategyDecision === "proceed"
-        ? "This role matches current success patterns closely enough to justify active pursuit."
+        ? "这条岗位与当前成功路径足够接近，值得进入主动推进队列。"
         : strategyDecision === "cautious_proceed"
-          ? "This role can move forward, but only with deliberate risk management during prep."
+          ? "这条岗位可以继续推进，但申请准备阶段需要明确管理风险。"
           : strategyDecision === "deprioritize"
-            ? "This role is not a strong enough strategic bet to enter the active prep queue by default."
-            : "This role conflicts with historical feedback or current global policy enough to avoid active pursuit.",
+            ? "这条岗位暂时不够强，不建议默认进入主准备队列。"
+            : "这条岗位与历史反馈或当前全局策略冲突较大，暂不建议主动推进。",
     historyInfluenceSummary:
       historyReasons[0] ||
-      "History did not materially shift this role beyond the current profile-to-job fit.",
+      "历史结果没有明显改变这条岗位相对于当前画像的基础判断。",
     policyInfluenceSummary:
       policyReasons[0] ||
-      "Global policy did not materially override the default fit judgement for this role.",
+      "全局策略没有明显覆盖这条岗位的基础匹配判断。",
     decisionBreakdown: {
       baseScore,
       historyAdjustment,
@@ -229,31 +229,31 @@ function runRuleBasedFitEvaluationAgent({ job, profile, strategyProfile, globalP
     confidence,
     decisionSummary:
       recommendation === "apply"
-        ? "Role aligns well with target direction and is worth preparing for."
+        ? "这条岗位与目标方向较为一致，值得进入申请准备。"
         : recommendation === "cautious"
-          ? "Role is viable but may need tighter prioritization and narrative control."
-          : "Role appears misaligned enough that it is better treated as a skip.",
+          ? "这条岗位可以尝试，但需要更严格地控制优先级和申请叙事。"
+          : "这条岗位整体偏离当前方向，更适合作为暂不优先处理。",
     whyApply: whyApply.slice(0, 4),
     keyGaps:
       keyGaps.length > 0
         ? keyGaps.slice(0, 4)
         : recommendation === "apply"
-          ? ["Need tighter examples that show direct product and technical collaboration."]
-          : ["Role fit is not strong enough to justify high effort."],
+          ? ["仍需补强能直接体现产品判断与跨团队协作的案例。"]
+          : ["当前岗位匹配度不足，不值得投入高强度准备成本。"],
     riskFlags:
       [...new Set(
         riskFlags.length > 0
           ? riskFlags
           : recommendation === "cautious"
-            ? ["Proceed only if weekly pipeline needs more volume."]
-            : ["Expected conversion probability is low."]
+            ? ["只有在本周岗位储备不足时，才建议把它纳入推进。"]
+            : ["预期转化概率较低。"]
       )].slice(0, 5),
     suggestedAction:
       recommendation === "apply"
-        ? "Proceed to application prep and tailor materials for this role."
+        ? "进入申请准备，并为这条岗位定制材料。"
         : recommendation === "cautious"
-          ? "Keep as a secondary priority and only prepare if pipeline needs more volume."
-          : "Do not invest more effort now; archive and focus on better-fit jobs.",
+          ? "作为次优先级保留，只有在队列需要补量时再进入准备。"
+          : "现在不要继续投入，建议归档并把精力放到更匹配的岗位上。",
     editable: true,
     createdAt: nowIso(),
     updatedAt: nowIso()

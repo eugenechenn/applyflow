@@ -243,7 +243,7 @@ async function generateJobIngestion({ payload, fallbackResult }) {
     schemaName: "applyflow_job_ingestion",
     schema,
     systemPrompt:
-      "You are a job-ingestion assistant. Extract stable, structured job fields from a job description. Return only factual content that can be safely rendered in a product UI.",
+      "You are a job-ingestion assistant. Extract stable, structured job fields from a job description. Return only factual content that can be safely rendered in a product UI. All user-facing text fields must be written in Simplified Chinese.",
     userPrompt: JSON.stringify({
       manualFields: {
         company: payload.company || "",
@@ -256,13 +256,13 @@ async function generateJobIngestion({ payload, fallbackResult }) {
     }),
     normalizer(parsed) {
       return {
-        company: String(parsed.company || fallbackResult.company || payload.company || "").trim() || "Unknown Company",
-        title: String(parsed.title || fallbackResult.title || payload.title || "").trim() || "Untitled Role",
-        location: String(parsed.location || fallbackResult.location || payload.location || "").trim() || "Unknown",
+        company: String(parsed.company || fallbackResult.company || payload.company || "").trim() || "未知公司",
+        title: String(parsed.title || fallbackResult.title || payload.title || "").trim() || "未命名岗位",
+        location: String(parsed.location || fallbackResult.location || payload.location || "").trim() || "未知",
         summary:
           String(parsed.summary || "").trim() ||
           fallbackResult.jdStructured?.summary ||
-          "Role details parsed from the provided job description.",
+          "已从提供的岗位描述中提取基础信息。",
         responsibilities:
           normalizeStringArray(parsed.responsibilities, fallbackResult.jdStructured?.responsibilities || []).slice(0, 6),
         requirements:
@@ -327,7 +327,7 @@ async function generateFitAssessment({
     schemaName: "applyflow_fit_evaluation",
     schema,
     systemPrompt:
-      "You are a fit-evaluation assistant for a semi-automatic job search product. Produce a structured assessment that is decisive, concise, and compatible with a stable product schema. Respect the existing policy and history context.",
+      "You are a fit-evaluation assistant for a semi-automatic job search product. Produce a structured assessment that is decisive, concise, and compatible with a stable product schema. Respect the existing policy and history context. All user-facing text fields must be written in Simplified Chinese.",
     userPrompt: JSON.stringify({
       job: {
         company: job.company,
@@ -383,6 +383,202 @@ async function generateFitAssessment({
           String(parsed.historyInfluenceSummary || "").trim() || fallbackResult.historyInfluenceSummary,
         policyInfluenceSummary:
           String(parsed.policyInfluenceSummary || "").trim() || fallbackResult.policyInfluenceSummary
+      };
+    }
+  });
+
+  return result;
+}
+
+async function generateResumeTailoring({
+  job,
+  profile,
+  fitAssessment,
+  resumeDocument,
+  fallbackResult,
+  refinePrompt = "",
+  existingOutput = null
+}) {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      targetKeywords: { type: "array", items: { type: "string" } },
+      selectedEvidence: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sourceId: { type: "string" },
+            sourceText: { type: "string" },
+            reason: { type: "string" }
+          },
+          required: ["sourceId", "sourceText", "reason"]
+        }
+      },
+      rewrittenBullets: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            source: { type: "string" },
+            rewritten: { type: "string" }
+          },
+          required: ["source", "rewritten"]
+        }
+      },
+      tailoredSummary: { type: "string" },
+      whyMe: { type: "string" },
+      orderingPlan: { type: "array", items: { type: "string" } },
+      explainability: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            before: { type: "string" },
+            after: { type: "string" },
+            reason: { type: "string" },
+            jdRequirement: { type: "string" },
+            goal: { type: "string" },
+            evidenceAnchor: { type: "string" }
+          },
+          required: ["title", "before", "after", "reason", "jdRequirement", "goal", "evidenceAnchor"]
+        }
+      },
+      uncoveredRequirements: { type: "array", items: { type: "string" } },
+      decisionSummary: { type: "string" },
+      whyThisVersion: { type: "string" }
+    },
+    required: [
+      "targetKeywords",
+      "selectedEvidence",
+      "rewrittenBullets",
+      "tailoredSummary",
+      "whyMe",
+      "orderingPlan",
+      "explainability",
+      "uncoveredRequirements",
+      "decisionSummary",
+      "whyThisVersion"
+    ]
+  };
+
+  const result = await callStructuredJson({
+    taskType: "resume_tailoring",
+    schemaName: "applyflow_resume_tailoring",
+    schema,
+    systemPrompt:
+      "You are a resume-tailoring assistant inside a semi-automatic job application system. You must only select, reorder, and strengthen evidence that already exists in the user's resume. Do not invent new experience. Return only structured JSON. All user-facing fields must be in Simplified Chinese.",
+    userPrompt: JSON.stringify({
+      job: {
+        company: job.company,
+        title: job.title,
+        summary: job.jdStructured?.summary,
+        responsibilities: job.jdStructured?.responsibilities || [],
+        requirements: job.jdStructured?.requirements || [],
+        preferredQualifications: job.jdStructured?.preferredQualifications || [],
+        keywords: job.jdStructured?.keywords || []
+      },
+      profile: {
+        background: profile.background,
+        targetRoles: profile.targetRoles || [],
+        strengths: profile.strengths || [],
+        constraints: profile.constraints || []
+      },
+      fitAssessment: fitAssessment
+        ? {
+            fitScore: fitAssessment.fitScore,
+            recommendation: fitAssessment.recommendation,
+            whyApply: fitAssessment.whyApply || [],
+            keyGaps: fitAssessment.keyGaps || [],
+            riskFlags: fitAssessment.riskFlags || []
+          }
+        : null,
+      resumeDocument: {
+        summary:
+          resumeDocument?.structuredProfile?.summary ||
+          resumeDocument?.summary ||
+          "",
+        experience: resumeDocument?.structuredProfile?.experience || [],
+        projects: resumeDocument?.structuredProfile?.projects || [],
+        skills: resumeDocument?.structuredProfile?.skills || [],
+        education: resumeDocument?.structuredProfile?.education || [],
+        achievements: resumeDocument?.structuredProfile?.achievements || []
+      },
+      existingTailoring: existingOutput
+        ? {
+            tailoredSummary: existingOutput.tailoredSummary || "",
+            whyMe: existingOutput.whyMe || "",
+            rewrittenBullets: existingOutput.rewrittenBullets || []
+          }
+        : null,
+      userRefineInstruction: String(refinePrompt || "").trim() || null
+    }),
+    normalizer(parsed) {
+      const fallbackBullets = fallbackResult.rewrittenBullets || [];
+      const fallbackExplainability = fallbackResult.explainability || [];
+      return {
+        targetingBrief: {
+          ...fallbackResult.targetingBrief,
+          targetKeywords: normalizeStringArray(
+            parsed.targetKeywords,
+            fallbackResult.targetingBrief?.targetKeywords || []
+          ).slice(0, 10)
+        },
+        selectionPlan: {
+          ...(fallbackResult.selectionPlan || {}),
+          orderingPlan: normalizeStringArray(
+            parsed.orderingPlan,
+            fallbackResult.selectionPlan?.orderingPlan || []
+          ).slice(0, 6)
+        },
+        rewrittenBullets:
+          Array.isArray(parsed.rewrittenBullets) && parsed.rewrittenBullets.length
+            ? parsed.rewrittenBullets
+                .map((item, index) => ({
+                  source: String(item?.source || fallbackBullets[index]?.source || `经历 ${index + 1}`).trim(),
+                  rewritten: String(item?.rewritten || "").trim()
+                }))
+                .filter((item) => item.rewritten)
+                .slice(0, 5)
+            : fallbackBullets,
+        tailoredSummary:
+          String(parsed.tailoredSummary || "").trim() || fallbackResult.tailoredSummary || "",
+        whyMe: String(parsed.whyMe || "").trim() || fallbackResult.whyMe || "",
+        explainability:
+          Array.isArray(parsed.explainability) && parsed.explainability.length
+            ? parsed.explainability
+                .map((item, index) => ({
+                  id: fallbackExplainability[index]?.id || `tailoring_reason_${index + 1}`,
+                  title: String(item?.title || fallbackExplainability[index]?.title || `定制理由 ${index + 1}`).trim(),
+                  before: String(item?.before || fallbackExplainability[index]?.before || "").trim(),
+                  after: String(item?.after || fallbackExplainability[index]?.after || "").trim(),
+                  reason: String(item?.reason || fallbackExplainability[index]?.reason || "").trim(),
+                  jdRequirement: String(item?.jdRequirement || fallbackExplainability[index]?.jdRequirement || "").trim(),
+                  goal: String(item?.goal || fallbackExplainability[index]?.goal || "").trim(),
+                  evidenceAnchor: String(item?.evidenceAnchor || fallbackExplainability[index]?.evidenceAnchor || "").trim()
+                }))
+                .slice(0, 6)
+            : fallbackExplainability,
+        coverageReport: {
+          ...(fallbackResult.coverageReport || {}),
+          uncoveredRequirements: normalizeStringArray(
+            parsed.uncoveredRequirements,
+            fallbackResult.coverageReport?.uncoveredRequirements || []
+          ).slice(0, 6)
+        },
+        decisionSummary:
+          String(parsed.decisionSummary || "").trim() || fallbackResult.decisionSummary,
+        whyThisVersion:
+          String(parsed.whyThisVersion || "").trim() || fallbackResult.whyThisVersion,
+        stageOutputSummary:
+          String(parsed.decisionSummary || "").trim() || fallbackResult.stageOutputSummary,
+        stageDecisionReason:
+          "系统基于 JD 重点与原始简历中的真实证据，重排并强化了最相关的经历表达。"
       };
     }
   });
@@ -447,7 +643,7 @@ async function generatePrepDraft({ job, profile, fallbackResult }) {
     schemaName: "applyflow_prep_generation",
     schema,
     systemPrompt:
-      "You are an application-prep assistant. Generate concise but realistic application materials that a user can edit. Keep outputs specific to the job and profile, and return only schema-compliant content.",
+      "You are an application-prep assistant. Generate concise but realistic application materials that a user can edit. Keep outputs specific to the job and profile, and return only schema-compliant content. All user-facing text fields must be written in Simplified Chinese.",
     userPrompt: JSON.stringify({
       job: {
         company: job.company,
@@ -461,7 +657,8 @@ async function generatePrepDraft({ job, profile, fallbackResult }) {
         background: profile.background,
         strengths: profile.strengths || [],
         masterResume: profile.masterResume || profile.baseResume || "",
-        keyProjects: profile.keyProjects || []
+        keyProjects: profile.keyProjects || [],
+        resumeDocument: profile.resumeDocument || null
       }
     }),
     normalizer(parsed) {
@@ -512,5 +709,6 @@ module.exports = {
   hasLlmConfig,
   generateJobIngestion,
   generateFitAssessment,
+  generateResumeTailoring,
   generatePrepDraft
 };

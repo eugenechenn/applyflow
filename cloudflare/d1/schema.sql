@@ -94,6 +94,26 @@ CREATE TABLE IF NOT EXISTS application_preps (
 CREATE INDEX IF NOT EXISTS idx_application_preps_user_job
   ON application_preps (user_id, job_id);
 
+CREATE TABLE IF NOT EXISTS resume_documents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  status TEXT,
+  updated_at TEXT,
+  json_text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resume_documents_user_updated
+  ON resume_documents (user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tailoring_outputs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  updated_at TEXT,
+  json_text TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tailoring_outputs_user_job
+  ON tailoring_outputs (user_id, job_id);
+
 CREATE TABLE IF NOT EXISTS application_tasks (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

@@ -25,6 +25,7 @@ function createWorkspaceFromSeed(seed = {}) {
   const seeded = deepClone(seed);
   return {
     profile: seeded.profile || null,
+    resumeDocuments: seeded.resumeDocuments || [],
     strategyProfile: seeded.strategyProfile || null,
     globalStrategyPolicy: seeded.globalStrategyPolicy || null,
     policyHistory: seeded.policyHistory || [],
@@ -33,6 +34,7 @@ function createWorkspaceFromSeed(seed = {}) {
     jobs: seeded.jobs || [],
     fitAssessments: seeded.fitAssessments || [],
     applicationPreps: seeded.applicationPreps || [],
+    tailoringOutputs: seeded.tailoringOutputs || [],
     applicationTasks: seeded.applicationTasks || [],
     interviewReflections: seeded.interviewReflections || [],
     activityLogs: normalizeActivityLogs(seeded.activityLogs || []),
@@ -174,11 +176,15 @@ function saveById(tableName, userId, item, config = {}) {
   const id = item[idField];
   const jsonText = JSON.stringify(item);
   const columns = config.columns || [];
+  const camelAlias = (column) =>
+    column.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
   const values = columns.map((column) => {
     if (column === "user_id") return userId;
     if (column === "updated_at" || column === "created_at" || column === "timestamp") return timestamp;
     if (column === "json_text") return jsonText;
-    return item[column] === undefined ? null : item[column];
+    if (item[column] !== undefined) return item[column];
+    const alias = camelAlias(column);
+    return item[alias] === undefined ? null : item[alias];
   });
 
   const insertColumns = [idField, ...columns];
@@ -252,6 +258,15 @@ function migrateJsonStateIfNeeded() {
           JSON.stringify({ ...workspace.profile, userId })
         ]);
       }
+      (workspace.resumeDocuments || []).forEach((item) => {
+        db().run("INSERT INTO resume_documents (id, user_id, status, updated_at, json_text) VALUES (?, ?, ?, ?, ?)", [
+          item.id,
+          userId,
+          item.status || "",
+          item.updatedAt || item.createdAt || nowIso(),
+          JSON.stringify({ ...item, userId })
+        ]);
+      });
       if (workspace.strategyProfile) {
         db().run("INSERT INTO strategy_profiles (user_id, updated_at, json_text) VALUES (?, ?, ?)", [
           userId,
@@ -313,6 +328,15 @@ function migrateJsonStateIfNeeded() {
       });
       (workspace.applicationPreps || []).forEach((item) => {
         db().run("INSERT INTO application_preps (id, user_id, job_id, updated_at, json_text) VALUES (?, ?, ?, ?, ?)", [
+          item.id,
+          userId,
+          item.jobId,
+          item.updatedAt || item.createdAt || nowIso(),
+          JSON.stringify({ ...item, userId })
+        ]);
+      });
+      (workspace.tailoringOutputs || []).forEach((item) => {
+        db().run("INSERT INTO tailoring_outputs (id, user_id, job_id, updated_at, json_text) VALUES (?, ?, ?, ?, ?)", [
           item.id,
           userId,
           item.jobId,
@@ -443,6 +467,26 @@ function getStrategyProfile(userId) {
   return getSingleton("strategy_profiles", userId);
 }
 
+function listResumeDocuments(userId) {
+  return listCollection("resume_documents", userId, "updated_at DESC");
+}
+
+function getResumeDocument(userId, resumeId) {
+  return getByUserAndField("resume_documents", userId, "id", resumeId);
+}
+
+function getLatestResumeDocument(userId) {
+  return rowToJson(
+    db().get("SELECT json_text FROM resume_documents WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1", [userId])
+  );
+}
+
+function saveResumeDocument(userId, resumeDocument) {
+  return saveById("resume_documents", userId, resumeDocument, {
+    columns: ["user_id", "status", "updated_at", "json_text"]
+  });
+}
+
 function saveStrategyProfile(userId, profile) {
   return upsertSingleton("strategy_profiles", userId, profile);
 }
@@ -531,6 +575,20 @@ function saveApplicationPrep(userId, prep) {
   });
 }
 
+function listTailoringOutputs(userId) {
+  return listCollection("tailoring_outputs", userId, "updated_at DESC");
+}
+
+function getTailoringOutputByJobId(userId, jobId) {
+  return getByUserAndField("tailoring_outputs", userId, "job_id", jobId);
+}
+
+function saveTailoringOutput(userId, output) {
+  return saveById("tailoring_outputs", userId, output, {
+    columns: ["user_id", "job_id", "updated_at", "json_text"]
+  });
+}
+
 function listTasks(userId) {
   return listCollection("application_tasks", userId, "updated_at DESC");
 }
@@ -600,6 +658,7 @@ function removeBadCase(userId, jobId) {
 function getWorkspaceState(userId) {
   return {
     profile: getProfile(userId),
+    resumeDocuments: listResumeDocuments(userId),
     strategyProfile: getStrategyProfile(userId),
     globalStrategyPolicy: getGlobalStrategyPolicy(userId),
     policyHistory: listPolicyHistory(userId),
@@ -608,6 +667,7 @@ function getWorkspaceState(userId) {
     jobs: listJobs(userId),
     fitAssessments: listFitAssessments(userId),
     applicationPreps: listApplicationPreps(userId),
+    tailoringOutputs: listTailoringOutputs(userId),
     applicationTasks: listTasks(userId),
     interviewReflections: listInterviewReflections(userId),
     activityLogs: listActivityLogs(userId),
@@ -630,6 +690,10 @@ module.exports = {
   deleteSessionsByUserId,
   getProfile,
   saveProfile,
+  listResumeDocuments,
+  getResumeDocument,
+  getLatestResumeDocument,
+  saveResumeDocument,
   getStrategyProfile,
   saveStrategyProfile,
   getGlobalStrategyPolicy,
@@ -650,6 +714,9 @@ module.exports = {
   listApplicationPreps,
   getApplicationPrepByJobId,
   saveApplicationPrep,
+  listTailoringOutputs,
+  getTailoringOutputByJobId,
+  saveTailoringOutput,
   listTasksByJobId,
   listTasks,
   saveTask,

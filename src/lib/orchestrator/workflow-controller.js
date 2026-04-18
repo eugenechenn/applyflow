@@ -1,17 +1,59 @@
 const store = require("../../server/store");
 const { createId, nowIso } = require("../utils/id");
-const {
-  assertJobStatusTransition,
-  getAllowedNextStatuses,
-  getRecommendedNextStatuses
-} = require("../state/job-status");
+const jobStatusModule = require("../state/job-status");
 const { updateJob } = require("./shared-state-helpers");
 const { logActivity } = require("./activity-logger");
 const { agentRegistry } = require("./agent-registry");
 const { runAgentStage } = require("./stage-runner");
+const logger = require("../../server/platform/logger");
+const { exportTailoredResumeDocx } = require("../resume/resume-exporter");
+const { parseResumeWithBestEffort, getResumeParserUrl } = require("../resume/resume-parser-client");
+const {
+  buildResumeSnapshot,
+  buildTailoredPreview,
+  buildDiffView,
+  buildExplainability,
+  normalizeTailoringBullets
+} = require("./agents/resume-tailoring-agent-v2");
+
+const assertJobStatusTransition =
+  jobStatusModule?.assertJobStatusTransition ||
+  function assertJobStatusTransitionFallback() {
+    throw new Error("assertJobStatusTransition is not available.");
+  };
+
+function safeGetAllowedNextStatuses(currentStatus) {
+  const resolver = jobStatusModule?.getAllowedNextStatuses;
+  if (typeof resolver !== "function") {
+    console.error("ApplyFlow: getAllowedNextStatuses is not available.", {
+      currentStatus,
+      availableKeys: Object.keys(jobStatusModule || {})
+    });
+    return [];
+  }
+  return resolver(currentStatus);
+}
+
+function safeGetRecommendedNextStatuses(currentStatus) {
+  const resolver = jobStatusModule?.getRecommendedNextStatuses;
+  if (typeof resolver !== "function") {
+    console.error("ApplyFlow: getRecommendedNextStatuses is not available.", {
+      currentStatus,
+      availableKeys: Object.keys(jobStatusModule || {})
+    });
+    return [];
+  }
+  return resolver(currentStatus);
+}
 
 function summarizeList(items = [], fallback = "none") {
   return items.length ? items.join(" / ") : fallback;
+}
+
+function truncateText(value, max = 200) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
 function deriveRoleBucket(job) {
@@ -95,17 +137,15 @@ function buildPolicyDiff(previous = {}, next = {}) {
 
   listFields.forEach((field) => {
     const diff = diffList(previous[field] || [], next[field] || []);
-    diff.added.forEach((item) => lines.push(`Added ${item} to ${field}.`));
-    diff.removed.forEach((item) => lines.push(`Removed ${item} from ${field}.`));
+    diff.added.forEach((item) => lines.push(`已将 ${item} 加入 ${field}。`));
+    diff.removed.forEach((item) => lines.push(`已将 ${item} 从 ${field} 中移除。`));
   });
 
   if ((previous.focusMode || "") !== (next.focusMode || "")) {
-    lines.push(`Changed focus mode from ${previous.focusMode || "unset"} to ${next.focusMode}.`);
+    lines.push(`聚焦模式已从 ${previous.focusMode || "未设置"} 调整为 ${next.focusMode}。`);
   }
   if ((previous.riskTolerance || "") !== (next.riskTolerance || "")) {
-    lines.push(
-      `Changed risk tolerance from ${previous.riskTolerance || "unset"} to ${next.riskTolerance}.`
-    );
+    lines.push(`风险偏好已从 ${previous.riskTolerance || "未设置"} 调整为 ${next.riskTolerance}。`);
   }
 
   return lines;
@@ -114,15 +154,15 @@ function buildPolicyDiff(previous = {}, next = {}) {
 function inferProposalReason(triggerType, diffSummary) {
   if (diffSummary.length > 0) return diffSummary.slice(0, 2).join(" ");
   if (triggerType === "interview_reflection") {
-    return "Policy adjusted after new interview feedback updated the success and failure patterns.";
+    return "新的面试反馈更新了成功模式与失败模式，因此触发了策略调整。";
   }
   if (triggerType === "bad_case") {
-    return "Policy adjusted after a new bad case changed the risk picture.";
+    return "新的失败案例改变了整体风险判断，因此触发了策略调整。";
   }
   if (triggerType === "profile_update") {
-    return "Policy adjusted because the user changed profile-level strategy controls.";
+    return "用户更新了画像层的策略控制项，因此触发了策略调整。";
   }
-  return "Policy adjusted after a new system-level strategy refresh.";
+  return "系统完成新一轮策略刷新后，生成了这次策略调整。";
 }
 
 function logPolicyAudit({ eventType, actor = "system", relatedProposalId = null, summary }) {
@@ -261,10 +301,10 @@ function refreshGlobalStrategyPolicy(
     focusMode,
     policySummary:
       focusMode === "focused"
-        ? `Stay concentrated on ${summarizeList(preferredRoles, "top roles")} and avoid distraction patterns.`
+        ? `当前建议继续聚焦 ${summarizeList(preferredRoles, "高优先级岗位方向")}，并主动避开分散注意力的模式。`
         : focusMode === "balanced"
-          ? "Keep a balanced pipeline, but continue leaning toward the strongest historical role clusters."
-          : "Pipeline is still broad; continue exploring while tightening around the first strong conversion signals.",
+          ? "当前建议保持队列平衡，但继续向历史转化更强的岗位簇倾斜。"
+          : "当前投递范围仍偏宽，建议继续探索，同时逐步收窄到最早出现强转化信号的岗位方向。",
     lastUpdatedAt: nowIso(),
     updatedAt: nowIso()
   };
@@ -279,7 +319,7 @@ function refreshGlobalStrategyPolicy(
       oldPolicySnapshot: null,
       proposedPolicySnapshot: { ...policy, version: 1 },
       actor: "system",
-      summary: "Initialized the first active global policy from profile and historical pipeline signals."
+      summary: "已根据用户画像和历史流程信号初始化第一版全局策略。"
     });
   }
 
@@ -326,14 +366,14 @@ function refreshGlobalStrategyPolicy(
     eventType: "proposal_approved",
     actor: "user",
     relatedProposalId: proposal.id,
-    summary: `Approved proposal ${proposal.id}.`
+    summary: `已批准提案 ${proposal.id}。`
   });
   return applyPolicySnapshot({
     proposalId: proposal.id,
     oldPolicySnapshot: previousPolicy,
     proposedPolicySnapshot: policy,
     actor: "user",
-    summary: `Applied policy proposal ${proposal.id}.`
+    summary: `已应用策略提案 ${proposal.id}。`
   });
 }
 
@@ -436,37 +476,57 @@ async function ingestJob(payload) {
   const ingestionStage = await runAgentStage(
     {
       stageKey: "job_ingestion",
-      stageLabel: "Job ingestion",
-      agentName: "Job Ingestion Agent",
+      stageLabel: "岗位结构化",
+      agentName: "岗位结构化阶段",
       entityType: "job",
       inputSummary: payload.rawJdText
-        ? `Received JD text (${String(payload.rawJdText).length} chars) with manual overrides.`
-        : "Received manual job fields without a full JD body."
+        ? `收到岗位描述原文（${String(payload.rawJdText).length} 字），并包含人工补充字段。`
+        : "收到手动填写的岗位字段，但没有完整岗位描述。"
     },
     () => agentRegistry.jobIngestion(payload)
   );
   const job = ingestionStage.result;
-  store.saveJob(job);
+  const createdJob = store.saveJob(job) || job;
+  const jobId = createdJob?.id || job?.id || null;
+
+  logger.info("job.ingest_created", {
+    source: "orchestrator.ingestJob",
+    createdJobId: createdJob?.id || null,
+    fallbackJobId: job?.id || null,
+    company: createdJob?.company || job?.company || null,
+    title: createdJob?.title || job?.title || null
+  });
+
+  if (!jobId) {
+    const error = new Error("Failed to create job before inserting fit_assessment");
+    error.code = "JOB_CREATE_FAILED";
+    throw error;
+  }
+
   logActivity({
     type: "job_created",
     entityType: "job",
-    entityId: job.id,
+    entityId: jobId,
     action: "job_created",
-    summary: `Created ${job.company} / ${job.title}.`,
-    jobId: job.id,
+    summary: `已创建岗位：${createdJob.company} / ${createdJob.title}。`,
+    jobId,
     metadata: {
-      sourceLabel: job.sourceLabel,
-      llm: job.llmMeta || null
+      sourceLabel: createdJob.sourceLabel,
+      llm: createdJob.llmMeta || null
     },
-    agentName: "Job Ingestion Agent",
+    agentName: "岗位结构化阶段",
     inputSummary: payload.rawJdText
-      ? `Received JD text (${String(payload.rawJdText).length} chars) with manual overrides.`
-      : "Received manual job fields without a full JD body.",
-    outputSummary: `Structured job created with title=${job.title}, company=${job.company}, location=${job.location}${job.llmMeta?.fallbackUsed ? " via heuristic fallback" : " via LLM-assisted extraction"}.`,
+      ? `收到岗位描述原文（${String(payload.rawJdText).length} 字），并包含人工补充字段。`
+      : "收到手动填写的岗位字段，但没有完整岗位描述。",
+    outputSummary: `已生成结构化岗位：职位=${createdJob.title}，公司=${createdJob.company}，地点=${createdJob.location}${createdJob.llmMeta?.fallbackUsed ? "，使用规则回退抽取。" : "，使用模型辅助抽取。"}`,
     decisionReason:
-      "The agent normalized the incoming role into a shared Job object so downstream evaluation can run on consistent fields."
+      "系统先把原始岗位信息标准化为共享 Job 对象，后续评估与申请准备才能在统一字段上运行。"
   });
-  const evaluation = await evaluateJob(job.id);
+  logger.info("job.ingest_job_id_extracted", {
+    source: "orchestrator.ingestJob",
+    jobId
+  });
+  const evaluation = await evaluateJob(jobId);
   return {
     job: evaluation.job,
     fitAssessment: evaluation.fitAssessment
@@ -477,10 +537,10 @@ async function importJobDraftFromUrl(payload) {
   const stage = await runAgentStage(
     {
       stageKey: "url_import",
-      stageLabel: "URL import",
-      agentName: "URL Import Agent",
+      stageLabel: "链接导入",
+      agentName: "链接导入阶段",
       entityType: "job",
-      inputSummary: `Attempted URL import for ${payload.jobUrl || "unknown url"}.`
+      inputSummary: `尝试导入岗位链接：${payload.jobUrl || "未知链接"}。`
     },
     () => agentRegistry.urlImport(payload)
   );
@@ -498,27 +558,31 @@ async function importJobDraftFromUrl(payload) {
     pipelinePreview: [
       {
         key: "url_import",
-        label: "URL Import Agent",
+        label: "链接导入阶段",
         status: stage.status,
         summary: stage.result.stageOutputSummary || null
       },
       {
         key: "job_ingestion",
-        label: "Job Ingestion Agent",
+        label: "岗位结构化阶段",
         status: "pending",
-        summary: "Will run after the user confirms the imported draft."
+        summary: "会在用户确认导入草稿后执行。"
       },
       {
         key: "fit_evaluation",
-        label: "Fit Evaluation Agent",
+        label: "匹配评估阶段",
         status: "pending",
-        summary: "Will run automatically after job creation."
+        summary: "会在岗位创建后自动执行。"
       }
     ]
   };
 }
 
 async function evaluateJob(jobId) {
+  logger.info("fit.evaluate_requested", {
+    source: "orchestrator.evaluateJob",
+    jobId: jobId || null
+  });
   const job = store.getJob(jobId);
   const profile = store.getProfile();
 
@@ -537,12 +601,12 @@ async function evaluateJob(jobId) {
   const fitStage = await runAgentStage(
     {
       stageKey: "fit_evaluation",
-      stageLabel: "Fit evaluation",
-      agentName: "Fit Evaluation Agent",
+      stageLabel: "匹配评估",
+      agentName: "匹配评估阶段",
       entityType: "fit_assessment",
       entityId: job.fitAssessmentId || job.id,
       jobId,
-      inputSummary: `Compared role against profile targets: roles=${summarizeList(profile.targetRoles)}, industries=${summarizeList(profile.targetIndustries)}.`
+      inputSummary: `已根据用户画像做岗位对比：目标岗位=${summarizeList(profile.targetRoles)}，目标行业=${summarizeList(profile.targetIndustries)}。`
     },
     () =>
       agentRegistry.fitEvaluation({
@@ -559,6 +623,22 @@ async function evaluateJob(jobId) {
       })
   );
   const fitAssessment = fitStage.result;
+  const fitJobId = fitAssessment?.jobId || job?.id || jobId || null;
+
+  if (!fitJobId) {
+    const error = new Error("Failed to create job before inserting fit_assessment");
+    error.code = "JOB_CREATE_FAILED";
+    throw error;
+  }
+
+  fitAssessment.jobId = fitJobId;
+  logger.info("fit.assessment_insert_payload", {
+    source: "orchestrator.evaluateJob",
+    jobId: fitAssessment.jobId,
+    fitAssessmentId: fitAssessment.id || null,
+    recommendation: fitAssessment.recommendation || null,
+    fitScore: fitAssessment.fitScore ?? null
+  });
   store.saveFitAssessment(fitAssessment);
 
   const nextStatus =
@@ -632,10 +712,10 @@ async function evaluateJob(jobId) {
     entityType: "fit_assessment",
     entityId: fitAssessment.id,
     action: "fit_generated",
-    summary: `Generated ${fitAssessment.recommendation} assessment for ${job.company}.`,
-    agentName: "Fit Evaluation Agent",
-    inputSummary: `Compared role against profile targets: roles=${summarizeList(profile.targetRoles)}, industries=${summarizeList(profile.targetIndustries)}.`,
-    outputSummary: `fitScore=${fitAssessment.fitScore}, recommendation=${fitAssessment.recommendation}, strategyDecision=${resolvedDecision}, nextStatus=${resolvedStatus}${fitAssessment.llmMeta?.fallbackUsed ? " via heuristic fallback" : " via LLM-assisted evaluation"}.`,
+    summary: `已为 ${job.company} 生成匹配评估。`,
+    agentName: "匹配评估阶段",
+    inputSummary: `已根据用户画像做岗位对比：目标岗位=${summarizeList(profile.targetRoles)}，目标行业=${summarizeList(profile.targetIndustries)}。`,
+    outputSummary: `匹配度=${fitAssessment.fitScore}，推荐结论=${humanizeRecommendationCode(fitAssessment.recommendation)}，策略判断=${resolvedDecision}，下一状态=${humanizeLifecycleStatus(resolvedStatus)}${fitAssessment.llmMeta?.fallbackUsed ? "，使用规则回退评估。" : "，使用模型辅助评估。"}`,
     decisionReason: fitAssessment.strategyReasoning,
     policyInfluenceSummary: fitAssessment.policyInfluenceSummary,
     decisionBreakdown: fitAssessment.decisionBreakdown,
@@ -655,9 +735,254 @@ async function evaluateJob(jobId) {
   return { job: updatedJob, fitAssessment, nextTask, globalPolicy };
 }
 
+function buildTailoringOutputRecord({
+  existingTailoringOutput,
+  tailoringResult,
+  applicationPrep = null,
+  fitAssessment = null,
+  resumeDocument = null
+}) {
+  const normalizedBullets = normalizeTailoringBullets(
+    tailoringResult.rewrittenBullets || existingTailoringOutput?.rewrittenBullets || [],
+    [],
+    tailoringResult.targetingBrief?.targetKeywords || existingTailoringOutput?.targetingBrief?.targetKeywords || [],
+    { jdStructured: {} }
+  );
+  const resumeSnapshot =
+    tailoringResult.resumeSnapshot ||
+    existingTailoringOutput?.resumeSnapshot ||
+    buildResumeSnapshot(resumeDocument, store.getProfile() || {});
+  const orderingPlan =
+    tailoringResult.selectionPlan?.orderingPlan ||
+    existingTailoringOutput?.selectionPlan?.orderingPlan ||
+    ["summary", "experience", "projects", "skills"];
+  const tailoredSummary = tailoringResult.tailoredSummary || existingTailoringOutput?.tailoredSummary || "";
+  const whyMe = tailoringResult.whyMe || existingTailoringOutput?.whyMe || "";
+  const explainability =
+    tailoringResult.explainability ||
+    tailoringResult.tailoringExplainability ||
+    existingTailoringOutput?.tailoringExplainability ||
+    buildExplainability({
+      rewrittenBullets: normalizedBullets,
+      selectedExperience: [],
+      targetKeywords: tailoringResult.targetingBrief?.targetKeywords || [],
+      fitAssessment,
+      job: { title: "", jdStructured: {} }
+    });
+  const existingWorkspace = existingTailoringOutput?.workspace || {};
+  const requestedWorkspace = tailoringResult.workspace || {};
+  const workspaceName =
+    requestedWorkspace.name ||
+    existingWorkspace.name ||
+    `${tailoringResult.jobCompany || "岗位"} ${tailoringResult.jobTitle || "定制版"}工作区`;
+  const workspaceVersion = Math.max(
+    Number(requestedWorkspace.activeVersion || 0),
+    Number(existingWorkspace.activeVersion || 0),
+    Number(tailoringResult.version || 0),
+    Number(existingTailoringOutput?.version || 0),
+    1
+  );
+
+  return {
+    ...(existingTailoringOutput || {}),
+    ...tailoringResult,
+    id: existingTailoringOutput?.id || tailoringResult.id || createId("tailoring"),
+    jobId: tailoringResult.jobId,
+    resumeSnapshot,
+    resumeDocumentId: resumeDocument?.id || tailoringResult.resumeDocumentId || existingTailoringOutput?.resumeDocumentId || null,
+    applicationPrepId: applicationPrep?.id || existingTailoringOutput?.applicationPrepId || null,
+    fitAssessmentId: fitAssessment?.id || existingTailoringOutput?.fitAssessmentId || null,
+    tailoredSummary,
+    whyMe,
+    rewrittenBullets: normalizedBullets,
+    whyThisChange: tailoringResult.whyThisVersion || existingTailoringOutput?.whyThisChange || "",
+    tailoringExplainability: explainability,
+    explainability,
+    diff:
+      tailoringResult.diff ||
+      buildDiffView({
+        resumeSnapshot,
+        rewrittenBullets: normalizedBullets,
+        orderingPlan,
+        tailoredSummary,
+        whyMe
+      }).diff,
+    diffView:
+      tailoringResult.diffView ||
+      buildDiffView({
+        resumeSnapshot,
+        rewrittenBullets: normalizedBullets,
+        orderingPlan,
+        tailoredSummary,
+        whyMe
+      }),
+    original:
+      tailoringResult.original || existingTailoringOutput?.original || {
+        summary: resumeSnapshot.summary || "",
+        experienceBullets: (resumeSnapshot.experience || []).slice(0, 6),
+        skills: (resumeSnapshot.skills || []).slice(0, 12),
+        projects: (resumeSnapshot.projects || []).slice(0, 4)
+      },
+    tailored:
+      tailoringResult.tailored || existingTailoringOutput?.tailored || {
+        summary: tailoredSummary || resumeSnapshot.summary || "",
+        whyMe,
+        experienceBullets: normalizedBullets.map((item) => item.after || item.rewritten).filter(Boolean)
+      },
+    tailoredResumePreview:
+      tailoringResult.tailoredResumePreview ||
+      existingTailoringOutput?.tailoredResumePreview ||
+      buildTailoredPreview({
+        tailoredSummary,
+        whyMe,
+        rewrittenBullets: normalizedBullets,
+        selectedProjects: [],
+        selectedSkills:
+          tailoringResult.selectionPlan?.selectedSkills || existingTailoringOutput?.selectionPlan?.selectedSkills || [],
+        resumeSnapshot,
+        targetKeywords:
+          tailoringResult.targetingBrief?.targetKeywords || existingTailoringOutput?.targetingBrief?.targetKeywords || []
+      }),
+    applicationPrepSnapshot: applicationPrep || existingTailoringOutput?.applicationPrepSnapshot || null,
+    workspace: {
+      id:
+        requestedWorkspace.id ||
+        existingWorkspace.id ||
+        `workspace_${tailoringResult.jobId || existingTailoringOutput?.jobId || createId("tailoring_workspace")}`,
+      name: workspaceName,
+      activeVersion: workspaceVersion,
+      baseResumeAssetId:
+        requestedWorkspace.baseResumeAssetId ||
+        existingWorkspace.baseResumeAssetId ||
+        resumeDocument?.id ||
+        existingTailoringOutput?.resumeDocumentId ||
+        null,
+      lastRefinePrompt:
+        requestedWorkspace.lastRefinePrompt ||
+        tailoringResult.refinePrompt ||
+        existingWorkspace.lastRefinePrompt ||
+        "",
+      lastSavedAt: nowIso(),
+      updatedAt: nowIso()
+    },
+    createdAt: existingTailoringOutput?.createdAt || tailoringResult.createdAt || nowIso(),
+    updatedAt: nowIso()
+  };
+}
+
+function buildDefaultTailoringWorkspaceName(job = {}) {
+  return `${job.company || "目标公司"} ${job.title || "岗位"}定制版`;
+}
+
+async function generateResumeTailoringOutput(jobId, options = {}) {
+  const job = store.getJob(jobId);
+  const profile = store.getProfile();
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const resumeDocument = store.getLatestResumeDocument();
+  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
+  const refinePrompt = truncateText(options.refinePrompt || "", 500);
+  const workspaceName = truncateText(
+    options.workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job || {}),
+    120
+  );
+
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  if (!profile) {
+    const error = new Error("Profile is required before resume tailoring.");
+    error.code = "PROFILE_REQUIRED";
+    throw error;
+  }
+
+  if (!resumeDocument) {
+    const error = new Error("请先上传原始简历，再生成岗位定制简历。");
+    error.code = "RESUME_REQUIRED";
+    throw error;
+  }
+
+  const tailoringStage = await runAgentStage(
+    {
+      stageKey: "resume_tailoring",
+      stageLabel: "简历定制阶段",
+      agentName: "Resume Tailoring Agent",
+      entityType: "tailoring_output",
+      entityId: existingTailoringOutput?.id || job.id,
+      jobId,
+      inputSummary: `系统会结合岗位 ${job.title}、当前简历 ${resumeDocument.fileName} 与匹配评估结果，生成岗位定制版简历初稿。`
+    },
+    () =>
+      agentRegistry.resumeTailoring({
+        job,
+        profile,
+        fitAssessment,
+        resumeDocument,
+        existingOutput: existingTailoringOutput,
+        refinePrompt
+      })
+  );
+
+  const tailoringOutput = buildTailoringOutputRecord({
+    existingTailoringOutput,
+    tailoringResult: {
+      ...tailoringStage.result,
+      jobCompany: job.company,
+      jobTitle: job.title,
+      workspace: {
+        ...(existingTailoringOutput?.workspace || {}),
+        name: workspaceName,
+        lastRefinePrompt: refinePrompt
+      }
+    },
+    fitAssessment,
+    resumeDocument
+  });
+
+  store.saveTailoringOutput(tailoringOutput);
+  const updatedJob = updateJob(jobId, () => ({
+    resumeDocumentId: resumeDocument.id
+  }));
+
+  logActivity({
+    type: "tailoring_generated",
+    entityType: "tailoring_output",
+    entityId: tailoringOutput.id,
+    action: "tailoring_generated",
+    jobId,
+    summary: `已为 ${job.company} 生成岗位定制简历。`,
+    metadata: {
+      jobId,
+      resumeDocumentId: resumeDocument.id,
+      changedBulletCount: tailoringOutput.diffView?.changedBulletCount || tailoringOutput.rewrittenBullets?.length || 0,
+      llm: tailoringOutput.llmMeta || null
+    },
+    agentName: "Resume Tailoring Agent",
+    inputSummary: `岗位关键词 ${summarizeList(tailoringOutput.targetingBrief?.targetKeywords || [], "暂无")}；原始简历 ${resumeDocument.fileName}。`,
+    outputSummary:
+      tailoringOutput.decisionSummary ||
+      `已生成岗位定制版简历，改写 ${tailoringOutput.rewrittenBullets?.length || 0} 条经历表达。`,
+    decisionReason:
+      tailoringOutput.whyThisVersion ||
+      "系统根据 JD 重点、原始简历中的真实证据和当前匹配判断，选择并强化了最相关的经历。",
+    activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
+    policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
+    overrideApplied: Boolean(job.policyOverride?.active),
+    overrideSummary: job.policyOverride?.active
+      ? `${job.policyOverride.action}${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : ""}`
+      : null
+  });
+
+  return { job: updatedJob, tailoringOutput, resumeDocument, fitAssessment };
+}
+
 async function prepareJobApplication(jobId) {
   const job = store.getJob(jobId);
   const profile = store.getProfile();
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const resumeDocument = store.getLatestResumeDocument();
 
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
@@ -671,23 +996,43 @@ async function prepareJobApplication(jobId) {
     throw error;
   }
 
+  if (!resumeDocument) {
+    const error = new Error("请先上传原始简历，再生成申请准备包。");
+    error.code = "RESUME_REQUIRED";
+    throw error;
+  }
+
+  const tailoringOutput =
+    store.getTailoringOutputByJobId(jobId) ||
+    (await generateResumeTailoringOutput(jobId)).tailoringOutput;
+
   const prepStage = await runAgentStage(
     {
       stageKey: "prep_generation",
-      stageLabel: "Prep generation",
+      stageLabel: "申请准备阶段",
       agentName: "Application Prep Agent",
       entityType: "application_prep",
       entityId: job.applicationPrepId || job.id,
       jobId,
-      inputSummary: `Generated prep draft from job keywords=${summarizeList(job.jdStructured?.keywords || [])}.`
+      inputSummary: `系统会复用岗位定制简历结果，继续生成自我介绍、问答草稿与投递附言。`
     },
-    () => agentRegistry.applicationPrep({ job, profile })
+    () => agentRegistry.applicationPrep({ job, profile, fitAssessment, resumeDocument, tailoringOutput })
   );
   const applicationPrep = prepStage.result;
   store.saveApplicationPrep(applicationPrep);
 
-  let updatedJob = updateJob(jobId, () => ({
+  const updatedTailoringOutput = buildTailoringOutputRecord({
+    existingTailoringOutput: tailoringOutput,
+    tailoringResult: tailoringOutput,
+    applicationPrep,
+    fitAssessment,
+    resumeDocument
+  });
+  store.saveTailoringOutput(updatedTailoringOutput);
+
+  const updatedJob = updateJob(jobId, () => ({
     applicationPrepId: applicationPrep.id,
+    resumeDocumentId: resumeDocument.id,
     status:
       ["inbox", "archived"].includes(job.status) && ["deprioritize", "avoid"].includes(job.strategyDecision)
         ? "to_prepare"
@@ -700,21 +1045,23 @@ async function prepareJobApplication(jobId) {
     entityType: "application_prep",
     entityId: applicationPrep.id,
     action: "prep_saved",
-    summary: `Saved application prep for ${job.company}.`,
+    summary: `已为 ${job.company} 生成申请准备包。`,
     metadata: {
       jobId,
       checklistCompleted: isPrepReady(applicationPrep),
-      llm: applicationPrep.llmMeta || null
+      llm: applicationPrep.llmMeta || null,
+      resumeDocumentId: resumeDocument.id,
+      tailoringExplainabilityCount: applicationPrep.tailoringExplainability?.length || 0
     },
     agentName: "Application Prep Agent",
-    inputSummary: `Generated prep draft from job keywords=${summarizeList(applicationPrep.resumeTailoring?.targetKeywords || [])}.`,
-    outputSummary: `Prep draft includes ${applicationPrep.resumeTailoring?.rewriteBullets?.length || 0} tailored bullets and ${applicationPrep.qaDraft?.length || 0} Q&A prompts${applicationPrep.llmMeta?.fallbackUsed ? " via heuristic fallback" : " via LLM-assisted generation"}.`,
+    inputSummary: `基于岗位定制简历结果继续生成申请叙事与沟通材料。`,
+    outputSummary: `问答草稿 ${applicationPrep.qaDraft?.length || 0} 条，沟通重点 ${(applicationPrep.talkingPoints || []).length} 条。`,
     decisionReason:
       ["deprioritize", "avoid"].includes(job.strategyDecision)
-        ? "The user explicitly overrode the strategy policy, so the role was reintroduced into the prep path."
+        ? "虽然策略层对该岗位较谨慎，但系统仍为你生成一版可编辑申请包，方便你人工决策。"
         : job.strategyDecision === "cautious_proceed"
-        ? "The strategy layer allows prep, but with explicit caution because the role carries higher narrative or outcome risk."
-        : "The prep agent creates a first working draft so the user can review, edit, and keep the final submission inside the human approval boundary.",
+          ? "系统在保留风险提示的前提下，补齐了申请叙事与投递材料，帮助你更有准备地推进。"
+          : "系统已把岗位定制简历进一步扩展为完整申请准备包，便于你直接进入后续投递与面试准备。",
     activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
     policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
     overrideApplied: Boolean(job.policyOverride?.active),
@@ -723,13 +1070,117 @@ async function prepareJobApplication(jobId) {
       : null
   });
 
-  return { job: updatedJob, applicationPrep };
+  return { job: updatedJob, applicationPrep, tailoringOutput: updatedTailoringOutput, resumeDocument };
+}
+
+function saveResumeTailoringOutput(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  const profile = store.getProfile();
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const resumeDocument = store.getLatestResumeDocument();
+  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
+
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  if (!existingTailoringOutput) {
+    const error = new Error("请先生成岗位定制简历，再保存人工确认结果。");
+    error.code = "TAILORING_REQUIRED";
+    throw error;
+  }
+
+  const incomingBullets = Array.isArray(payload.rewrittenBullets) ? payload.rewrittenBullets : [];
+  const normalizedBullets = normalizeTailoringBullets(
+    incomingBullets.length ? incomingBullets : existingTailoringOutput.rewrittenBullets || [],
+    [],
+    existingTailoringOutput.targetingBrief?.targetKeywords || [],
+    job
+  );
+  const acceptedBullets = normalizedBullets.filter((item) => item.status === "accepted");
+  const tailoredSummary = payload.tailoredSummary ?? existingTailoringOutput.tailoredSummary ?? "";
+  const whyMe = payload.whyMe ?? existingTailoringOutput.whyMe ?? "";
+  const explainability = buildExplainability({
+    rewrittenBullets: normalizedBullets,
+    selectedExperience: [],
+    targetKeywords: existingTailoringOutput.targetingBrief?.targetKeywords || [],
+    fitAssessment,
+    job
+  });
+  const diffView = buildDiffView({
+    resumeSnapshot:
+      existingTailoringOutput.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile || {}),
+    rewrittenBullets: normalizedBullets,
+    orderingPlan: existingTailoringOutput.selectionPlan?.orderingPlan || ["summary", "experience", "projects", "skills"],
+    tailoredSummary,
+    whyMe
+  });
+
+  const nextTailoringOutput = {
+    ...existingTailoringOutput,
+    tailoredSummary,
+    whyMe,
+    rewrittenBullets: normalizedBullets,
+    explainability,
+    tailoringExplainability: explainability,
+    diff: diffView.diff,
+    diffView,
+    tailoredResumePreview: buildTailoredPreview({
+      tailoredSummary,
+      whyMe,
+      rewrittenBullets: normalizedBullets,
+      selectedProjects: [],
+      selectedSkills: existingTailoringOutput.selectionPlan?.selectedSkills || [],
+      resumeSnapshot:
+        existingTailoringOutput.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile || {}),
+      targetKeywords: existingTailoringOutput.targetingBrief?.targetKeywords || []
+    }),
+    humanReview: {
+      acceptedBulletCount: acceptedBullets.length,
+      rejectedBulletCount: normalizedBullets.filter((item) => item.status === "rejected").length,
+      pendingBulletCount: normalizedBullets.filter((item) => item.status === "pending").length,
+      updatedAt: nowIso()
+    },
+    updatedAt: nowIso()
+  };
+
+  store.saveTailoringOutput(nextTailoringOutput);
+
+  logActivity({
+    type: "tailoring_review_saved",
+    entityType: "tailoring_output",
+    entityId: nextTailoringOutput.id,
+    action: "tailoring_review_saved",
+    actor: "user",
+    jobId,
+    summary: `已保存 ${job.company} 的岗位定制简历人工确认结果。`,
+    metadata: {
+      acceptedCount: acceptedBullets.length,
+      rejectedCount: normalizedBullets.filter((item) => item.status === "rejected").length,
+      pendingCount: normalizedBullets.filter((item) => item.status === "pending").length,
+      prepWillUseAcceptedOnly: true
+    },
+    agentName: "Resume Tailoring Agent",
+    inputSummary: `用户对 ${normalizedBullets.length} 条改写建议进行了接受 / 拒绝 / 编辑。`,
+    outputSummary: `当前已接受 ${acceptedBullets.length} 条，已拒绝 ${normalizedBullets.filter((item) => item.status === "rejected").length} 条，待确认 ${normalizedBullets.filter((item) => item.status === "pending").length} 条。Prep Agent 后续只会使用已接受内容。`,
+    decisionReason: "Resume Tailoring Agent 允许用户在生成后逐条确认建议，确保后续申请准备只使用人确认过的内容。"
+  });
+
+  return {
+    job,
+    tailoringOutput: nextTailoringOutput,
+    acceptedCount: acceptedBullets.length,
+    pendingCount: normalizedBullets.filter((item) => item.status === "pending").length
+  };
 }
 
 function saveApplicationPrep(jobId, payload) {
   const job = store.getJob(jobId);
   const profile = store.getProfile();
   const existing = store.getApplicationPrepByJobId(jobId);
+  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
 
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
@@ -751,37 +1202,61 @@ function saveApplicationPrep(jobId, payload) {
           .map((item) => item.trim())
           .filter(Boolean);
 
-  const rewriteBullets = normalizeLines(payload.tailoredResumeBullets).map((line, index) => ({
-    source: existing?.resumeTailoring?.rewriteBullets?.[index]?.source || `Bullet ${index + 1}`,
-    rewritten: line
+  const editedLines = normalizeLines(payload.tailoredResumeBullets);
+  const existingAcceptedBullets = (existingTailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted");
+  const rewriteBullets = editedLines.map((line, index) => ({
+    ...(existingAcceptedBullets[index] || {}),
+    bulletId: existingAcceptedBullets[index]?.bulletId || `accepted_bullet_${index + 1}`,
+    source: existingAcceptedBullets[index]?.source || existing?.resumeTailoring?.rewriteBullets?.[index]?.source || `经历 ${index + 1}`,
+    before: existingAcceptedBullets[index]?.before || existingAcceptedBullets[index]?.source || "",
+    after: line,
+    suggestion: line,
+    rewritten: line,
+    status: "accepted"
   }));
 
   const qaDraft = normalizeLines(payload.qaDraft).map((line, index) => {
     const [question, ...answerParts] = line.split("::");
     return {
-      question: (question || `Question ${index + 1}`).trim(),
+      question: (question || `?? ${index + 1}`).trim(),
       draftAnswer: (answerParts.join("::") || "").trim()
     };
   });
 
   const checklist = (payload.checklist || []).map((item, index) => ({
     key: item.key || `check_${index + 1}`,
-    label: item.label || `Checklist item ${index + 1}`,
+    label: item.label || `??? ${index + 1}`,
     completed: Boolean(item.completed)
   }));
 
+  const baseExplainability = Array.isArray(existing?.tailoringExplainability) ? existing.tailoringExplainability : [];
+  const targetKeywords =
+    payload.targetKeywords ||
+    existing?.resumeTailoring?.targetKeywords ||
+    job.jdStructured?.keywords?.slice(0, 5) ||
+    [];
+
   const applicationPrep = {
+    ...(existing || {}),
     id: existing?.id || createId("prep"),
     jobId,
     profileId: profile.id,
     version: (existing?.version || 0) + 1,
+    resumeDocumentId: payload.resumeDocumentId || existing?.resumeDocumentId || job.resumeDocumentId || null,
+    resumeSnapshot: existing?.resumeSnapshot || null,
     resumeTailoring: {
-      targetKeywords:
-        payload.targetKeywords ||
-        existing?.resumeTailoring?.targetKeywords ||
-        job.jdStructured?.keywords?.slice(0, 5) ||
-        [],
-      rewriteBullets
+      ...(existing?.resumeTailoring || {}),
+      targetKeywords,
+      rewriteBullets,
+      usedBullets: rewriteBullets,
+      unusedBullets: existingTailoringOutput?.rewrittenBullets
+        ? existingTailoringOutput.rewrittenBullets.filter(
+            (item) => !rewriteBullets.find((candidate) => candidate.bulletId === item.bulletId)
+          )
+        : [],
+      strengthenAreas: payload.strengthenAreas || existing?.resumeTailoring?.strengthenAreas || targetKeywords.slice(0, 4),
+      deEmphasizeAreas: payload.deEmphasizeAreas || existing?.resumeTailoring?.deEmphasizeAreas || [],
+      keywordSuggestions: payload.keywordSuggestions || existing?.resumeTailoring?.keywordSuggestions || targetKeywords.slice(0, 6)
     },
     selfIntro: {
       short: payload.selfIntroShort || existing?.selfIntro?.short || "",
@@ -791,16 +1266,62 @@ function saveApplicationPrep(jobId, payload) {
     whyMe: payload.whyMe || existing?.whyMe || "",
     qaDraft,
     talkingPoints: normalizeLines(payload.talkingPoints || existing?.talkingPoints || []),
-    coverNote: payload.coverNote || "",
+    coverNote: payload.coverNote || existing?.coverNote || "",
     outreachNote: payload.outreachNote || existing?.outreachNote || "",
     checklist,
+    contentWithSources: existing?.contentWithSources || [],
+    tailoringExplainability:
+      (payload.tailoringExplainability || baseExplainability).map((item, index) => ({
+        id: item.id || `tailoring_reason_${index + 1}`,
+        title: item.title || `???? ${index + 1}`,
+        before: item.before || rewriteBullets[index]?.source || "",
+        after: item.after || rewriteBullets[index]?.rewritten || "",
+        reason: item.reason || "??????????????",
+        jdRequirement: item.jdRequirement || targetKeywords[index] || "",
+        goal: item.goal || "????????",
+        evidenceAnchor: item.evidenceAnchor || ""
+      })) || [],
+    tailoredResumePreview: {
+      ...(existing?.tailoredResumePreview || {}),
+      summary: payload.tailoredSummary || existing?.tailoredResumePreview?.summary || existing?.tailoredSummary || "",
+      positioning: payload.whyMe || existing?.tailoredResumePreview?.positioning || existing?.whyMe || "",
+      experienceBullets: rewriteBullets.map((item) => item.rewritten).filter(Boolean),
+      projectHighlights: normalizeLines(payload.talkingPoints || existing?.tailoredResumePreview?.projectHighlights || []),
+      skills: targetKeywords,
+      education: existing?.tailoredResumePreview?.education || existing?.resumeSnapshot?.education || [],
+      keywords: targetKeywords
+    },
+    whyThisVersion: payload.whyThisVersion || existing?.whyThisVersion || "????????????????????",
     createdAt: existing?.createdAt || nowIso(),
     updatedAt: nowIso()
   };
 
   store.saveApplicationPrep(applicationPrep);
+  store.saveTailoringOutput({
+    ...(existingTailoringOutput || {}),
+    id: existingTailoringOutput?.id || createId("tailoring"),
+    jobId,
+    resumeDocumentId: applicationPrep.resumeDocumentId || existingTailoringOutput?.resumeDocumentId || null,
+    applicationPrepId: applicationPrep.id,
+    fitAssessmentId: store.getFitAssessmentByJobId(jobId)?.id || existingTailoringOutput?.fitAssessmentId || null,
+    tailoredSummary: applicationPrep.tailoredSummary || existingTailoringOutput?.tailoredSummary || "",
+    whyMe: applicationPrep.whyMe || existingTailoringOutput?.whyMe || "",
+    whyThisChange: applicationPrep.whyThisVersion || existingTailoringOutput?.whyThisChange || "",
+    rewrittenBullets: (existingTailoringOutput?.rewrittenBullets || []).map((item) => {
+      const matchedAccepted = rewriteBullets.find((candidate) => candidate.bulletId === item.bulletId);
+      return matchedAccepted ? { ...item, ...matchedAccepted, status: "accepted" } : item;
+    }),
+    explainability: applicationPrep.tailoringExplainability || existingTailoringOutput?.explainability || [],
+    tailoringExplainability: applicationPrep.tailoringExplainability || existingTailoringOutput?.tailoringExplainability || [],
+    tailoredResumePreview: applicationPrep.tailoredResumePreview || existingTailoringOutput?.tailoredResumePreview || null,
+    applicationPrepSnapshot: applicationPrep,
+    createdAt: existingTailoringOutput?.createdAt || nowIso(),
+    updatedAt: nowIso()
+  });
+
   const updatedJob = updateJob(jobId, () => ({
-    applicationPrepId: applicationPrep.id
+    applicationPrepId: applicationPrep.id,
+    resumeDocumentId: applicationPrep.resumeDocumentId || job.resumeDocumentId || null
   }));
 
   logActivity({
@@ -810,12 +1331,12 @@ function saveApplicationPrep(jobId, payload) {
     action: "prep_saved",
     actor: "user",
     jobId,
-    summary: `Saved editable prep for ${job.company}.`,
-    agentName: "Application Prep Agent",
-    inputSummary: `User updated prep fields and ${checklist.filter((item) => item.completed).length}/${checklist.length} checklist items are complete.`,
-    outputSummary: `Prep version ${applicationPrep.version} saved with prepReady=${isPrepReady(applicationPrep)} and ${applicationPrep.talkingPoints?.length || 0} talking points.`,
+    summary: `??? ${job.company} ??????????`,
+    agentName: "??????",
+    inputSummary: `????????????????? ${checklist.filter((item) => item.completed).length}/${checklist.length} ????`,
+    outputSummary: `???? ${applicationPrep.version} ??????????????=${isPrepReady(applicationPrep)}??????=${applicationPrep.tailoringExplainability?.length || 0}?`,
     decisionReason:
-      "The system preserves user-edited application materials as shared state so the pipeline can safely decide when the role is ready to apply.",
+      "????????????????????????????????????????????????",
     activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
     policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
     overrideApplied: Boolean(job.policyOverride?.active),
@@ -856,7 +1377,7 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     const prep = store.getApplicationPrepByJobId(jobId);
     if (!prep || !isPrepReady(prep)) {
       const error = new Error(
-        "Cannot move to ready_to_apply until prep core checklist is completed."
+        "在核心申请准备清单完成之前，不能推进到可投递状态。"
       );
       error.code = "PREP_NOT_READY";
       error.details = { jobId, requiredChecklist: ["resume_reviewed", "intro_ready", "qa_ready"] };
@@ -895,18 +1416,18 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     action: "job_status_changed",
     actor: options.actor || "user",
     jobId,
-    summary: `Moved ${updatedJob.company} to ${nextStatus}.`,
+    summary: `已将 ${updatedJob.company} 更新到 ${humanizeLifecycleStatus(nextStatus)}。`,
     metadata: { currentStatus: job.status, nextStatus },
-    agentName: "Pipeline Manager Agent",
-    inputSummary: `Requested status transition from ${job.status} to ${nextStatus}.`,
+    agentName: "流程管理阶段",
+    inputSummary: `请求将岗位状态从 ${humanizeLifecycleStatus(job.status)} 更新为 ${humanizeLifecycleStatus(nextStatus)}。`,
     outputSummary: nextTask
-      ? `Status updated to ${nextStatus}; created follow-up task ${nextTask.title}.`
-      : `Status updated to ${nextStatus}; no follow-up task generated.`,
+      ? `状态已更新为 ${humanizeLifecycleStatus(nextStatus)}；并创建了后续任务：${nextTask.title}。`
+      : `状态已更新为 ${humanizeLifecycleStatus(nextStatus)}；当前没有额外后续任务。`,
     decisionReason:
       nextStatus === "ready_to_apply"
-        ? "The transition was allowed only after the core prep checklist was complete."
-        : "The transition followed the job lifecycle state machine and updated shared pipeline state.",
-    policyInfluenceSummary: `Pipeline executed this transition under focusMode=${globalPolicy.focusMode} with riskTolerance=${globalPolicy.riskTolerance}.`,
+        ? "只有在核心申请准备清单完成后，系统才允许推进到可投递状态。"
+        : "这次状态变化遵循岗位生命周期状态机，并同步更新了共享流程状态。",
+    policyInfluenceSummary: `本次流转在聚焦模式=${globalPolicy.focusMode}、风险偏好=${globalPolicy.riskTolerance} 的策略上下文中执行。`,
     activePolicyVersion: createPolicyVersion(globalPolicy),
     policyProposalId: globalPolicy.appliedProposalId || null,
     overrideApplied: Boolean(updatedJob.policyOverride?.active),
@@ -1002,11 +1523,11 @@ function saveProfile(payload) {
     entityId: profile.id,
     action: "profile_saved",
     actor: "user",
-    summary: `Saved profile for ${profile.fullName || "candidate"}.`,
-    inputSummary: `Profile updated with targetRoles=${summarizeList(profile.targetRoles)}, targetIndustries=${summarizeList(profile.targetIndustries)}.`,
-    outputSummary: `Profile now records ${profile.yearsOfExperience} years experience and ${profile.strengths.length} strengths.`,
-    decisionReason: "The profile is the long-lived source of truth used by ingestion, evaluation, and prep.",
-    policyInfluenceSummary: `Global policy refreshed with focusMode=${globalPolicy.focusMode} and riskTolerance=${globalPolicy.riskTolerance}.`
+    summary: `已保存 ${profile.fullName || "候选人"} 的个人画像。`,
+    inputSummary: `画像已更新：目标岗位=${summarizeList(profile.targetRoles)}，目标行业=${summarizeList(profile.targetIndustries)}。`,
+    outputSummary: `画像当前记录 ${profile.yearsOfExperience} 年经验，以及 ${profile.strengths.length} 项优势。`,
+    decisionReason: "个人画像是长期生效的核心事实源，岗位导入、匹配评估和申请准备都会读取这里的内容。",
+    policyInfluenceSummary: `全局策略已基于最新画像刷新：聚焦模式=${globalPolicy.focusMode}，风险偏好=${globalPolicy.riskTolerance}。`
   });
   return profile;
 }
@@ -1058,12 +1579,12 @@ function reflectInterview(payload) {
     entityType: "interview_reflection",
     entityId: reflection.id,
     action: "interview_reflected",
-    summary: `Logged interview reflection for ${job.company}.`,
+    summary: `已记录 ${job.company} 的面试复盘。`,
     metadata: { jobId: job.id, skillGaps: reflection.skillGaps || [] },
-    agentName: "Interview Reflection Agent",
-    inputSummary: `Interview notes captured for ${updatedJob.title}.`,
-    outputSummary: `Captured ${reflection.successSignals?.length || 0} success signals and ${reflection.skillGaps?.length || 0} skill gaps.`,
-    decisionReason: `This reflection now updates future scoring biases and strategy advice. Strategy profile refreshed at ${strategyProfile.updatedAt}; global policy refreshed at ${globalPolicy.updatedAt}.`
+    agentName: "面试复盘阶段",
+    inputSummary: `已记录 ${updatedJob.title} 的面试笔记。`,
+    outputSummary: `本次复盘提取出 ${reflection.successSignals?.length || 0} 个成功信号，以及 ${reflection.skillGaps?.length || 0} 个技能短板。`,
+    decisionReason: `这次复盘会继续影响后续评分偏置和策略建议。策略画像已在 ${strategyProfile.updatedAt} 刷新，全局策略已在 ${globalPolicy.updatedAt} 刷新。`
   });
 
   return reflection;
@@ -1080,13 +1601,14 @@ function getJobDetail(jobId) {
   const activityLogs = store
     .listActivityLogsByJobId(jobId)
     .sort((a, b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
-  const fitAssessment = store.getFitAssessmentByJobId(jobId)
+  const storedAssessment = store.getFitAssessmentByJobId(jobId);
+  const fitAssessment = storedAssessment
     ? {
-        ...store.getFitAssessmentByJobId(jobId),
-        overrideApplied: Boolean(job.policyOverride?.active) || store.getFitAssessmentByJobId(jobId).overrideApplied,
+        ...storedAssessment,
+        overrideApplied: Boolean(job.policyOverride?.active) || storedAssessment.overrideApplied,
         overrideSummary: job.policyOverride?.active
           ? `${job.policyOverride.action}${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : ""}`
-          : store.getFitAssessmentByJobId(jobId).overrideSummary || null
+          : storedAssessment.overrideSummary || null
       }
     : null;
   const globalPolicy =
@@ -1096,11 +1618,18 @@ function getJobDetail(jobId) {
       triggerType: "system_refresh",
       triggerSource: "ui"
     });
+  const applicationPrep = store.getApplicationPrepByJobId(jobId) || null;
+  const tailoringOutput = store.getTailoringOutputByJobId(jobId) || null;
+  const resumeDocument = job.resumeDocumentId
+    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
+    : store.getLatestResumeDocument();
 
   return {
     job,
     fitAssessment,
-    applicationPrep: store.getApplicationPrepByJobId(jobId) || null,
+    applicationPrep,
+    tailoringOutput,
+    resumeDocument,
     tasks: store.listTasksByJobId(jobId),
     activityLogs,
     interviewReflection: store.getInterviewReflectionByJobId(jobId) || null,
@@ -1110,22 +1639,180 @@ function getJobDetail(jobId) {
     pipelineStages: buildJobPipelineStages({
       job,
       fitAssessment,
-      applicationPrep: store.getApplicationPrepByJobId(jobId) || null,
+      tailoringOutput,
+      applicationPrep,
       activityLogs
     }),
     policyProposals: listPolicyProposals().slice(0, 3),
     policyAuditLogs: listPolicyAuditHistory().slice(0, 5),
     nextAction: getJobNextAction(job),
-    allowedNextStatuses: getAllowedNextStatuses(job.status),
-    recommendedNextStatuses: getRecommendedNextStatuses(job.status)
+    allowedNextStatuses: safeGetAllowedNextStatuses(job.status),
+    recommendedNextStatuses: safeGetRecommendedNextStatuses(job.status)
   };
+}
+
+function buildTailoringWorkspace(jobId) {
+  const detail = getJobDetail(jobId);
+  const { job, fitAssessment, tailoringOutput, applicationPrep, resumeDocument, activityLogs, nextAction } = detail;
+  const workspaceMeta = tailoringOutput?.workspace || {
+    id: `workspace_${job.id}`,
+    name: buildDefaultTailoringWorkspaceName(job),
+    activeVersion: tailoringOutput?.version || 1,
+    baseResumeAssetId: resumeDocument?.id || null,
+    lastRefinePrompt: ""
+  };
+  const structuredProfile = resumeDocument?.structuredProfile || {};
+  const baseResumeAsset = {
+    id: workspaceMeta.baseResumeAssetId || resumeDocument?.id || `resume_asset_${job.id}`,
+    name: resumeDocument?.fileName || "主简历",
+    sourceResumeId: resumeDocument?.id || null,
+    summary: structuredProfile.summary || resumeDocument?.summary || "",
+    experience: structuredProfile.experience || [],
+    projects: structuredProfile.projects || [],
+    skills: structuredProfile.skills || [],
+    education: structuredProfile.education || [],
+    achievements: structuredProfile.achievements || structuredProfile.highlights || []
+  };
+  const reviewSummary = {
+    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
+    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
+    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status !== "accepted" && item.status !== "rejected").length
+  };
+
+  return {
+    ...detail,
+    workspace: {
+      id: workspaceMeta.id,
+      name: workspaceMeta.name,
+      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
+      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
+      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
+      canGeneratePrepFromAcceptedOnly: true,
+      baseResumeAsset,
+      reviewSummary,
+      jobSummary: {
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        status: job.status,
+        fitScore: fitAssessment?.fitScore ?? null,
+        recommendation: fitAssessment?.recommendation || null,
+        strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
+        keyRequirements: pickTopItems(job.jdStructured?.requirements || [], 5),
+        targetKeywords:
+          tailoringOutput?.targetingBrief?.targetKeywords ||
+          applicationPrep?.resumeTailoring?.targetKeywords ||
+          pickTopItems(job.jdStructured?.keywords || [], 8)
+      },
+      nextAction
+    },
+    workspaceActivity: (activityLogs || []).filter((entry) =>
+      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
+    )
+  };
+}
+
+async function saveTailoringWorkspace(jobId, payload = {}) {
+  const normalizedName = truncateText(payload.workspaceName || "", 120);
+  const saved = saveResumeTailoringOutput(jobId, payload);
+  const current = store.getTailoringOutputByJobId(jobId);
+  if (current) {
+    store.saveTailoringOutput({
+      ...current,
+      workspace: {
+        ...(current.workspace || {}),
+        id: current.workspace?.id || `workspace_${jobId}`,
+        name: normalizedName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        activeVersion: current.workspace?.activeVersion || current.version || 1,
+        lastRefinePrompt:
+          truncateText(payload.refinePrompt || "", 500) ||
+          current.workspace?.lastRefinePrompt ||
+          "",
+        updatedAt: nowIso(),
+        lastSavedAt: nowIso()
+      }
+    });
+  }
+  return buildTailoringWorkspace(jobId);
+}
+
+async function refineTailoringWorkspace(jobId, payload = {}) {
+  const workspaceName = truncateText(payload.workspaceName || "", 120);
+  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
+  const generated = await generateResumeTailoringOutput(jobId, {
+    workspaceName,
+    refinePrompt
+  });
+  const current = store.getTailoringOutputByJobId(jobId);
+  if (current) {
+    store.saveTailoringOutput({
+      ...current,
+      workspace: {
+        ...(current.workspace || {}),
+        id: current.workspace?.id || `workspace_${jobId}`,
+        name: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        activeVersion: current.version || current.workspace?.activeVersion || 1,
+        lastRefinePrompt: refinePrompt,
+        updatedAt: nowIso(),
+        lastSavedAt: nowIso()
+      }
+    });
+  }
+  return {
+    ...generated,
+    workspace: buildTailoringWorkspace(jobId).workspace
+  };
+}
+
+function humanizeRecommendationCode(value) {
+  const map = {
+    apply: "建议投递",
+    cautious: "谨慎投递",
+    skip: "暂不优先"
+  };
+  return map[value] || value || "待判断";
+}
+
+function humanizeLifecycleStatus(value) {
+  const map = {
+    inbox: "待处理",
+    evaluating: "评估中",
+    to_prepare: "待准备",
+    ready_to_apply: "可投递",
+    applied: "已投递",
+    follow_up: "待跟进",
+    interviewing: "面试中",
+    rejected: "未通过",
+    offer: "录用",
+    archived: "已归档"
+  };
+  return map[value] || value || "未知状态";
+}
+
+function humanizePriorityCode(value) {
+  const map = {
+    high: "高优先级",
+    medium: "中优先级",
+    low: "低优先级"
+  };
+  return map[value] || value || "未设置";
+}
+
+function humanizeOverrideActionCode(value) {
+  const map = {
+    force_proceed: "强制继续推进",
+    ignore_policy: "忽略系统策略",
+    force_archive: "强制归档"
+  };
+  return map[value] || value || "人工覆盖";
 }
 
 function buildJobPolicyExplanation(job, fitAssessment, globalPolicy) {
   const explanation = [];
   if (!fitAssessment) return explanation;
 
-  explanation.push(`Strategy decision: ${fitAssessment.strategyDecision}.`);
+  explanation.push(`策略判断：${fitAssessment.strategyDecision}。`);
 
   if (fitAssessment.policyInfluenceSummary) {
     explanation.push(fitAssessment.policyInfluenceSummary);
@@ -1136,27 +1823,27 @@ function buildJobPolicyExplanation(job, fitAssessment, globalPolicy) {
   }
 
   if (job.status === "archived" && fitAssessment.strategyDecision === "avoid") {
-    explanation.push("The role was archived by default because current policy and historical evidence both indicate low expected leverage.");
+    explanation.push("这条岗位被默认归档，因为当前策略与历史证据都表明继续投入的预期收益较低。");
   }
 
   if (job.priority === "high" && globalPolicy.focusMode === "focused") {
-    explanation.push("This job is elevated because it fits the current focused pipeline strategy.");
+    explanation.push("这条岗位被抬升优先级，因为它符合当前的聚焦推进策略。");
   }
 
   if (job.strategyDecision === "deprioritize") {
-    explanation.push("The system kept this job out of the active prep queue, but you can still override that manually.");
+    explanation.push("系统暂时没有把这条岗位放进主准备队列，但你仍然可以手动覆盖这一判断。");
   }
 
   if (job.policyOverride?.active) {
     explanation.push(
-      `A user override is active (${job.policyOverride.action})${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : "."}`
+      `当前存在人工覆盖（${humanizeOverrideActionCode(job.policyOverride.action)}）${job.policyOverride.reason ? `：${job.policyOverride.reason}` : "。"}`
     );
   }
 
   return explanation;
 }
 
-function buildJobPipelineStages({ job, fitAssessment, applicationPrep, activityLogs }) {
+function buildJobPipelineStages({ job, fitAssessment, tailoringOutput, applicationPrep, activityLogs }) {
   const stageLogs = (activityLogs || []).filter((entry) => entry.metadata?.stageKey);
   const findStageLog = (stageKey) => stageLogs.find((entry) => entry.metadata?.stageKey === stageKey);
   const stageFor = (stageKey, label, fallbackStatus = "pending", summaryFallback = "") => {
@@ -1175,35 +1862,45 @@ function buildJobPipelineStages({ job, fitAssessment, applicationPrep, activityL
   return [
     stageFor(
       "url_import",
-      "URL Import Agent",
+      "链接导入阶段",
       urlImportStatus,
-      job.source === "url" ? "The job entered ApplyFlow through a URL-first intake path." : "This job was created manually."
+      job.source === "url" ? "该岗位通过链接优先导入路径进入 ApplyFlow。" : "该岗位通过手动方式创建。"
     ),
     stageFor(
       "job_ingestion",
-      "Job Ingestion Agent",
+      "岗位结构化阶段",
       job.id ? "completed" : "pending",
-      job.id ? "The raw input was normalized into the shared Job object." : "Waiting to create the shared job object."
+      job.id ? "原始输入已经被整理为共享 Job 对象。" : "等待创建共享 Job 对象。"
     ),
     stageFor(
       "fit_evaluation",
-      "Fit Evaluation Agent",
+      "匹配评估阶段",
       fitAssessment ? "completed" : "pending",
-      fitAssessment ? `Generated a ${fitAssessment.recommendation} recommendation with score ${fitAssessment.fitScore}.` : "Waiting to generate the structured fit assessment."
+      fitAssessment
+        ? `已生成匹配评估：结论为 ${humanizeRecommendationCode(fitAssessment.recommendation)}，评分 ${fitAssessment.fitScore}。`
+        : "等待生成结构化匹配评估。"
+    ),
+    stageFor(
+      "resume_tailoring",
+      "简历定制阶段",
+      tailoringOutput ? "completed" : fitAssessment ? "ready" : "pending",
+      tailoringOutput
+        ? `已生成岗位定制简历，改写 ${tailoringOutput.rewrittenBullets?.length || tailoringOutput.diffView?.changedBulletCount || 0} 条经历表达。`
+        : "等待根据 JD 与原始简历生成岗位定制版简历。"
     ),
     stageFor(
       "prep_generation",
-      "Prep Generation Agent",
-      applicationPrep ? "completed" : job.status === "to_prepare" ? "ready" : "pending",
+      "申请准备阶段",
+      applicationPrep ? "completed" : tailoringOutput ? "ready" : job.status === "to_prepare" ? "ready" : "pending",
       applicationPrep
-        ? `Generated the prep pack with ${applicationPrep.resumeTailoring?.rewriteBullets?.length || 0} tailored bullets.`
-        : "Prep can run once the user chooses to create or refine the application pack."
+        ? `已生成申请准备包，其中包含 ${applicationPrep.qaDraft?.length || 0} 条问答草稿与 ${(applicationPrep.talkingPoints || []).length} 条沟通重点。`
+        : "当岗位定制简历完成后，这一阶段即可继续补齐申请叙事与材料包。"
     ),
     {
       key: "pipeline_manager",
-      label: "Pipeline Manager Agent",
+      label: "流程管理阶段",
       status: job.status === "archived" ? "completed" : "active",
-      summary: `The pipeline manager currently holds this role at ${job.status} with priority ${job.priority}.`,
+      summary: `流程管理器当前将该岗位维持在 ${humanizeLifecycleStatus(job.status)} 状态，优先级为 ${humanizePriorityCode(job.priority)}。`,
       timestamp: job.updatedAt
     }
   ];
@@ -1211,22 +1908,23 @@ function buildJobPipelineStages({ job, fitAssessment, applicationPrep, activityL
 
 function getJobNextAction(job) {
   const prep = store.getApplicationPrepByJobId(job.id);
+  const tailoringOutput = store.getTailoringOutputByJobId(job.id);
   const fit = store.getFitAssessmentByJobId(job.id);
   const globalPolicy = store.getGlobalStrategyPolicy() || refreshGlobalStrategyPolicy();
 
-  if (job.strategyDecision === "deprioritize" && job.status === "inbox") {
+if (job.strategyDecision === "deprioritize" && job.status === "inbox") {
     return {
       tone: "warning",
       title:
         globalPolicy.focusMode === "focused"
-          ? "This role is deprioritized under the current focus policy"
-          : "This role is currently deprioritized",
+          ? "这条岗位在当前聚焦策略下被降低优先级"
+          : "这条岗位当前处于低优先级",
       description:
         fit?.strategyReasoning ||
         (globalPolicy.focusMode === "focused"
-          ? "The global policy is concentrating effort on a narrower set of roles, so this job is held outside the active prep queue unless you override it."
-          : "The strategy layer kept this role out of the active prep queue. Only continue if you want to override the backlog decision."),
-      ctaLabel: "Override and prep",
+          ? "全局策略正在把精力集中到更窄的一组岗位上，因此这条岗位暂时不会进入主准备队列，除非你主动覆盖。"
+          : "策略层暂时把这条岗位放在主准备队列之外，只有在你明确想推进时才建议继续。"),
+      ctaLabel: "人工覆盖并开始准备",
       ctaType: "prepare"
     };
   }
@@ -1234,12 +1932,12 @@ function getJobNextAction(job) {
   if (job.status === "archived") {
     return {
       tone: "warning",
-      title: "This role is not recommended for active pursuit",
+      title: "这条岗位当前不建议继续主动推进",
       description:
         fit?.strategyDecision === "avoid"
-          ? "The strategy policy marked this role as avoid. Keep it archived unless you explicitly want to override the decision."
-          : "This role has been archived from the active pipeline.",
-      ctaLabel: fit?.strategyDecision === "avoid" ? "Override and prep" : "Review archived rationale",
+          ? "策略层已将这条岗位标记为建议回避。除非你明确想覆盖判断，否则建议继续保持归档。"
+          : "这条岗位已经从主动推进队列中归档。",
+      ctaLabel: fit?.strategyDecision === "avoid" ? "人工覆盖并开始准备" : "查看归档原因",
       ctaType: fit?.strategyDecision === "avoid" ? "prepare" : "none"
     };
   }
@@ -1247,28 +1945,44 @@ function getJobNextAction(job) {
   if (job.status === "evaluating") {
     return {
       tone: "primary",
-      title: "Complete the fit evaluation",
-      description: "Run the evaluation so the system can decide whether this role is worth preparing for.",
-      ctaLabel: "Run evaluation",
+      title: "完成匹配评估",
+      description: "先运行评估，让系统判断这条岗位是否值得进入申请准备。",
+      ctaLabel: "立即评估",
       ctaType: "evaluate"
     };
   }
 
   if (job.status === "to_prepare") {
+    if (!tailoringOutput) {
+      return {
+        tone: job.strategyDecision === "cautious_proceed" ? "warning" : "primary",
+        title:
+          job.strategyDecision === "cautious_proceed"
+            ? "先生成岗位定制简历，再谨慎推进"
+            : "先生成岗位定制简历",
+        description:
+          job.strategyDecision === "cautious_proceed"
+            ? `请谨慎推进，并优先关注这些风险：${(fit?.riskFlags || []).slice(0, 2).join(" / ") || "请先查看匹配评估。"}` 
+            : "先把原始简历转换成针对该 JD 的定制版本，再进入申请准备，会更符合真实求职流程。",
+        ctaLabel: "生成岗位定制简历",
+        ctaType: "tailor"
+      };
+    }
+
     if (!prep) {
       return {
         tone: job.strategyDecision === "cautious_proceed" ? "warning" : "primary",
         title:
           job.strategyDecision === "cautious_proceed"
-            ? "Prepare carefully with the key risks in mind"
-            : "Create the first prep draft",
+            ? "带着关键风险继续完善申请准备"
+            : "基于定制简历生成申请准备包",
         description:
           job.strategyDecision === "cautious_proceed"
-            ? `Move forward carefully. Watch these risks: ${(fit?.riskFlags || []).slice(0, 2).join(" / ") || "review the fit assessment."}`
+            ? `请谨慎推进，并优先关注这些风险：${(fit?.riskFlags || []).slice(0, 2).join(" / ") || "请先查看匹配评估。"}`
             : globalPolicy.focusMode === "focused" && job.priority === "high"
-              ? "This role matches the current global focus. Generate tailored application materials now to keep momentum."
-              : "Generate tailored application materials before deciding whether to invest further.",
-        ctaLabel: "Generate prep draft",
+              ? "这条岗位符合当前全局聚焦方向，建议立刻补齐申请叙事与材料包，保持推进节奏。"
+              : "建议在岗位定制简历基础上继续生成申请准备包，再决定是否投入更多时间。",
+        ctaLabel: "生成申请准备包",
         ctaType: "prepare"
       };
     }
@@ -1279,12 +1993,12 @@ function getJobNextAction(job) {
 
     return {
       tone: missing.length === 0 ? "primary" : "warning",
-      title: missing.length === 0 ? "Mark prep as complete" : "Finish the prep checklist",
+      title: missing.length === 0 ? "标记申请准备完成" : "补齐申请准备清单",
       description:
         missing.length === 0
-          ? "Core prep items are complete. You can now move this role to ready_to_apply."
-          : `Complete these core items first: ${missing.join(" / ")}.`,
-      ctaLabel: "Open Prep",
+          ? "核心准备项已经完成。现在可以把这条岗位推进到可投递状态。"
+          : `请先完成这些核心项目：${missing.join(" / ")}。`,
+      ctaLabel: "打开申请准备",
       ctaType: "open_prep"
     };
   }
@@ -1294,13 +2008,13 @@ function getJobNextAction(job) {
       tone: "primary",
       title:
         globalPolicy.focusMode === "focused" && job.priority === "high"
-          ? "High-priority role is ready to submit"
-          : "Confirm the application has been submitted",
+          ? "高优先级岗位已准备好投递"
+          : "确认岗位已经完成投递",
       description:
         globalPolicy.focusMode === "focused" && job.priority === "high"
-          ? "This role is on-policy and fully prepped. After you apply outside the system, mark it as applied here to keep the focused pipeline moving."
-          : "This role is ready. After you apply outside the system, mark it as applied here.",
-      ctaLabel: "Mark as applied",
+          ? "这条岗位符合当前策略方向，且准备工作已经完成。你在线下完成投递后，请回到这里标记为已投递，保持主队列流动。"
+          : "这条岗位已经准备完成。你在线下完成投递后，请回到这里标记为已投递。",
+      ctaLabel: "标记已投递",
       ctaType: "status",
       nextStatus: "applied"
     };
@@ -1309,9 +2023,9 @@ function getJobNextAction(job) {
   if (job.status === "applied") {
     return {
       tone: "primary",
-      title: "Move the role into follow-up",
-      description: "Track the response window and prepare your next checkpoint.",
-      ctaLabel: "Start follow-up",
+      title: "进入跟进阶段",
+      description: "开始追踪回复窗口，并准备下一次检查节点。",
+      ctaLabel: "开始跟进",
       ctaType: "status",
       nextStatus: "follow_up"
     };
@@ -1320,9 +2034,9 @@ function getJobNextAction(job) {
   if (job.status === "follow_up") {
     return {
       tone: "warning",
-      title: "Wait for response or mark interview progress",
-      description: "If the company replies, move this role into interviewing. Otherwise keep tracking the follow-up window.",
-      ctaLabel: "Mark interviewing",
+      title: "等待反馈或记录面试推进",
+      description: "如果公司已经回复，可以把这条岗位推进到面试中；否则继续跟进时间窗口。",
+      ctaLabel: "标记进入面试",
       ctaType: "status",
       nextStatus: "interviewing"
     };
@@ -1331,18 +2045,18 @@ function getJobNextAction(job) {
   if (job.status === "interviewing") {
     return {
       tone: "primary",
-      title: "Capture the interview outcome",
-      description: "Once the process moves forward, update the role to offer or rejected.",
-      ctaLabel: "Log next outcome",
+      title: "记录面试结果",
+      description: "当流程有进一步结果时，请把岗位更新为录用或未通过。",
+      ctaLabel: "记录下一步结果",
       ctaType: "none"
     };
   }
 
   return {
     tone: "neutral",
-    title: "Review this role",
-    description: "Open the latest details and decide the next manual action.",
-    ctaLabel: "Open detail",
+    title: "检查这条岗位",
+    description: "查看最新信息，并决定下一步人工动作。",
+    ctaLabel: "查看详情",
     ctaType: "none"
   };
 }
@@ -1428,7 +2142,7 @@ function approvePolicyProposal(proposalId, reviewerNote = "") {
     eventType: "proposal_approved",
     actor: "user",
     relatedProposalId: proposalId,
-    summary: `Approved policy proposal ${proposalId}.`
+    summary: `已批准策略提案 ${proposalId}。`
   });
 
   const appliedPolicy = applyPolicySnapshot({
@@ -1436,7 +2150,7 @@ function approvePolicyProposal(proposalId, reviewerNote = "") {
     oldPolicySnapshot: proposal.oldPolicySnapshot,
     proposedPolicySnapshot: proposal.proposedPolicySnapshot,
     actor: "user",
-    summary: `Applied policy proposal ${proposalId}.`
+    summary: `已应用策略提案 ${proposalId}。`
   });
 
   return { proposal, policy: appliedPolicy };
@@ -1462,7 +2176,7 @@ function rejectPolicyProposal(proposalId, reviewerNote = "") {
     eventType: "proposal_rejected",
     actor: "user",
     relatedProposalId: proposalId,
-    summary: `Rejected policy proposal ${proposalId}.`
+    summary: `已拒绝策略提案 ${proposalId}。`
   });
 
   return proposal;
@@ -1484,7 +2198,7 @@ function revertCurrentPolicy() {
     oldPolicySnapshot: currentPolicy,
     proposedPolicySnapshot: targetSnapshot,
     actor: "user",
-    summary: "Reverted to the previous active policy snapshot."
+    summary: "已回滚到上一版生效策略快照。"
   });
 
   store.savePolicyHistoryEntry({
@@ -1492,7 +2206,7 @@ function revertCurrentPolicy() {
     proposalId: null,
     previousPolicySnapshot: currentPolicy,
     nextPolicySnapshot: revertedPolicy,
-    summary: "Recorded explicit policy revert action.",
+    summary: "已记录本次显式策略回滚动作。",
     createdAt: nowIso(),
     revertedAt: nowIso()
   });
@@ -1500,7 +2214,7 @@ function revertCurrentPolicy() {
     eventType: "policy_reverted",
     actor: "user",
     relatedProposalId: null,
-    summary: `Reverted active policy from ${createPolicyVersion(currentPolicy)} to ${createPolicyVersion(
+    summary: `已将当前生效策略从 ${createPolicyVersion(currentPolicy)} 回滚到 ${createPolicyVersion(
       revertedPolicy
     )}.`
   });
@@ -1562,7 +2276,7 @@ function applyJobOverride(jobId, payload = {}) {
     eventType: "user_override_applied",
     actor: "user",
     relatedProposalId: null,
-    summary: `Applied ${action} override to ${job.company} / ${job.title}.`
+    summary: `已对 ${job.company} / ${job.title} 应用人工覆盖：${humanizeOverrideActionCode(action)}。`
   });
   logActivity({
     type: "job_override_applied",
@@ -1571,8 +2285,8 @@ function applyJobOverride(jobId, payload = {}) {
     action: "job_override_applied",
     actor: "user",
     jobId,
-    summary: `Applied ${action} override to ${job.company}.`,
-    decisionReason: "The user explicitly overrode the current policy-driven job handling.",
+    summary: `已对 ${job.company} 应用人工覆盖：${humanizeOverrideActionCode(action)}。`,
+    decisionReason: "用户显式覆盖了当前由策略驱动的岗位处理方式。",
     overrideApplied: true,
     overrideSummary: payload.reason || action,
     activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy())
@@ -1617,23 +2331,23 @@ function getStrategyInsights() {
   const recommendations = [];
 
   if (topRole) {
-    recommendations.push(`You convert best in ${topRole} roles, so keep them in the active pipeline and prep queue.`);
+    recommendations.push(`你在 ${topRole} 类岗位上的转化更好，建议继续保留在主动推进与申请准备队列。`);
   }
   if (weakRole) {
-    recommendations.push(`Reduce ${weakRole} submissions because they cluster in failures or bad cases.`);
+    recommendations.push(`建议减少 ${weakRole} 类岗位的投递，因为它们更容易集中出现在失败结果或失败案例里。`);
   }
   if (strategyProfile.learnedFromInterviews?.length) {
-    recommendations.push(`Priority capability gap: ${strategyProfile.learnedFromInterviews[0]}.`);
+    recommendations.push(`当前最优先补齐的能力短板：${strategyProfile.learnedFromInterviews[0]}。`);
   }
   if (recommendations.length === 0) {
-    recommendations.push("Pipeline is still too small for strong biasing; keep exploring but log outcomes consistently.");
+    recommendations.push("当前样本还不够多，暂时无法形成强策略偏向；建议继续探索，同时持续记录结果。");
   }
   recommendations.unshift(
     globalPolicy.focusMode === "focused"
-      ? `Stay focused on ${summarizeList(globalPolicy.preferredRoles || globalPolicy.targetRolesPriority || [], "core roles")} and keep lower-signal roles out of the prep queue.`
+      ? `当前建议继续聚焦 ${summarizeList(globalPolicy.preferredRoles || globalPolicy.targetRolesPriority || [], "核心岗位方向")}，把信号较弱的岗位放在主准备队列之外。`
       : globalPolicy.focusMode === "exploratory"
-        ? "Pipeline is still broad. Narrow the next wave of applications toward the first role cluster that reaches interviews."
-        : "Pipeline is reasonably balanced. Keep prioritizing the best-converting role clusters."
+        ? "当前投递方向仍然偏分散。下一轮建议逐步收窄到最先进入面试的岗位簇。"
+        : "当前投递结构相对平衡，继续优先推进转化表现更好的岗位簇。"
   );
 
   return {
@@ -1694,11 +2408,11 @@ function updateBadCase(jobId, payload = {}) {
       action: "bad_case_cleared",
       actor: "user",
       jobId,
-      summary: `Removed bad case flag for ${job.company}.`,
-      agentName: "Feedback Loop",
-      inputSummary: "User cleared the bad case marker.",
-      outputSummary: "Job is no longer tracked as a bad case.",
-      decisionReason: "This keeps the failure library aligned with the user's latest judgement."
+      summary: `已取消 ${job.company} 的失败案例标记。`,
+      agentName: "反馈回流阶段",
+      inputSummary: "用户取消了失败案例标记。",
+      outputSummary: "这条岗位不再作为失败案例继续跟踪。",
+      decisionReason: "这样可以让失败案例库与用户最新判断保持一致。"
     });
     return null;
   }
@@ -1730,14 +2444,14 @@ function updateBadCase(jobId, payload = {}) {
     action: "bad_case_marked",
     actor: "user",
     jobId,
-    summary: `Marked ${job.company} as a bad case.`,
-    agentName: "Feedback Loop",
+    summary: `已将 ${job.company} 标记为失败案例。`,
+    agentName: "反馈回流阶段",
     inputSummary: payload.issueDescription
-      ? `User flagged this job with note: ${payload.issueDescription}`
-      : "User flagged this job as a bad case.",
-    outputSummary: `Bad case library now contains a replayable record for ${job.company}.`,
+      ? `用户将这条岗位标记为失败案例，并补充说明：${payload.issueDescription}`
+      : "用户将这条岗位标记为失败案例。",
+    outputSummary: `失败案例库中已新增 ${job.company} 的可回放记录。`,
     decisionReason:
-      "Bad cases preserve failed or misleading decisions so future evaluations can be audited and improved."
+      "失败案例会保留错误或失真的判断轨迹，方便后续评估回看、审计与持续修正。"
   });
 
   return badCase;
@@ -1750,16 +2464,110 @@ function listBadCases() {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 }
 
+async function uploadResumeDocument(payload) {
+  const parserUrl = getResumeParserUrl();
+  const resumeDocument = await parseResumeWithBestEffort(payload);
+  const savedResume = store.saveResumeDocument(resumeDocument);
+
+  logger.info("resume.upload_parsed", {
+    parserUrl: parserUrl || "local_node_parser",
+    fileName: savedResume.fileName,
+    parseStatus: savedResume.parseStatus || savedResume.status || null,
+    parseQuality: savedResume.parseQuality?.label || null,
+    cleanedTextLength: savedResume.cleanedText?.length || 0,
+    summaryLength: savedResume.summary?.length || 0
+  });
+
+  logActivity({
+    type: "resume_uploaded",
+    entityType: "resume_document",
+    entityId: savedResume.id,
+    action: "resume_uploaded",
+    summary: `已上传原始简历：${savedResume.fileName}。`,
+    agentName: "简历解析阶段",
+    inputSummary: `收到简历文件 ${savedResume.fileName}（${savedResume.mimeType}，${savedResume.fileSizeBytes} bytes）。`,
+    outputSummary: `解析状态=${savedResume.parseStatus || savedResume.status}；质量=${savedResume.parseQuality?.label || "low"}；提取方式=${savedResume.extractionMethod}；清洗后文本长度=${savedResume.cleanedText?.length || 0}。`,
+    decisionReason:
+      savedResume.parseStatus === "parse_success" || savedResume.status === "parsed"
+        ? "系统已提取并结构化原始简历，后续岗位定制会优先使用结构化 profile 与清洗后的正文。"
+        : savedResume.parseStatus === "parse_partial" || savedResume.status === "partial"
+          ? "系统只提取到部分可用信息，因此会保留结构化结果和清洗后正文，并提示用户继续人工修正。"
+          : "系统未能稳定解析这份简历，建议用户改传 DOCX 或稍后重试。"
+  });
+
+  return { resumeDocument: savedResume };
+}
+
+function getCurrentResume() {
+  return {
+    resumeDocument: store.getLatestResumeDocument() || null,
+    resumeDocuments: store.listResumeDocuments()
+  };
+}
+
+async function exportJobTailoringDocx(jobId) {
+  const job = store.getJob(jobId);
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const tailoringOutput = store.getTailoringOutputByJobId(jobId) || null;
+  const applicationPrep = store.getApplicationPrepByJobId(jobId) || null;
+  const resumeDocument = job.resumeDocumentId
+    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
+    : store.getLatestResumeDocument();
+
+  if (!applicationPrep || !tailoringOutput) {
+    const error = new Error("???????????????? DOCX?");
+    error.code = "TAILORING_REQUIRED";
+    throw error;
+  }
+
+  const exported = await exportTailoredResumeDocx({
+    job,
+    tailoringOutput: {
+      ...tailoringOutput,
+      applicationPrepSnapshot: applicationPrep
+    },
+    resumeDocument
+  });
+
+  logActivity({
+    type: "tailoring_exported",
+    entityType: "tailoring_output",
+    entityId: tailoringOutput.id,
+    action: "tailoring_exported",
+    jobId,
+    summary: `??? ${job.company} / ${job.title} ? DOCX ?????`,
+    agentName: "??????",
+    inputSummary: `??????????${job.company} / ${job.title}?`,
+    outputSummary: `???? ${exported.fileName}??????????????????`,
+    decisionReason: "????????????????????????????????????????"
+  });
+
+  return exported;
+}
+
 module.exports = {
   importJobDraftFromUrl,
   ingestJob,
   evaluateJob,
+  generateResumeTailoringOutput,
+  saveResumeTailoringOutput,
   prepareJobApplication,
   saveApplicationPrep,
   transitionJobStatus,
   saveProfile,
+  uploadResumeDocument,
+  getCurrentResume,
+  exportJobTailoringDocx,
   reflectInterview,
   getJobDetail,
+  buildTailoringWorkspace,
+  saveTailoringWorkspace,
+  refineTailoringWorkspace,
   getDashboardSummary,
   getMetricsSummary,
   getCurrentPolicy,

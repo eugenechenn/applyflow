@@ -18,6 +18,11 @@ function success(res, data, statusCode = 200) {
   sendJson(res, statusCode, { success: true, data });
 }
 
+function sendBinary(res, statusCode, buffer, headers = {}) {
+  res.writeHead(statusCode, headers);
+  res.end(buffer);
+}
+
 function failure(res, error, statusCode = 400) {
   sendJson(res, statusCode, {
     success: false,
@@ -191,6 +196,19 @@ async function handleApiRequest(req, res, pathname) {
       return success(res, { profile: store.getProfile() });
     }
 
+    if (req.method === "GET" && pathname === "/api/resume") {
+      return success(res, await orchestrator.getCurrentResume());
+    }
+
+    if (req.method === "POST" && pathname === "/api/resume/upload") {
+      const body = await readJsonBody(req);
+      validateRequired(["fileName", "mimeType", "base64Data"], body);
+      ensureString(body.fileName, "fileName", { min: 1, max: 240 });
+      ensureString(body.mimeType, "mimeType", { min: 3, max: 160 });
+      ensureString(body.base64Data, "base64Data", { min: 20, max: 30_000_000 });
+      return success(res, await orchestrator.uploadResumeDocument(body), 201);
+    }
+
     if (req.method === "POST" && pathname === "/api/profile/save") {
       const body = await readJsonBody(req);
       validateRequired(["name", "background", "masterResume"], body);
@@ -262,9 +280,47 @@ async function handleApiRequest(req, res, pathname) {
       return success(res, await orchestrator.evaluateJob(jobId));
     }
 
+    if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/tailor$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      return success(res, await orchestrator.generateResumeTailoringOutput(jobId));
+    }
+
+    if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/tailor\/save$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      const body = await readJsonBody(req);
+      return success(res, await orchestrator.saveResumeTailoringOutput(jobId, body));
+    }
+
+    if (req.method === "GET" && /^\/api\/jobs\/[^/]+\/tailoring-workspace$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      return success(res, await orchestrator.buildTailoringWorkspace(jobId));
+    }
+
+    if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/tailoring-workspace\/save$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      const body = await readJsonBody(req);
+      return success(res, await orchestrator.saveTailoringWorkspace(jobId, body));
+    }
+
+    if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/tailoring-workspace\/refine$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      const body = await readJsonBody(req);
+      return success(res, await orchestrator.refineTailoringWorkspace(jobId, body));
+    }
+
     if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/prepare$/.test(pathname)) {
       const jobId = pathname.split("/")[3];
       return success(res, await orchestrator.prepareJobApplication(jobId));
+    }
+
+    if (req.method === "GET" && /^\/api\/jobs\/[^/]+\/export-docx$/.test(pathname)) {
+      const jobId = pathname.split("/")[3];
+      const exported = await orchestrator.exportJobTailoringDocx(jobId);
+      return sendBinary(res, 200, exported.buffer, {
+        "Content-Type": exported.contentType,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(exported.fileName)}`,
+        "Cache-Control": "no-store"
+      });
     }
 
     if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/prep\/save$/.test(pathname)) {
