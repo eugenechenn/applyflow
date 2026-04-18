@@ -3064,6 +3064,478 @@ async function renderTailoringWorkspace(jobId, message = "", errorMessage = "") 
   });
 }
 
+function createTailoringBulletViewModel(item = {}, index = 0) {
+  const status = item.status || "pending";
+  return {
+    bulletId: item.bulletId || `tailored_bullet_${index + 1}`,
+    before: item.before || item.source || "",
+    suggestion: item.suggestion || item.after || item.rewritten || "",
+    status,
+    reason: item.reason || "系统认为这条经历与岗位要求更相关，因此建议前置并强化。",
+    jdRequirement: item.jdRequirement || "",
+    type: item.type || "modified",
+    tone: status === "accepted" ? "offer" : status === "rejected" ? "archived" : "to_prepare"
+  };
+}
+
+function renderWorkspaceList(items = [], kind = "resume", emptyText = "暂无内容") {
+  const list = (Array.isArray(items) ? items : []).filter(Boolean);
+  if (!list.length) {
+    return `<div class="workspace-empty-note">${escapeHtml(emptyText)}</div>`;
+  }
+  return `<ul class="list list-tight workspace-resume-list">${list
+    .map((item) => `<li>${escapeHtml(String(item || "").trim())}</li>`)
+    .join("")}</ul>`;
+}
+
+function renderWorkspaceKeywords(items = []) {
+  const list = (Array.isArray(items) ? items : []).filter(Boolean);
+  if (!list.length) {
+    return `<div class="workspace-empty-note">暂无关键词</div>`;
+  }
+  return `<div class="workspace-keyword-cloud">${list
+    .map((item) => `<span class="workspace-keyword">${escapeHtml(item)}</span>`)
+    .join("")}</div>`;
+}
+
+function renderWorkspacePersonalInfo(personalInfo = {}) {
+  const entries = [
+    ["姓名", personalInfo.name || "未识别"],
+    ["邮箱", personalInfo.email || "未识别"],
+    ["电话", personalInfo.phone || "未识别"],
+    ["城市", personalInfo.location || "未识别"]
+  ];
+  return `<div class="workspace-personal-grid">${entries
+    .map(
+      ([label, value]) => `
+        <div class="panel workspace-mini-panel">
+          <strong>${escapeHtml(label)}</strong>
+          <div class="muted">${escapeHtml(value)}</div>
+        </div>
+      `
+    )
+    .join("")}</div>`;
+}
+
+async function renderTailoringWorkspace(jobId, message = "", errorMessage = "") {
+  setActiveNav("#/jobs");
+  title.textContent = "岗位定制简历工作区";
+  subtitle.textContent = "围绕单个岗位整理岗位重点、Base Resume 与定制版简历，再把人工确认结果送入申请准备。";
+  renderLoadingState("加载岗位定制简历工作区", "正在同步岗位摘要、原始简历与定制建议...");
+  const data = await api(`/api/jobs/${jobId}/tailoring-workspace`);
+  const { job, fitAssessment, tailoringOutput, resumeDocument, workspace, workspaceActivity } = data;
+
+  if (!job) {
+    app.innerHTML = `
+      ${message ? renderNotice("success", message) : ""}
+      ${errorMessage ? renderNotice("error", errorMessage) : ""}
+      ${renderNotice("error", "岗位不存在，暂时无法打开岗位定制工作区。")}
+      <div class="panel">
+        <div class="toolbar">
+          <a class="button" href="#/jobs">返回岗位列表</a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const jobVm = createJobViewModel({ job, fitAssessment, nextAction: workspace?.nextAction });
+  const resumeVm = createResumeViewModel(resumeDocument);
+  const workspaceName = workspace?.name || `${job.company || "目标公司"} ${job.title || "岗位"}定制版`;
+  const jobSummary = workspace?.jobSummary || {};
+  const baseResume = workspace?.baseResumeAsset || {};
+  const tailoredResume = workspace?.tailoredResume || {};
+  const bulletVms = (tailoringOutput?.rewrittenBullets || []).map((item, index) => createTailoringBulletViewModel(item, index));
+  const acceptedCount = bulletVms.filter((item) => item.status === "accepted").length;
+  const rejectedCount = bulletVms.filter((item) => item.status === "rejected").length;
+  const pendingCount = bulletVms.filter((item) => item.status === "pending").length;
+  const lengthBudget = tailoredResume.lengthBudget || { status: "within_budget", notes: [] };
+  const weakSignalNote = jobSummary.weakSignalNote || "";
+
+  app.innerHTML = `
+    ${message ? renderNotice("success", message) : ""}
+    ${errorMessage ? renderNotice("error", errorMessage) : ""}
+    <div class="tailoring-workspace-shell">
+      <section class="tailoring-workspace-hero">
+        <div class="hero-copy">
+          <div class="eyebrow">岗位定制简历工作区</div>
+          <h3 class="hero-title">${escapeHtml(jobVm.title)}</h3>
+          <p class="hero-subtitle">${escapeHtml(jobVm.company)} · ${escapeHtml(jobVm.location)} · ${escapeHtml(jobVm.displayStatus)}</p>
+          <div class="hero-meta">
+            ${statusBadge(job.status)}
+            ${fitAssessment ? semanticBadge(`匹配度 ${fitAssessment.fitScore}`, humanizeRecommendation(fitAssessment.recommendation).tone) : '<span class="status">待评估</span>'}
+            <span class="status">${escapeHtml(jobVm.strategyLabel)}</span>
+            <span class="status">版本 ${escapeHtml(String(workspace?.activeVersion || tailoringOutput?.version || 1))}</span>
+          </div>
+          <div class="workspace-job-summary-card">
+            <div class="workspace-job-summary-top">
+              <div>
+                <strong>岗位重点</strong>
+                <p class="muted">${escapeHtml(jobSummary.roleSummary || job.jdStructured?.summary || "系统已整理出岗位关键信息，可据此继续完成简历定制。")}</p>
+              </div>
+              <details class="workspace-help-inline" title="查看工作区说明">
+                <summary>?</summary>
+                <div class="muted">${escapeHtml(workspace?.helpNote || "左侧是全局 Base Resume；右侧是当前岗位专属版本；只有已接受内容会进入申请准备。")}</div>
+              </details>
+            </div>
+            <div class="workspace-summary-grid">
+              <div class="workspace-summary-block">
+                <div class="eyebrow">核心职责</div>
+                ${renderWorkspaceList(jobSummary.coreResponsibilities || [], "responsibility", "暂无可展示的核心职责")}
+              </div>
+              <div class="workspace-summary-block">
+                <div class="eyebrow">核心要求</div>
+                ${renderWorkspaceList(jobSummary.coreRequirements || [], "requirement", "暂无可展示的核心要求")}
+              </div>
+              <div class="workspace-summary-block">
+                <div class="eyebrow">重点关键词</div>
+                ${renderWorkspaceKeywords(jobSummary.targetKeywords || [])}
+              </div>
+            </div>
+            ${
+              (jobSummary.riskNotes || []).length
+                ? `<div class="workspace-risk-row">${(jobSummary.riskNotes || [])
+                    .map((item) => `<span class="status archived">${escapeHtml(item)}</span>`)
+                    .join("")}</div>`
+                : ""
+            }
+            ${weakSignalNote ? `<div class="muted workspace-weak-note">${escapeHtml(weakSignalNote)}</div>` : ""}
+          </div>
+        </div>
+        <div class="stack">
+          <div class="metric-card">
+            <div class="metric-label">工作区名称</div>
+            <div class="metric workspace-name">${escapeHtml(workspaceName)}</div>
+          </div>
+          <div class="split-metrics">
+            <div class="metric-card">
+              <div class="metric-label">已接受</div>
+              <div class="metric">${escapeHtml(String(acceptedCount))}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">待确认</div>
+              <div class="metric">${escapeHtml(String(pendingCount))}</div>
+            </div>
+          </div>
+          ${
+            !resumeVm.exists
+              ? `<div class="notice warning">你还没有上传 Base Resume。请先前往个人画像上传 PDF 或 DOCX，再生成岗位定制内容。<a class="text-link" href="#/profile">前往上传</a></div>`
+              : `<div class="card workspace-side-note-compact"><div class="eyebrow">Base Resume</div><h4>${escapeHtml(resumeVm.fileName)}</h4><p class="muted">${escapeHtml(resumeVm.statusLabel)} · ${escapeHtml(resumeVm.extractionMethodLabel)} · 质量 ${escapeHtml(resumeVm.parseQualityLabel)}</p></div>`
+          }
+        </div>
+      </section>
+
+      <section class="tailoring-workspace-main">
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">左侧</div>
+              <h3>Base Resume 原始结构化内容</h3>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="workspace-section-card">
+              <strong>个人信息</strong>
+              ${renderWorkspacePersonalInfo(baseResume.personalInfo || {})}
+            </div>
+            <div class="workspace-section-card">
+              <strong>教育背景</strong>
+              ${renderWorkspaceList(baseResume.education || [], "resume", "暂无结构化教育背景")}
+            </div>
+            <div class="workspace-section-card">
+              <strong>工作经历</strong>
+              ${renderWorkspaceList(baseResume.workExperience || [], "resume", "暂无结构化工作经历")}
+            </div>
+            <div class="workspace-section-card">
+              <strong>项目经历</strong>
+              ${renderWorkspaceList(baseResume.projectExperience || [], "resume", "暂无结构化项目经历")}
+            </div>
+            <div class="workspace-section-card">
+              <strong>技能</strong>
+              ${renderWorkspaceKeywords(baseResume.skills || [])}
+            </div>
+            <div class="workspace-section-card">
+              <strong>自我评价 / 个人优势</strong>
+              <div class="muted">${escapeHtml(baseResume.selfSummary || "暂无可展示的自我评价。")}</div>
+              ${
+                (baseResume.strengths || []).length
+                  ? `<div class="workspace-strength-row">${(baseResume.strengths || [])
+                      .map((item) => `<span class="workspace-keyword">${escapeHtml(localizeDisplayContent(item, "resume"))}</span>`)
+                      .join("")}</div>`
+                  : ""
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">右侧</div>
+              <h3>Tailored Resume 定制版</h3>
+            </div>
+          </div>
+          ${
+            tailoringOutput
+              ? `
+                <div class="stack">
+                  <label>定制后的简历摘要
+                    <textarea name="tailoredSummary" form="tailoring-workspace-save-form" id="workspace-tailored-summary" placeholder="可选，用一句简洁摘要说明你和这个岗位最相关的能力。">${escapeHtml(tailoringOutput.tailoredSummary || tailoredResume.summary || "")}</textarea>
+                  </label>
+                  <div class="workspace-length-budget ${lengthBudget.status === "over_budget" ? "warning" : "success"}">
+                    <strong>${lengthBudget.status === "over_budget" ? "当前内容偏长" : "当前长度接近一页纸约束"}</strong>
+                    <div class="muted">总字符约 ${escapeHtml(String(lengthBudget.totalChars || 0))}，经历条目 ${escapeHtml(String(lengthBudget.totalBullets || 0))} 条。</div>
+                    ${
+                      (lengthBudget.notes || []).length
+                        ? `<ul class="list list-tight">${(lengthBudget.notes || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+                        : ""
+                    }
+                  </div>
+                  <div class="workspace-section-card">
+                    <strong>定制后的工作经历</strong>
+                    ${renderWorkspaceList(tailoredResume.workExperience || tailoringOutput.tailoredResumePreview?.workExperience || tailoringOutput.tailoredResumePreview?.experienceBullets || [], "resume", "还没有生成定制后的工作经历。")}
+                  </div>
+                  <div class="workspace-section-card">
+                    <strong>定制后的项目经历</strong>
+                    ${renderWorkspaceList(tailoredResume.projectExperience || tailoringOutput.tailoredResumePreview?.projectExperience || tailoringOutput.tailoredResumePreview?.projectHighlights || [], "resume", "暂无定制后的项目经历。")}
+                  </div>
+                  <div class="workspace-section-card">
+                    <strong>定制后的技能表达</strong>
+                    ${renderWorkspaceKeywords(tailoredResume.skills || tailoringOutput.tailoredResumePreview?.skills || [])}
+                  </div>
+                </div>
+              `
+              : `<div class="empty">当前还没有该岗位的定制结果。你可以先生成第一版岗位定制简历，再逐条确认改写建议。</div>`
+          }
+        </div>
+      </section>
+
+      <section class="card workspace-actions-card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">保存并继续</div>
+            <h3>确认当前版本</h3>
+          </div>
+        </div>
+        <form id="tailoring-refine-form" class="stack">
+          <div class="split">
+            <label>工作区名称
+              <input name="workspaceName" value="${escapeHtml(workspaceName)}" maxlength="120" />
+            </label>
+            <label>全局 refine 指令
+              <textarea name="refinePrompt" placeholder="例如：整体更精炼；把结果前置；更强调 AI 工具落地。">${escapeHtml(workspace?.lastRefinePrompt || "")}</textarea>
+            </label>
+          </div>
+          <div class="toolbar">
+            <button class="button primary" type="submit" id="workspace-refine-btn">${tailoringOutput ? "重新生成当前岗位定制版" : "生成岗位定制简历"}</button>
+            <a class="button" href="#/jobs/${job.id}">返回岗位详情</a>
+            <a class="button" href="#/prep/${job.id}">用已接受内容进入 Prep</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">逐条审核</div>
+            <h3>Original vs Tailored</h3>
+          </div>
+          <div class="muted">围绕每条改写直接确认、修改或继续 refine。</div>
+        </div>
+        ${
+          !tailoringOutput
+            ? `<div class="empty">先生成岗位定制简历，这里才会出现逐条改写建议。</div>`
+            : `
+              <form id="tailoring-workspace-save-form" class="stack">
+                <input type="hidden" name="workspaceName" value="${escapeHtml(workspaceName)}" />
+                <div class="workspace-review-summary">
+                  <span class="status offer">已接受 ${escapeHtml(String(acceptedCount))}</span>
+                  <span class="status archived">已拒绝 ${escapeHtml(String(rejectedCount))}</span>
+                  <span class="status to_prepare">待确认 ${escapeHtml(String(pendingCount))}</span>
+                </div>
+                <div class="stack tailoring-diff-stack">
+                  ${bulletVms.length
+                    ? bulletVms
+                        .map(
+                          (item, index) => `
+                            <div class="panel workspace-review-card workspace-v2-card" data-bullet-card="${escapeHtml(item.bulletId)}">
+                              <div class="workspace-card-top">
+                                <div>
+                                  <strong>改写建议 ${index + 1}</strong>
+                                  <div class="muted">${escapeHtml(humanizeDiffType(item.type))}</div>
+                                </div>
+                                <span class="status ${item.tone}" data-bullet-status-badge="${index}">${escapeHtml(humanizeTailoringDecisionStatus(item.status))}</span>
+                              </div>
+                              <div class="tailoring-diff-grid">
+                                <div class="tailoring-diff-side">
+                                  <div class="eyebrow">原始句子</div>
+                                  <div class="workspace-bullet-text">${escapeHtml(item.before || "暂无原始表达。")}</div>
+                                </div>
+                                <div class="tailoring-diff-side">
+                                  <div class="eyebrow">AI 定制版句子</div>
+                                  <textarea name="bullet_after_${index}" data-bullet-edit="${index}">${escapeHtml(item.suggestion || "暂无建议。")}</textarea>
+                                </div>
+                              </div>
+                              <div class="workspace-review-meta">
+                                <div class="muted">对应岗位要求：${escapeHtml(item.jdRequirement || "暂无对应要求。")}</div>
+                                <div class="muted">改写原因：${escapeHtml(item.reason || "暂无改写原因。")}</div>
+                              </div>
+                              <div class="workspace-inline-actions">
+                                <label>当前状态
+                                  <select name="bullet_status_${index}" data-bullet-status="${index}">
+                                    <option value="pending" ${item.status === "pending" ? "selected" : ""}>待确认</option>
+                                    <option value="accepted" ${item.status === "accepted" ? "selected" : ""}>已接受</option>
+                                    <option value="rejected" ${item.status === "rejected" ? "selected" : ""}>已拒绝</option>
+                                  </select>
+                                </label>
+                                <div class="toolbar workspace-card-actions">
+                                  <button class="button" type="button" data-bullet-set-status="accepted" data-bullet-index="${index}">接受</button>
+                                  <button class="button" type="button" data-bullet-set-status="rejected" data-bullet-index="${index}">拒绝</button>
+                                  <button class="button" type="button" data-bullet-set-status="pending" data-bullet-index="${index}">改回待确认</button>
+                                </div>
+                              </div>
+                              <div class="workspace-refine-box">
+                                <label>继续 refine 这一条
+                                  <textarea data-bullet-refine-input="${index}" placeholder="例如：太长了，压缩一点；更强调协同推进；突出结果，不要只写职责；别写太满，保守一点。"></textarea>
+                                </label>
+                                <div class="toolbar">
+                                  <button class="button" type="button" data-bullet-refine-btn="${index}" data-bullet-id="${escapeHtml(item.bulletId)}">重新改这一条</button>
+                                </div>
+                              </div>
+                              <input type="hidden" name="bullet_id_${index}" value="${escapeHtml(item.bulletId)}" />
+                              <input type="hidden" name="bullet_before_${index}" value="${escapeHtml(item.before || "")}" />
+                              <input type="hidden" name="bullet_reason_${index}" value="${escapeHtml(item.reason || "")}" />
+                              <input type="hidden" name="bullet_requirement_${index}" value="${escapeHtml(item.jdRequirement || "")}" />
+                            </div>
+                          `
+                        )
+                        .join("")
+                    : `<div class="empty">当前没有逐条改写建议。</div>`}
+                </div>
+                <div class="toolbar">
+                  <button class="button primary" type="submit" id="workspace-save-btn">保存人工确认结果</button>
+                  <a class="button" href="#/prep/${job.id}">用已接受内容进入 Prep</a>
+                </div>
+              </form>
+            `
+        }
+      </section>
+
+      <details class="activity-disclosure">
+        <summary>查看工作区活动记录</summary>
+        <div class="card activity-card">
+          ${renderTimeline((workspaceActivity || []).map((log) => ({ ...createAuditEventViewModel(log), ...log })))}
+        </div>
+      </details>
+    </div>
+  `;
+
+  const refineForm = document.getElementById("tailoring-refine-form");
+  refineForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = document.getElementById("workspace-refine-btn");
+    try {
+      setButtonPending(submitButton, true, tailoringOutput ? "重新定制中..." : "生成中...");
+      const formData = new FormData(event.target);
+      await api(`/api/jobs/${job.id}/tailoring-workspace/refine`, {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceName: String(formData.get("workspaceName") || ""),
+          refinePrompt: String(formData.get("refinePrompt") || "")
+        })
+      });
+      renderTailoringWorkspace(job.id, tailoringOutput ? "岗位定制版本已更新。" : "第一版岗位定制简历已生成。");
+    } catch (error) {
+      setButtonPending(submitButton, false);
+      renderTailoringWorkspace(job.id, "", error.message);
+    }
+  });
+
+  const saveForm = document.getElementById("tailoring-workspace-save-form");
+  saveForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submitButton = document.getElementById("workspace-save-btn");
+    try {
+      setButtonPending(submitButton, true, "保存中...");
+      const formData = new FormData(event.target);
+      const rewrittenBullets = bulletVms.map((item, index) => ({
+        bulletId: String(formData.get(`bullet_id_${index}`) || item.bulletId),
+        before: String(formData.get(`bullet_before_${index}`) || item.before || ""),
+        suggestion: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        after: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        rewritten: String(formData.get(`bullet_after_${index}`) || item.suggestion || ""),
+        status: String(formData.get(`bullet_status_${index}`) || item.status || "pending"),
+        reason: String(formData.get(`bullet_reason_${index}`) || item.reason || ""),
+        jdRequirement: String(formData.get(`bullet_requirement_${index}`) || item.jdRequirement || "")
+      }));
+      await api(`/api/jobs/${job.id}/tailoring-workspace/save`, {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceName: String(
+            document.querySelector('#tailoring-refine-form [name="workspaceName"]')?.value ||
+              formData.get("workspaceName") ||
+              workspaceName
+          ),
+          rewrittenBullets,
+          tailoredSummary: String(document.getElementById("workspace-tailored-summary")?.value || tailoringOutput?.tailoredSummary || ""),
+          whyMe: tailoringOutput?.whyMe || "",
+          refinePrompt: workspace?.lastRefinePrompt || ""
+        })
+      });
+      renderTailoringWorkspace(job.id, "岗位定制工作区已保存。");
+    } catch (error) {
+      setButtonPending(submitButton, false);
+      renderTailoringWorkspace(job.id, "", error.message);
+    }
+  });
+
+  document.querySelectorAll("[data-bullet-set-status]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.getAttribute("data-bullet-index"));
+      const status = button.getAttribute("data-bullet-set-status");
+      const select = document.querySelector(`[data-bullet-status="${index}"]`);
+      const badge = document.querySelector(`[data-bullet-status-badge="${index}"]`);
+      if (!select || !status) return;
+      select.value = status;
+      if (badge) {
+        badge.textContent = humanizeTailoringDecisionStatus(status);
+        badge.className = `status ${status === "accepted" ? "offer" : status === "rejected" ? "archived" : "to_prepare"}`;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-bullet-refine-btn]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.getAttribute("data-bullet-refine-btn"));
+      const bulletId = String(button.getAttribute("data-bullet-id") || "");
+      const prompt = String(document.querySelector(`[data-bullet-refine-input="${index}"]`)?.value || "").trim();
+      const currentText = String(document.querySelector(`[data-bullet-edit="${index}"]`)?.value || "").trim();
+      if (!prompt) {
+        renderTailoringWorkspace(job.id, "", "请先输入这条改写的 refine 指令。");
+        return;
+      }
+      try {
+        setButtonPending(button, true, "改写中...");
+        await api(`/api/jobs/${job.id}/tailoring-workspace/refine`, {
+          method: "POST",
+          body: JSON.stringify({
+            workspaceName:
+              String(document.querySelector('#tailoring-refine-form [name="workspaceName"]')?.value || "").trim() ||
+              workspaceName,
+            targetBulletId: bulletId,
+            currentText,
+            refinePrompt: prompt
+          })
+        });
+        renderTailoringWorkspace(job.id, "该条改写建议已更新。");
+      } catch (error) {
+        setButtonPending(button, false);
+        renderTailoringWorkspace(job.id, "", error.message);
+      }
+    });
+  });
+}
+
 async function renderPrep(jobId, message = "", errorMessage = "") {
   setActiveNav("#/prep");
   title.textContent = "申请准备";

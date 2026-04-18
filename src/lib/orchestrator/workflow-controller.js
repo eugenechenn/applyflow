@@ -11,9 +11,12 @@ const { parseResumeWithBestEffort, getResumeParserUrl } = require("../resume/res
 const {
   buildResumeSnapshot,
   buildTailoredPreview,
+  buildTailoredResumeSections,
   buildDiffView,
   buildExplainability,
-  normalizeTailoringBullets
+  normalizeTailoringBullets,
+  refineResumeBullet,
+  compressResumeLine
 } = require("./agents/resume-tailoring-agent-v2");
 
 const assertJobStatusTransition =
@@ -58,6 +61,214 @@ function truncateText(value, max = 200) {
   const text = String(value || "").trim();
   if (!text) return "";
   return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function normalizeLineItem(value = "", max = 220) {
+  return truncateText(
+    String(value || "")
+      .replace(/^[•·▪●■\-]\s*/, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+    max
+  );
+}
+
+function splitStructuredContent(value = "", max = 8) {
+  return String(value || "")
+    .split(/\n|•|·|▪|●|■|-/)
+    .map((item) => normalizeLineItem(item))
+    .filter((item) => item.length >= 4)
+    .slice(0, max);
+}
+
+function dedupeStrings(items = [], max = 8) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : [])
+    .map((item) => normalizeLineItem(item))
+    .filter((item) => {
+      if (!item) return false;
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, max);
+}
+
+function looksLikePlaceholderNote(value = "") {
+  return /人工补充|人工确认|未清晰列出|未明确列出|建议确认|待补充/i.test(String(value || ""));
+}
+
+function cleanWorkspaceJobLines(items = [], { max = 5, allowWeakNote = false } = {}) {
+  const cleaned = dedupeStrings(items, max * 2).filter((item) => {
+    if (!item) return false;
+    if (looksLikePlaceholderNote(item)) return allowWeakNote;
+    return true;
+  });
+  return cleaned.slice(0, max);
+}
+
+function normalizeJobWorkspaceSummary(job = {}, fitAssessment = null, tailoringOutput = null) {
+  const jdStructured = job.jdStructured || {};
+  const roleSummary = truncateText(
+    jdStructured.summary ||
+      fitAssessment?.suggestedAction ||
+      `${job.company || "目标公司"} 的 ${job.title || "岗位"}，重点关注 ${pickTopItems(jdStructured.keywords || [], 3).join("、") || "职责范围与任职要求"}。`,
+    180
+  );
+  const coreResponsibilities = cleanWorkspaceJobLines(jdStructured.responsibilities || [], { max: 5 });
+  const coreRequirements = cleanWorkspaceJobLines(jdStructured.requirements || [], { max: 5 });
+  const targetKeywords = cleanWorkspaceJobLines(
+    tailoringOutput?.targetingBrief?.targetKeywords || jdStructured.keywords || [],
+    { max: 8 }
+  );
+  const rawRiskNotes = cleanWorkspaceJobLines(
+    fitAssessment?.riskFlags || jdStructured.riskFlags || [],
+    { max: 2, allowWeakNote: false }
+  );
+  const riskNotes = rawRiskNotes.length
+    ? rawRiskNotes
+    : cleanWorkspaceJobLines(
+        [...(jdStructured.preferredQualifications || []), ...(fitAssessment?.keyGaps || [])],
+        { max: 1, allowWeakNote: false }
+      );
+  const weakSignalNote =
+    coreResponsibilities.length || coreRequirements.length
+      ? ""
+      : "岗位原文结构化信息较少，建议在确认投递前快速核对 JD 原文。";
+
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    status: job.status,
+    fitScore: fitAssessment?.fitScore ?? null,
+    recommendation: fitAssessment?.recommendation || null,
+    strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
+    roleSummary,
+    coreResponsibilities,
+    coreRequirements,
+    targetKeywords,
+    riskNotes,
+    weakSignalNote
+  };
+}
+
+function classifyResumeEntry(entry = "") {
+  const text = String(entry || "").trim();
+  if (!text) return "other";
+  if (/@|\+?\d[\d\s\-()]{7,}/.test(text)) return "contact";
+  if (/(大学|学院|本科|硕士|博士|mba|bachelor|master|university|college|school)/i.test(text)) return "education";
+  if (/(项目|project|launch|上线|实验|增长|策略项目)/i.test(text)) return "project";
+  if (/(sql|python|excel|tableau|power bi|figma|notion|jira|ai|llm|agent|技能|tool)/i.test(text) && text.length <= 120) {
+    return "skill";
+  }
+  if (/(产品|经理|分析|运营|strategy|manager|analyst|lead|director|实习|experience|work history|20\d{2}|19\d{2})/i.test(text)) {
+    return "work";
+  }
+  return "other";
+}
+
+function normalizeResumeWorkspaceAsset(resumeDocument = null, profile = {}) {
+  const structured = resumeDocument?.structuredProfile || {};
+  const sections = Array.isArray(structured.sections) ? structured.sections : [];
+  const sectionItems = (key, max = 8) =>
+    sections
+      .filter((section) => section.key === key)
+      .flatMap((section) => splitStructuredContent(section.content || "", max))
+      .slice(0, max);
+  const combinedLines = dedupeStrings([
+    ...sectionItems("experience", 12),
+    ...(structured.experience || []),
+    ...sectionItems("projects", 10),
+    ...(structured.projects || []),
+    ...sectionItems("education", 8),
+    ...(structured.education || []),
+    ...sectionItems("skills", 12),
+    ...(structured.skills || [])
+  ], 32);
+
+  const workExperience = [];
+  const projectExperience = [];
+  const education = [];
+  const skills = [];
+
+  combinedLines.forEach((item) => {
+    const normalized = normalizeLineItem(item);
+    const category = classifyResumeEntry(normalized);
+    if (category === "work" && workExperience.length < 8) workExperience.push(normalized);
+    else if (category === "project" && projectExperience.length < 6) projectExperience.push(normalized);
+    else if (category === "education" && education.length < 4) education.push(normalized);
+    else if (category === "skill" && skills.length < 12) {
+      normalized
+        .split(/,|\/|、|\|/)
+        .map((part) => normalizeLineItem(part, 80))
+        .filter(Boolean)
+        .forEach((part) => {
+          if (skills.length < 12 && !skills.find((entry) => entry.toLowerCase() === part.toLowerCase())) {
+            skills.push(part);
+          }
+        });
+    }
+  });
+
+  return {
+    id: resumeDocument?.id || null,
+    name: resumeDocument?.fileName || "原始简历",
+    sourceResumeId: resumeDocument?.id || null,
+    personalInfo: {
+      name: structured.name || profile.name || "",
+      email: structured.email || "",
+      phone: structured.phone || "",
+      location: structured.location || (profile.targetLocations || [])[0] || ""
+    },
+    selfSummary: truncateText(structured.summary || resumeDocument?.summary || profile.background || "", 280),
+    education: dedupeStrings([...education, ...(structured.education || [])], 4),
+    workExperience: dedupeStrings([...workExperience, ...(structured.experience || [])], 8),
+    projectExperience: dedupeStrings([...projectExperience, ...(structured.projects || [])], 6),
+    skills: dedupeStrings([...skills, ...(structured.skills || [])], 12),
+    strengths: dedupeStrings(structured.achievements || structured.highlights || profile.strengths || [], 6),
+    sections: sections
+  };
+}
+
+function buildTailoredWorkspaceResume(tailoringOutput = null, baseResumeAsset = {}) {
+  if (!tailoringOutput) {
+    return {
+      summary: "",
+      workExperience: [],
+      projectExperience: [],
+      skills: [],
+      lengthBudget: {
+        target: "一页纸简历",
+        totalChars: 0,
+        totalBullets: 0,
+        status: "within_budget",
+        notes: []
+      }
+    };
+  }
+
+  const preview = tailoringOutput.tailoredResumePreview || {};
+  const sections = buildTailoredResumeSections({
+    tailoredSummary: tailoringOutput.tailoredSummary || preview.summary || "",
+    rewrittenBullets: tailoringOutput.rewrittenBullets || [],
+    selectedProjects: (preview.projectExperience || preview.projectHighlights || []).map((item) => ({ text: item })),
+    selectedSkills: preview.skills || tailoringOutput.selectionPlan?.selectedSkills || [],
+    resumeSnapshot: tailoringOutput.resumeSnapshot || buildResumeSnapshot(null, {}),
+    targetKeywords: tailoringOutput.targetingBrief?.targetKeywords || []
+  });
+
+  return {
+    summary: sections.summary,
+    workExperience: sections.workExperience,
+    projectExperience: sections.projectExperience.length
+      ? sections.projectExperience
+      : pickTopItems(baseResumeAsset.projectExperience || [], 3),
+    skills: sections.skills,
+    lengthBudget: sections.lengthBudget
+  };
 }
 
 function deriveRoleBucket(job) {
@@ -830,9 +1041,9 @@ function buildTailoringOutputRecord({
     tailored:
       tailoringResult.tailored || existingTailoringOutput?.tailored || {
         summary: tailoredSummary || resumeSnapshot.summary || "",
-        whyMe,
         experienceBullets: normalizedBullets.map((item) => item.after || item.rewritten).filter(Boolean)
       },
+    prepNarrative: tailoringResult.prepNarrative || existingTailoringOutput?.prepNarrative || { whyMe },
     tailoredResumePreview:
       tailoringResult.tailoredResumePreview ||
       existingTailoringOutput?.tailoredResumePreview ||
@@ -1757,6 +1968,478 @@ async function refineTailoringWorkspace(jobId, payload = {}) {
         id: current.workspace?.id || `workspace_${jobId}`,
         name: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
         activeVersion: current.version || current.workspace?.activeVersion || 1,
+        lastRefinePrompt: refinePrompt,
+        updatedAt: nowIso(),
+        lastSavedAt: nowIso()
+      }
+    });
+  }
+  return {
+    ...generated,
+    workspace: buildTailoringWorkspace(jobId).workspace
+  };
+}
+
+function buildWorkspaceBulletRefinement(currentOutput, payload = {}) {
+  const targetBulletId = String(payload.targetBulletId || "").trim();
+  const refinePrompt = truncateText(payload.refinePrompt || payload.bulletRefinePrompt || "", 200);
+  if (!targetBulletId) return null;
+
+  const rewrittenBullets = (currentOutput?.rewrittenBullets || []).map((item) => {
+    if (item.bulletId !== targetBulletId) return item;
+    const baseText = String(payload.currentText || item.after || item.rewritten || item.suggestion || "");
+    const refinedText = refineResumeBullet(baseText, refinePrompt, item.jdRequirement || "");
+    return {
+      ...item,
+      after: refinedText,
+      rewritten: refinedText,
+      suggestion: refinedText,
+      status: item.status === "rejected" ? "pending" : item.status,
+      reason: refinePrompt
+        ? `${item.reason || "已根据岗位要求做定制改写。"} 已根据你的补充要求继续微调：${refinePrompt}`
+        : item.reason || "已根据岗位要求做定制改写。"
+    };
+  });
+
+  return rewrittenBullets;
+}
+
+function buildTailoringWorkspace(jobId) {
+  const detail = getJobDetail(jobId);
+  const { job, fitAssessment, tailoringOutput, activityLogs, nextAction } = detail;
+  const resumeDocument = job.resumeDocumentId
+    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
+    : store.getLatestResumeDocument();
+  const workspaceMeta = tailoringOutput?.workspace || {
+    id: `workspace_${job.id}`,
+    name: buildDefaultTailoringWorkspaceName(job),
+    activeVersion: tailoringOutput?.version || 1,
+    baseResumeAssetId: resumeDocument?.id || null,
+    lastRefinePrompt: ""
+  };
+  const baseResumeAsset = normalizeResumeWorkspaceAsset(resumeDocument, store.getProfile() || {});
+  const tailoredResume = buildTailoredWorkspaceResume(tailoringOutput, baseResumeAsset);
+  const reviewSummary = {
+    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
+    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
+    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter(
+      (item) => item.status !== "accepted" && item.status !== "rejected"
+    ).length
+  };
+
+  return {
+    ...detail,
+    workspace: {
+      id: workspaceMeta.id,
+      name: workspaceMeta.name,
+      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
+      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
+      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
+      canGeneratePrepFromAcceptedOnly: true,
+      helpNote: "左侧是全局 Base Resume；右侧是当前岗位专属版本；只有已接受内容会进入申请准备。",
+      baseResumeAsset,
+      tailoredResume,
+      reviewSummary,
+      jobSummary: normalizeJobWorkspaceSummary(job, fitAssessment, tailoringOutput),
+      nextAction
+    },
+    workspaceActivity: (activityLogs || []).filter((entry) =>
+      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
+    )
+  };
+}
+
+async function refineTailoringWorkspace(jobId, payload = {}) {
+  const workspaceName = truncateText(payload.workspaceName || "", 120);
+  const targetBulletId = String(payload.targetBulletId || "").trim();
+  const current = store.getTailoringOutputByJobId(jobId);
+
+  if (targetBulletId && current) {
+    const rewrittenBullets = buildWorkspaceBulletRefinement(current, payload);
+    if (rewrittenBullets) {
+      const savePayload = {
+        workspaceName: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        rewrittenBullets,
+        tailoredSummary: current.tailoredSummary || "",
+        whyMe: current.whyMe || "",
+        refinePrompt: current.workspace?.lastRefinePrompt || ""
+      };
+      await saveTailoringWorkspace(jobId, savePayload);
+      return buildTailoringWorkspace(jobId);
+    }
+  }
+
+  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
+  const generated = await generateResumeTailoringOutput(jobId, {
+    workspaceName,
+    refinePrompt
+  });
+  const latest = store.getTailoringOutputByJobId(jobId);
+  if (latest) {
+    store.saveTailoringOutput({
+      ...latest,
+      workspace: {
+        ...(latest.workspace || {}),
+        id: latest.workspace?.id || `workspace_${jobId}`,
+        name: workspaceName || latest.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        activeVersion: latest.version || latest.workspace?.activeVersion || 1,
+        lastRefinePrompt: refinePrompt,
+        updatedAt: nowIso(),
+        lastSavedAt: nowIso()
+      }
+    });
+  }
+  return {
+    ...generated,
+    workspace: buildTailoringWorkspace(jobId).workspace
+  };
+}
+
+function normalizeJdSourceLines(job = {}) {
+  const rawBlocks = [
+    job.jdRaw,
+    job.rawJdText,
+    job.description,
+    job.jdStructured?.summary,
+    ...(job.jdStructured?.responsibilities || []),
+    ...(job.jdStructured?.requirements || []),
+    ...(job.jdStructured?.preferredQualifications || [])
+  ];
+  return dedupeStrings(
+    rawBlocks
+      .flatMap((item) => String(item || "").split(/\n|•|·|▪|●|■/))
+      .map((item) => normalizeLineItem(item, 200))
+      .filter((item) => item.length >= 6),
+    40
+  );
+}
+
+function looksLikePlaceholderNote(value = "") {
+  return /人工补充|人工确认|未清晰列出|未明确列出|建议确认|待补充/i.test(String(value || ""));
+}
+
+function cleanWorkspaceJobLines(items = [], { max = 5, allowWeakNote = false } = {}) {
+  const cleaned = dedupeStrings(items, max * 2).filter((item) => {
+    if (!item) return false;
+    if (looksLikePlaceholderNote(item)) return allowWeakNote;
+    return true;
+  });
+  return cleaned.slice(0, max);
+}
+
+function inferJdBuckets(job = {}) {
+  const lines = normalizeJdSourceLines(job);
+  const responsibilities = [];
+  const requirements = [];
+  const keywords = [];
+
+  lines.forEach((line) => {
+    const lower = line.toLowerCase();
+    if (
+      /(负责|推动|主导|协调|落地|分析|制定|支持|manage|lead|drive|coordinate|build|support|conduct|own)/i.test(line) &&
+      responsibilities.length < 5
+    ) {
+      responsibilities.push(line);
+    }
+    if (
+      /(要求|需要|熟悉|能力|经验|本科|硕士|years|experience|must|preferred|qualification|skill)/i.test(line) &&
+      requirements.length < 5
+    ) {
+      requirements.push(line);
+    }
+    line
+      .split(/,|\/|、|\||：|:/)
+      .map((item) => normalizeLineItem(item, 60))
+      .filter((item) => item.length >= 2 && item.length <= 40)
+      .forEach((item) => {
+        const token = item.toLowerCase();
+        if (
+          keywords.length < 8 &&
+          !looksLikePlaceholderNote(item) &&
+          !/(职位|公司|地点|location|salary|benefit|apply now)/i.test(token)
+        ) {
+          keywords.push(item);
+        }
+      });
+  });
+
+  return {
+    responsibilities: dedupeStrings(responsibilities, 5),
+    requirements: dedupeStrings(requirements, 5),
+    keywords: dedupeStrings(keywords, 8)
+  };
+}
+
+function normalizeJobWorkspaceSummary(job = {}, fitAssessment = null, tailoringOutput = null) {
+  const jdStructured = job.jdStructured || {};
+  const inferred = inferJdBuckets(job);
+  const coreResponsibilities = cleanWorkspaceJobLines(
+    [...(jdStructured.responsibilities || []), ...inferred.responsibilities],
+    { max: 5 }
+  );
+  const coreRequirements = cleanWorkspaceJobLines(
+    [...(jdStructured.requirements || []), ...(jdStructured.preferredQualifications || []), ...inferred.requirements],
+    { max: 5 }
+  );
+  const targetKeywords = cleanWorkspaceJobLines(
+    [
+      ...(tailoringOutput?.targetingBrief?.targetKeywords || []),
+      ...(jdStructured.keywords || []),
+      ...inferred.keywords
+    ],
+    { max: 8 }
+  );
+  const roleSummary = truncateText(
+    jdStructured.summary ||
+      fitAssessment?.suggestedAction ||
+      `${job.company || "目标公司"}的${job.title || "岗位"}，重点关注${
+        targetKeywords.slice(0, 3).join("、") || "岗位职责与核心要求"
+      }。`,
+    120
+  );
+  const riskNotes = cleanWorkspaceJobLines(
+    [...(fitAssessment?.riskFlags || []), ...(jdStructured.riskFlags || [])],
+    { max: 2, allowWeakNote: false }
+  );
+  const weakSignalNote =
+    coreResponsibilities.length >= 2 || coreRequirements.length >= 2
+      ? ""
+      : "部分岗位信息来自系统归纳，建议在投递前再快速核对 JD 原文。";
+
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    status: job.status,
+    fitScore: fitAssessment?.fitScore ?? null,
+    recommendation: fitAssessment?.recommendation || null,
+    strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
+    roleSummary,
+    coreResponsibilities,
+    coreRequirements,
+    targetKeywords,
+    riskNotes,
+    weakSignalNote
+  };
+}
+
+function looksLikeResumeSentence(text = "") {
+  return /[，。；;]/.test(text) || text.length > 90;
+}
+
+function isLikelySkillToken(text = "") {
+  const value = String(text || "").trim();
+  if (!value || value.length > 40) return false;
+  if (looksLikeResumeSentence(value)) return false;
+  return /(sql|python|excel|tableau|power bi|figma|notion|jira|ai|llm|agent|product strategy|stakeholder|growth|analysis|go-to-market|roadmap|data|research|沟通|分析|策略|增长|产品)/i.test(
+    value
+  );
+}
+
+function isLikelyWorkLine(text = "") {
+  return /(20\d{2}|19\d{2}|公司|任职|担任|负责|主导|推动|经理|分析师|产品|strategy|manager|analyst|lead|director|intern)/i.test(
+    text
+  );
+}
+
+function isLikelyProjectLine(text = "") {
+  return /(项目|project|系统|平台|搭建|上线|试点|pilot|workflow|tooling|enablement)/i.test(text);
+}
+
+function normalizeResumeWorkspaceAsset(resumeDocument = null, profile = {}) {
+  const structured = resumeDocument?.structuredProfile || {};
+  const sections = Array.isArray(structured.sections) ? structured.sections : [];
+  const rawBuckets = {
+    work: [...(structured.experience || []), ...sections.filter((item) => item.key === "experience").flatMap((item) => splitStructuredContent(item.content || "", 12))],
+    project: [...(structured.projects || []), ...sections.filter((item) => item.key === "projects").flatMap((item) => splitStructuredContent(item.content || "", 10))],
+    education: [...(structured.education || []), ...sections.filter((item) => item.key === "education").flatMap((item) => splitStructuredContent(item.content || "", 8))],
+    skills: [...(structured.skills || []), ...sections.filter((item) => item.key === "skills").flatMap((item) => splitStructuredContent(item.content || "", 16))],
+    other: sections
+      .filter((item) => !["experience", "projects", "education", "skills"].includes(item.key))
+      .flatMap((item) => splitStructuredContent(item.content || "", 10))
+  };
+
+  const workExperience = dedupeStrings(
+    rawBuckets.work
+      .map((item) => normalizeLineItem(item, 180))
+      .filter((item) => item && isLikelyWorkLine(item) && !isLikelySkillToken(item)),
+    8
+  );
+
+  const projectExperience = dedupeStrings(
+    [...rawBuckets.project, ...rawBuckets.other]
+      .map((item) => normalizeLineItem(item, 180))
+      .filter((item) => item && isLikelyProjectLine(item) && !isLikelySkillToken(item)),
+    6
+  );
+
+  const education = dedupeStrings(
+    rawBuckets.education
+      .map((item) => normalizeLineItem(item, 140))
+      .filter((item) => /(大学|学院|本科|硕士|博士|MBA|bachelor|master|university|college|school)/i.test(item)),
+    4
+  );
+
+  const skills = dedupeStrings(
+    rawBuckets.skills
+      .flatMap((item) => String(item || "").split(/,|\/|、|\|/))
+      .map((item) => normalizeLineItem(item, 40))
+      .filter((item) => isLikelySkillToken(item)),
+    12
+  );
+
+  return {
+    id: resumeDocument?.id || null,
+    name: resumeDocument?.fileName || "原始简历",
+    sourceResumeId: resumeDocument?.id || null,
+    personalInfo: {
+      name: structured.name || profile.name || "",
+      email: structured.email || "",
+      phone: structured.phone || "",
+      location: structured.location || (profile.targetLocations || [])[0] || ""
+    },
+    selfSummary: truncateText(structured.summary || resumeDocument?.summary || profile.background || "", 220),
+    education,
+    workExperience,
+    projectExperience,
+    skills,
+    strengths: dedupeStrings(structured.achievements || structured.highlights || profile.strengths || [], 6),
+    sections
+  };
+}
+
+function ensureTailoringOutputCompatibility(tailoringOutput = null) {
+  if (!tailoringOutput) return null;
+  const rewrittenBullets = (tailoringOutput.rewrittenBullets || []).map((item, index) => ({
+    bulletId: item.bulletId || `tailored_bullet_${index + 1}`,
+    before: item.before || item.source || "",
+    after: compressResumeLine(item.after || item.rewritten || item.suggestion || "", 145),
+    suggestion: compressResumeLine(item.suggestion || item.after || item.rewritten || "", 145),
+    reason: item.reason || "系统已按岗位重点改写这条经历。",
+    jdRequirement: item.jdRequirement || "",
+    status: ["pending", "accepted", "rejected"].includes(item.status) ? item.status : "pending",
+    type: item.type || "modified"
+  }));
+
+  const bulletDiffs = rewrittenBullets.map((item) => ({
+    bulletId: item.bulletId,
+    before: item.before,
+    after: item.after,
+    reason: item.reason,
+    jdRequirement: item.jdRequirement,
+    status: item.status
+  }));
+
+  return {
+    ...tailoringOutput,
+    rewrittenBullets,
+    diffView: {
+      ...(tailoringOutput.diffView || {}),
+      bulletDiffs
+    }
+  };
+}
+
+function buildWorkspaceBulletRefinement(currentOutput, payload = {}) {
+  const targetBulletId = String(payload.targetBulletId || "").trim();
+  const refinePrompt = truncateText(payload.refinePrompt || payload.bulletRefinePrompt || "", 200);
+  if (!targetBulletId) return null;
+
+  return (currentOutput?.rewrittenBullets || []).map((item) => {
+    if (item.bulletId !== targetBulletId) return item;
+    const baseText = String(payload.currentText || item.after || item.rewritten || item.suggestion || "");
+    const refinedText = refineResumeBullet(baseText, refinePrompt, item.jdRequirement || "");
+    return {
+      ...item,
+      after: refinedText,
+      rewritten: refinedText,
+      suggestion: refinedText,
+      status: item.status === "rejected" ? "pending" : item.status,
+      reason: item.reason || "已根据岗位重点完成改写。"
+    };
+  });
+}
+
+function buildTailoringWorkspace(jobId) {
+  const detail = getJobDetail(jobId);
+  const { job, fitAssessment, activityLogs, nextAction } = detail;
+  const tailoringOutput = ensureTailoringOutputCompatibility(detail.tailoringOutput);
+  const resumeDocument = job.resumeDocumentId
+    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
+    : store.getLatestResumeDocument();
+  const workspaceMeta = tailoringOutput?.workspace || {
+    id: `workspace_${job.id}`,
+    name: buildDefaultTailoringWorkspaceName(job),
+    activeVersion: tailoringOutput?.version || 1,
+    baseResumeAssetId: resumeDocument?.id || null,
+    lastRefinePrompt: ""
+  };
+  const baseResumeAsset = normalizeResumeWorkspaceAsset(resumeDocument, store.getProfile() || {});
+  const tailoredResume = buildTailoredWorkspaceResume(tailoringOutput, baseResumeAsset);
+  const reviewSummary = {
+    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
+    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
+    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status !== "accepted" && item.status !== "rejected").length
+  };
+
+  return {
+    ...detail,
+    tailoringOutput,
+    workspace: {
+      id: workspaceMeta.id,
+      name: workspaceMeta.name,
+      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
+      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
+      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
+      canGeneratePrepFromAcceptedOnly: true,
+      helpNote: "左侧是全局 Base Resume；右侧只服务当前岗位；进入 Prep 的仅有已接受内容。",
+      baseResumeAsset,
+      tailoredResume,
+      reviewSummary,
+      jobSummary: normalizeJobWorkspaceSummary(job, fitAssessment, tailoringOutput),
+      nextAction
+    },
+    workspaceActivity: (activityLogs || []).filter((entry) =>
+      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
+    )
+  };
+}
+
+async function refineTailoringWorkspace(jobId, payload = {}) {
+  const workspaceName = truncateText(payload.workspaceName || "", 120);
+  const targetBulletId = String(payload.targetBulletId || "").trim();
+  const current = ensureTailoringOutputCompatibility(store.getTailoringOutputByJobId(jobId));
+
+  if (targetBulletId && current) {
+    const rewrittenBullets = buildWorkspaceBulletRefinement(current, payload);
+    if (rewrittenBullets) {
+      const savePayload = {
+        workspaceName: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        rewrittenBullets,
+        tailoredSummary: current.tailoredSummary || "",
+        whyMe: current.whyMe || "",
+        refinePrompt: current.workspace?.lastRefinePrompt || ""
+      };
+      await saveTailoringWorkspace(jobId, savePayload);
+      return buildTailoringWorkspace(jobId);
+    }
+  }
+
+  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
+  const generated = await generateResumeTailoringOutput(jobId, {
+    workspaceName,
+    refinePrompt
+  });
+  const latest = store.getTailoringOutputByJobId(jobId);
+  if (latest) {
+    store.saveTailoringOutput({
+      ...latest,
+      workspace: {
+        ...(latest.workspace || {}),
+        id: latest.workspace?.id || `workspace_${jobId}`,
+        name: workspaceName || latest.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
+        activeVersion: latest.version || latest.workspace?.activeVersion || 1,
         lastRefinePrompt: refinePrompt,
         updatedAt: nowIso(),
         lastSavedAt: nowIso()

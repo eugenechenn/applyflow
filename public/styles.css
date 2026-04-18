@@ -987,6 +987,174 @@ textarea {
   font-size: 18px;
 }
 
+.workspace-side-note-compact h4 {
+  margin: 6px 0 0;
+  font-size: 20px;
+}
+
+.workspace-job-summary-card {
+  padding: 20px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-job-summary-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.workspace-help-inline {
+  min-width: auto;
+  align-self: start;
+}
+
+.workspace-help-inline summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
+.workspace-help-inline summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-help-inline[open] {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workspace-summary-block {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-keyword-cloud,
+.workspace-strength-row,
+.workspace-risk-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-keyword {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(29, 29, 31, 0.06);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.workspace-weak-note {
+  font-size: 13px;
+}
+
+.workspace-section-card {
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-personal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workspace-mini-panel {
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+
+.workspace-resume-list li,
+.workspace-empty-note,
+.workspace-bullet-text {
+  line-height: 1.6;
+}
+
+.workspace-empty-note {
+  color: var(--muted);
+}
+
+.workspace-length-budget {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-length-budget.warning {
+  background: rgba(255, 159, 10, 0.08);
+  border-color: rgba(255, 159, 10, 0.16);
+}
+
+.workspace-length-budget.success {
+  background: rgba(52, 199, 89, 0.08);
+  border-color: rgba(52, 199, 89, 0.16);
+}
+
+.workspace-v2-card {
+  gap: 16px;
+}
+
+.workspace-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.workspace-inline-actions {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 14px;
+  align-items: end;
+}
+
+.workspace-card-actions {
+  margin-top: 30px;
+}
+
+.workspace-refine-box {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(0, 113, 227, 0.04);
+  display: grid;
+  gap: 12px;
+}
+
 .tailoring-review-head {
   display: flex;
   justify-content: space-between;
@@ -1160,6 +1328,9 @@ textarea {
   .governance-main,
   .info-grid,
   .split-metrics,
+  .workspace-summary-grid,
+  .workspace-inline-actions,
+  .workspace-personal-grid,
   .tailoring-diff-grid,
   .tailoring-workspace-main,
   .tailoring-workspace-hero {

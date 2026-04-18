@@ -16,6 +16,122 @@ function splitKeywords(value = "") {
     .filter(Boolean);
 }
 
+function trimBullet(text = "", max = 165) {
+  const normalized = normalizeText(text)
+    .replace(/[。；;]+$/g, "")
+    .replace(/\s*[-–—]\s*/g, "，");
+  if (!normalized) return "";
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
+function compressResumeLine(text = "", max = 165) {
+  return trimBullet(
+    String(text || "")
+      .replace(/^[•·▪●■\-]\s*/, "")
+      .replace(/^(负责|参与|支持)\s*/u, "")
+      .replace(/(建议|请|可考虑|优先|尝试)[^。；;]*$/u, "")
+      .replace(/，{2,}/g, "，"),
+    max
+  );
+}
+
+function refineResumeBullet(text = "", prompt = "", jdRequirement = "") {
+  const base = compressResumeLine(text, 165);
+  const instruction = normalizeText(prompt);
+  if (!instruction) return base;
+
+  let refined = base;
+  if (/太长|压缩|精简|更短|concise|short/i.test(instruction)) {
+    refined = compressResumeLine(base, 118);
+  }
+  if (/结果|impact|outcome|量化/i.test(instruction) && !/结果|提升|增长|效率|转化|impact|outcome/i.test(refined)) {
+    refined = trimBullet(`${refined}，补足结果或影响表达`, 150);
+  }
+  if (/协同|合作|跨团队|stakeholder/i.test(instruction) && !/协同|合作|跨团队/i.test(refined)) {
+    refined = trimBullet(`${refined}，突出跨团队协同推进`, 150);
+  }
+  if (/AI|智能体|大模型|LLM|agent/i.test(instruction) && !/AI|智能体|大模型|LLM|agent/i.test(refined)) {
+    refined = trimBullet(`${refined}，强调 AI 工具落地相关性`, 150);
+  }
+  if (/保守|不要写太满|不要过度/i.test(instruction)) {
+    refined = refined.replace(/主导|全面负责|核心推动/g, "参与推进");
+  }
+  if (/强调|突出|更重/i.test(instruction) && jdRequirement && !refined.includes(jdRequirement)) {
+    refined = trimBullet(`${refined}，对齐 ${jdRequirement}`, 150);
+  }
+  return refined;
+}
+
+function estimateLengthBudget({
+  summary = "",
+  workExperience = [],
+  projectExperience = [],
+  skills = []
+}) {
+  const totalChars = [summary, ...workExperience, ...projectExperience, ...skills]
+    .map((item) => String(item || "").trim())
+    .join("")
+    .length;
+  const totalBullets = workExperience.length + projectExperience.length;
+  const withinBudget = totalChars <= 1900 && totalBullets <= 8;
+  const notes = [];
+  if ((summary || "").length > 140) notes.push("摘要建议压缩到 140 字以内。");
+  if (totalBullets > 8) notes.push("经历条目偏多，建议只保留最相关的 6-8 条。");
+  if (totalChars > 1900) notes.push("整体仍偏长，距离一页纸导出还有压缩空间。");
+  if (skills.length > 10) notes.push("技能关键词偏多，建议只保留最贴近岗位的 6-10 个。");
+  return {
+    target: "一页纸简历",
+    totalChars,
+    totalBullets,
+    status: withinBudget ? "within_budget" : "over_budget",
+    notes
+  };
+}
+
+function buildTailoredResumeSections({
+  tailoredSummary,
+  rewrittenBullets,
+  selectedProjects,
+  selectedSkills,
+  resumeSnapshot,
+  targetKeywords
+}) {
+  const summary = trimBullet(tailoredSummary || resumeSnapshot.summary || "", 140);
+  const workExperience = pickTopItems(
+    rewrittenBullets
+      .filter((item) => item.status !== "rejected")
+      .map((item) => trimBullet(item.after || item.rewritten || item.suggestion || "", 150))
+      .filter(Boolean),
+    5
+  );
+  const projectExperience = pickTopItems(
+    (selectedProjects || [])
+      .map((item) => compressResumeLine(item.text || item, 140))
+      .filter(Boolean),
+    3
+  );
+  const skills = pickTopItems(
+    (selectedSkills && selectedSkills.length ? selectedSkills : targetKeywords || [])
+      .map((item) => normalizeText(item))
+      .filter(Boolean),
+    10
+  );
+
+  return {
+    summary,
+    workExperience,
+    projectExperience,
+    skills,
+    education: pickTopItems(resumeSnapshot.education || [], 3),
+    lengthBudget: estimateLengthBudget({
+      summary,
+      workExperience,
+      projectExperience,
+      skills
+    })
+  };
+}
+
 function buildResumeSnapshot(resumeDocument = null, profile = {}) {
   const structured = resumeDocument?.structuredProfile || resumeDocument?.structured || {};
   return {
@@ -319,6 +435,107 @@ function buildCoverageReport(job = {}, targetKeywords = [], selectedEvidence = [
   };
 }
 
+function buildRuleBasedRewrite(item, job, targetKeywords, index) {
+  const keyword = targetKeywords[index] || targetKeywords[0] || job.title || "岗位重点";
+  const base = compressResumeLine(item.text, 150);
+  if (!base) return "";
+  if (base.includes(keyword)) return base;
+  return trimBullet(`${base}，突出与 ${keyword} 最相关的成果`, 150);
+}
+
+function buildDiffItems({ resumeSnapshot, rewrittenBullets, tailoredSummary }) {
+  const diff = [];
+
+  if (tailoredSummary && normalizeText(tailoredSummary) !== normalizeText(resumeSnapshot.summary || "")) {
+    diff.push({
+      type: "modified",
+      section: "summary",
+      before: normalizeText(resumeSnapshot.summary || ""),
+      after: normalizeText(tailoredSummary),
+      reason: "围绕岗位重点重写了简历摘要，让匹配信号更靠前。"
+    });
+  }
+
+  rewrittenBullets.forEach((item) => {
+    diff.push({
+      type: item.type || "modified",
+      section: item.section || "work_experience",
+      bulletId: item.bulletId,
+      before: item.before || "",
+      after: item.after || "",
+      reason: item.reason || "根据岗位关键词重排并强化了这条经历表达。"
+    });
+  });
+
+  return diff;
+}
+
+function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailoredSummary }) {
+  const diffItems = buildDiffItems({ resumeSnapshot, rewrittenBullets, tailoredSummary });
+  const tailoredSections = buildTailoredResumeSections({
+    tailoredSummary,
+    rewrittenBullets,
+    selectedProjects: [],
+    selectedSkills: [],
+    resumeSnapshot,
+    targetKeywords: []
+  });
+  return {
+    original: {
+      summary: resumeSnapshot.summary || "",
+      workExperience: pickTopItems(resumeSnapshot.experience || [], 6),
+      projectExperience: pickTopItems(resumeSnapshot.projects || [], 4),
+      skills: pickTopItems(resumeSnapshot.skills || [], 12)
+    },
+    tailored: {
+      summary: tailoredSections.summary,
+      workExperience: tailoredSections.workExperience,
+      projectExperience: tailoredSections.projectExperience,
+      skills: tailoredSections.skills
+    },
+    diff: diffItems,
+    summaryChanged: Boolean(tailoredSummary),
+    positioningChanged: false,
+    changedBulletCount: rewrittenBullets.length,
+    reorderedSections: orderingPlan,
+    bulletDiffs: rewrittenBullets.map((item) => ({
+      bulletId: item.bulletId,
+      before: item.before || "",
+      after: item.after || "",
+      reason: item.reason || "",
+      jdRequirement: item.jdRequirement || "",
+      status: item.status || "pending"
+    }))
+  };
+}
+
+function buildTailoredPreview({
+  tailoredSummary,
+  whyMe,
+  rewrittenBullets,
+  selectedProjects,
+  selectedSkills,
+  resumeSnapshot,
+  targetKeywords
+}) {
+  const sections = buildTailoredResumeSections({
+    tailoredSummary,
+    rewrittenBullets,
+    selectedProjects,
+    selectedSkills,
+    resumeSnapshot,
+    targetKeywords
+  });
+
+  return {
+    ...sections,
+    experienceBullets: sections.workExperience,
+    projectHighlights: sections.projectExperience,
+    keywords: pickTopItems(targetKeywords || [], 8),
+    prepNarrative: whyMe || ""
+  };
+}
+
 function buildTailoringOutputShape({
   job,
   profile,
@@ -375,7 +592,6 @@ function buildTailoringOutputShape({
     },
     tailored: {
       summary: tailoredSummary || resumeSnapshot.summary || "",
-      whyMe: whyMe || "",
       experienceBullets: rewrittenBullets.map((item) => item.after || item.rewritten).filter(Boolean),
       skills: selection.selectedSkills,
       projects: pickTopItems(selection.selectedProjects.map((item) => item.text), 4)
@@ -384,6 +600,9 @@ function buildTailoringOutputShape({
     rewrittenBullets,
     tailoredSummary,
     whyMe,
+    prepNarrative: {
+      whyMe: whyMe || ""
+    },
     explainability,
     diffView,
     coverageReport: buildCoverageReport(
@@ -602,12 +821,212 @@ async function runResumeTailoringAgent({
   };
 }
 
+function stripResumeExplanation(text = "") {
+  return normalizeText(
+    String(text || "")
+      .replace(/建议[^。；;]*[。；;]?/gi, "")
+      .replace(/可以[^。；;]*[。；;]?/gi, "")
+      .replace(/应当[^。；;]*[。；;]?/gi, "")
+      .replace(/把[^。；;]*放到前半句[^。；;]*[。；;]?/gi, "")
+      .replace(/突出你如何[^。；;]*[。；;]?/gi, "")
+      .replace(/已根据你的补充要求继续微调[:：]?\s*/gi, "")
+      .replace(/\[(edited|refined)\]/gi, "")
+      .replace(/[。；;]{2,}/g, "。")
+      .replace(/[，,]{2,}/g, "，")
+  );
+}
+
+function compressResumeLine(text = "", max = 165) {
+  return trimBullet(
+    stripResumeExplanation(
+      String(text || "")
+        .replace(/^[•·▪●■\-]\s*/, "")
+        .replace(/^(负责|参与|支持)\s*/u, "")
+    ),
+    max
+  );
+}
+
+function refineResumeBullet(text = "", prompt = "", jdRequirement = "") {
+  const base = compressResumeLine(text, 150);
+  const instruction = normalizeText(prompt);
+  if (!instruction) return base;
+
+  let refined = base;
+  if (/太长|压缩|精简|更短|concise|short/i.test(instruction)) {
+    refined = compressResumeLine(base, 110);
+  }
+  if (/结果|量化|impact|outcome/i.test(instruction) && !/提升|增长|效率|结果|impact|outcome/i.test(refined)) {
+    refined = `${refined}，体现结果影响`;
+  }
+  if (/协同|合作|跨团队|stakeholder/i.test(instruction) && !/协同|合作|跨团队/i.test(refined)) {
+    refined = `${refined}，协同跨团队推进落地`;
+  }
+  if (/AI|智能体|大模型|LLM|agent/i.test(instruction) && !/AI|智能体|大模型|LLM|agent/i.test(refined)) {
+    refined = `${refined}，突出 AI 工具落地经验`;
+  }
+  if (/保守|不要写太满|不要过度/i.test(instruction)) {
+    refined = refined.replace(/主导|全面负责|核心推动/g, "推动");
+  }
+  if (/强调|突出|更重/i.test(instruction) && jdRequirement && !refined.includes(jdRequirement)) {
+    refined = `${refined}，贴合 ${jdRequirement}`;
+  }
+  return compressResumeLine(refined, 145);
+}
+
+function estimateLengthBudget({
+  summary = "",
+  workExperience = [],
+  projectExperience = [],
+  skills = []
+}) {
+  const totalChars = [summary, ...workExperience, ...projectExperience, ...skills]
+    .map((item) => String(item || "").trim())
+    .join("")
+    .length;
+  const totalBullets = workExperience.length + projectExperience.length;
+  const withinBudget = totalChars <= 1900 && totalBullets <= 8;
+  const notes = [];
+  if ((summary || "").length > 140) notes.push("摘要建议控制在 140 字以内。");
+  if (totalBullets > 8) notes.push("经历条目偏多，建议只保留最相关的 6-8 条。");
+  if (totalChars > 1900) notes.push("整体内容偏长，距离一页纸导出仍有压缩空间。");
+  if (skills.length > 10) notes.push("技能关键词偏多，建议保留 6-10 个最贴近岗位的关键词。");
+  return {
+    target: "一页纸简历",
+    totalChars,
+    totalBullets,
+    status: withinBudget ? "within_budget" : "over_budget",
+    notes
+  };
+}
+
+function buildTailoredResumeSections({
+  tailoredSummary,
+  rewrittenBullets,
+  selectedProjects,
+  selectedSkills,
+  resumeSnapshot,
+  targetKeywords
+}) {
+  const summary = compressResumeLine(tailoredSummary || resumeSnapshot.summary || "", 140);
+  const workExperience = pickTopItems(
+    rewrittenBullets
+      .filter((item) => item.status !== "rejected")
+      .map((item) => compressResumeLine(item.after || item.rewritten || item.suggestion || "", 145))
+      .filter(Boolean),
+    5
+  );
+  const projectExperience = pickTopItems(
+    (selectedProjects || [])
+      .map((item) => compressResumeLine(item.text || item, 135))
+      .filter(Boolean),
+    3
+  );
+  const skills = pickTopItems(
+    (selectedSkills && selectedSkills.length ? selectedSkills : targetKeywords || [])
+      .map((item) => normalizeText(item))
+      .filter((item) => item && item.length <= 40),
+    10
+  );
+
+  return {
+    summary,
+    workExperience,
+    projectExperience,
+    skills,
+    education: pickTopItems(resumeSnapshot.education || [], 3),
+    lengthBudget: estimateLengthBudget({
+      summary,
+      workExperience,
+      projectExperience,
+      skills
+    })
+  };
+}
+
+function buildRuleBasedRewrite(item, job, targetKeywords, index) {
+  const keyword = targetKeywords[index] || targetKeywords[0] || job.title || "岗位重点";
+  const base = compressResumeLine(item.text, 135);
+  if (!base) return "";
+  if (base.includes(keyword)) return base;
+  return compressResumeLine(`${base}，突出 ${keyword} 相关成果`, 145);
+}
+
+function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailoredSummary }) {
+  const diffItems = buildDiffItems({ resumeSnapshot, rewrittenBullets, tailoredSummary });
+  const tailoredSections = buildTailoredResumeSections({
+    tailoredSummary,
+    rewrittenBullets,
+    selectedProjects: [],
+    selectedSkills: [],
+    resumeSnapshot,
+    targetKeywords: []
+  });
+  return {
+    original: {
+      summary: resumeSnapshot.summary || "",
+      workExperience: pickTopItems(resumeSnapshot.experience || [], 6),
+      projectExperience: pickTopItems(resumeSnapshot.projects || [], 4),
+      skills: pickTopItems(resumeSnapshot.skills || [], 12)
+    },
+    tailored: {
+      summary: tailoredSections.summary,
+      workExperience: tailoredSections.workExperience,
+      projectExperience: tailoredSections.projectExperience,
+      skills: tailoredSections.skills
+    },
+    diff: diffItems,
+    summaryChanged: Boolean(tailoredSummary),
+    positioningChanged: false,
+    changedBulletCount: rewrittenBullets.length,
+    reorderedSections: orderingPlan,
+    bulletDiffs: rewrittenBullets.map((item) => ({
+      bulletId: item.bulletId,
+      before: item.before || "",
+      after: compressResumeLine(item.after || "", 145),
+      reason: item.reason || "",
+      jdRequirement: item.jdRequirement || "",
+      status: item.status || "pending"
+    }))
+  };
+}
+
+function buildTailoredPreview({
+  tailoredSummary,
+  whyMe,
+  rewrittenBullets,
+  selectedProjects,
+  selectedSkills,
+  resumeSnapshot,
+  targetKeywords
+}) {
+  const sections = buildTailoredResumeSections({
+    tailoredSummary,
+    rewrittenBullets,
+    selectedProjects,
+    selectedSkills,
+    resumeSnapshot,
+    targetKeywords
+  });
+
+  return {
+    ...sections,
+    experienceBullets: sections.workExperience,
+    projectHighlights: sections.projectExperience,
+    keywords: pickTopItems(targetKeywords || [], 8),
+    prepNarrative: whyMe || ""
+  };
+}
+
 module.exports = {
   runResumeTailoringAgent,
   runRuleBasedResumeTailoringAgent,
   buildResumeSnapshot,
   buildTailoredPreview,
+  buildTailoredResumeSections,
   buildDiffView,
   buildExplainability,
-  normalizeTailoringBullets
+  normalizeTailoringBullets,
+  refineResumeBullet,
+  compressResumeLine
 };
