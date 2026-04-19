@@ -178,3 +178,27 @@ ApplyFlow 是一个半自动求职执行 Agent 系统，核心目标是把“求
 - 简历解析能力变化
 - 线上已验证结论变化
 - 下一步优先级变化
+
+## 10. 失败治理与方法切换
+
+从 2026-04-19 起，ApplyFlow 对以下情况不再允许直接继续补丁式改业务代码：
+
+- 同类问题连续 2 轮未解决
+- 修复后出现明显回退
+- 乱码重新出现
+- 新旧页面逻辑混版
+- schema 已变更但前端仍按旧字段渲染
+- 工作区左 / 右任一核心模块再次为空
+
+此时必须先运行 skill：
+
+- [skills/method-switch-and-recovery/SKILL.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\SKILL.md)
+
+最小执行顺序：
+
+1. 先看 [failure-triggers.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\failure-triggers.md) 判断是否触发
+2. 再看 [decision-matrix.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-matrix.md) 判断是继续补丁、修编码、稳 schema，还是直接换方法
+3. 再锁定 [validation-gates.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\validation-gates.md)
+4. 最后按 [decision-log-template.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-log-template.md) 记录本轮决策
+
+只有完成这一步之后，才允许进入改代码阶段。

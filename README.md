@@ -165,3 +165,28 @@ npx wrangler deploy --config wrangler.jsonc
 - 异步队列 / retry / replay
 - 更强的 pipeline trace UI
 - 更完整的可观测性与生产级认证
+
+## 9. 失败治理规则
+
+当项目进入“多轮失败 / 修复回退 / 新旧逻辑混版 / 乱码重新出现”的状态时，不应直接继续补丁式改业务代码。
+
+从现在开始，必须先运行：
+
+- [skills/method-switch-and-recovery/SKILL.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\SKILL.md)
+
+适用场景包括：
+
+- 同类问题连续两轮未解决
+- 修复后再次回退
+- 页面重新出现乱码
+- schema 已变但 UI 仍按旧字段渲染
+- 工作区左/右任一侧再次失真或为空
+
+执行顺序：
+
+1. 看 [failure-triggers.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\failure-triggers.md)
+2. 看 [decision-matrix.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-matrix.md)
+3. 锁定 [validation-gates.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\validation-gates.md)
+4. 用 [decision-log-template.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-log-template.md) 记录本轮决策
+
+这样做的目的不是增加流程，而是避免在旧方法已经失效时继续无边界地乱改。

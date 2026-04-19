@@ -1,0 +1,10 @@
+# 请把下面的占位 owner 替换成你真实的 GitHub 用户名或团队
+* @applyflow-maintainers
+
+/src/lib/orchestrator/workflow-controller.js @applyflow-maintainers
+/src/lib/resume/resume-structuring-audit.js @applyflow-maintainers
+/src/lib/workspace/tailoring-workspace-model.js @applyflow-maintainers
+/public/app.js @applyflow-maintainers
+/skills/delivery-guardrails/ @applyflow-maintainers
+/docs/ENGINEERING_GUARDRAILS.md @applyflow-maintainers
+

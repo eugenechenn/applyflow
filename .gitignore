@@ -2,7 +2,6 @@ node_modules/
 .wrangler/
 tmp/
 .dev.vars
-scripts/lib/resume-parser.js
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal

@@ -1,6 +1,14 @@
 ﻿const mammoth = require("mammoth");
 const { PDFParse } = require("pdf-parse");
 const { createId, nowIso } = require("../utils/id");
+const {
+  SECTION_KEYS,
+  classifyResumeEntry,
+  extractCanonicalSkillTokens,
+  buildStructuredWorkExperience,
+  buildStructuredProjectExperience,
+  buildStructuredEducation
+} = require("./resume-structuring-audit");
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_CLEANED_TEXT_LENGTH = 10_000;
@@ -209,6 +217,20 @@ function limitItems(items, max = 8, perItemMax = 240) {
     .slice(0, max);
 }
 
+function dedupeItems(items = [], max = 8, perItemMax = 240) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : [])
+    .map((item) => truncateText(item, perItemMax))
+    .filter(Boolean)
+    .filter((item) => {
+      const key = String(item || "").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, max);
+}
+
 function extractBulletLikeItems(text = "", max = 8, perItemMax = 240) {
   return limitItems(
     String(text || "")
@@ -278,7 +300,272 @@ function extractContact(cleanedText = "") {
   return { name, email, phone, location };
 }
 
+function insertResumeSectionBreaks(text = "") {
+  return normalizeWhitespace(String(text || ""))
+    .replace(/(个人简历|个人信息|基本信息|教育背景|工作经历|工作经验|项目经历|项目经验|自我评价|个人评价)/g, "\n$1\n")
+    .replace(/((?:19|20)\d{2}[./-]\d{1,2}\s*[-–—至]\s*(?:(?:19|20)\d{2}[./-]\d{1,2}|至今))/g, "\n$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractLabeledValue(text = "", labelPatterns = []) {
+  const lines = splitLines(text);
+  for (const line of lines) {
+    for (const pattern of labelPatterns) {
+      const match = line.match(pattern);
+      if (match?.[1]) return normalizeWhitespace(match[1]);
+    }
+  }
+  return "";
+}
+
+function extractSectionBlock(text = "", headingPatterns = [], stopPatterns = []) {
+  const normalized = insertResumeSectionBreaks(text);
+  const lines = normalized.split("\n");
+  const startIndex = lines.findIndex((line) => headingPatterns.some((pattern) => pattern.test(line.trim())));
+  if (startIndex === -1) return "";
+  const collected = [];
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const line = normalizeWhitespace(lines[index]);
+    if (!line) continue;
+    if (stopPatterns.some((pattern) => pattern.test(line))) break;
+    collected.push(line);
+  }
+  return collected.join("\n");
+}
+
+function splitChronologicalEntries(text = "", { max = 8 } = {}) {
+  const normalized = insertResumeSectionBreaks(text);
+  const lines = normalized
+    .split("\n")
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean);
+  const datePattern = /^(?:19|20)\d{2}[./-]\d{1,2}\s*[-–—至]\s*(?:(?:19|20)\d{2}[./-]\d{1,2}|至今)/i;
+  const entries = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (datePattern.test(line)) {
+      if (current) entries.push(current);
+      current = { header: line, bullets: [] };
+      continue;
+    }
+    if (!current) continue;
+    current.bullets.push(line);
+  }
+  if (current) entries.push(current);
+
+  return entries.slice(0, max).map((entry) => {
+    const mergedBullets = [];
+    for (const bullet of entry.bullets) {
+      const previous = mergedBullets[mergedBullets.length - 1];
+      if (
+        previous &&
+        previous.length < 90 &&
+        bullet.length < 90 &&
+        !/[。！？.!?:：]$/.test(previous) &&
+        !/^[•·▪●■\-]/.test(bullet)
+      ) {
+        mergedBullets[mergedBullets.length - 1] = `${previous} ${bullet}`;
+      } else {
+        mergedBullets.push(bullet);
+      }
+    }
+    return {
+      header: entry.header,
+      bullets: mergedBullets.map((item) => truncateText(item, 220)).filter(Boolean)
+    };
+  });
+}
+
+function formatChronologicalEntry(entry = {}) {
+  const parts = [entry.header, ...(entry.bullets || [])].filter(Boolean);
+  return truncateText(parts.join(" | "), 320);
+}
+
+function classifyChronologicalEntry(entry = {}) {
+  const header = String(entry.header || "");
+  const fullText = `${header} ${(entry.bullets || []).join(" ")}`;
+  if (/(公司|有限公司|集团|PCCW)/i.test(header) && !/(大学|学院).*(专业|本科|硕士|博士|MBA)/i.test(header)) return "work";
+  if (/(项目|小组|诊断|课题|方案|系统|平台)/i.test(header) && !/(专业|本科|硕士|博士|MBA)/i.test(header)) return "project";
+  if (/(专业|本科|硕士|博士|MBA|学士)/i.test(header)) return "education";
+  const headerType = classifyResumeEntry(header);
+  const fullType = classifyResumeEntry(fullText);
+  if (headerType === SECTION_KEYS.PROJECT_EXPERIENCE || fullType === SECTION_KEYS.PROJECT_EXPERIENCE) return "project";
+  if (headerType === SECTION_KEYS.EDUCATION || fullType === SECTION_KEYS.EDUCATION) return "education";
+  if (headerType === SECTION_KEYS.WORK_EXPERIENCE || fullType === SECTION_KEYS.WORK_EXPERIENCE) return "work";
+  return "other";
+}
+
+function extractSkillTokens(text = "") {
+  return extractCanonicalSkillTokens(text);
+}
+
+function extractNarrativeSummaryLines(text = "") {
+  return splitLines(insertResumeSectionBreaks(text)).filter((line) => {
+    if (!line) return false;
+    if (/^(个人简历|个人信息|基本信息|教育背景|工作经历|工作经验|项目经历|项目经验|自我评价|个人评价)$/i.test(line)) return false;
+    if (/(姓名|手机(?:号码)?|邮箱|出生年月|毕业院校|籍贯)[：:]/.test(line)) return false;
+    if (/^(?:19|20)\d{2}[./-]\d{1,2}\s*[-–—至]\s*(?:(?:19|20)\d{2}[./-]\d{1,2}|至今)/.test(line)) return false;
+    return line.length >= 12;
+  });
+}
+
+function buildChineseStructuredProfile(cleanedText = "", extractionMethod = "unknown") {
+  const normalized = insertResumeSectionBreaks(cleanedText);
+  const personalInfoBlock = extractSectionBlock(
+    normalized,
+    [/个人简历|个人信息|基本信息/i],
+    [/工作经历|工作经验|项目经历|项目经验|自我评价|个人评价|教育背景/i]
+  );
+  const workBlock = extractSectionBlock(
+    normalized,
+    [/工作经历|工作经验/i],
+    [/项目经历|项目经验|自我评价|个人评价|教育背景/i]
+  );
+  const projectBlock = extractSectionBlock(
+    normalized,
+    [/项目经历|项目经验/i],
+    [/自我评价|个人评价|教育背景/i]
+  );
+  const selfBlock = extractSectionBlock(
+    normalized,
+    [/自我评价|个人评价/i],
+    [/教育背景/i]
+  );
+  const educationBlock = extractSectionBlock(normalized, [/教育背景|教育经历/i], []);
+
+  const allEntries = splitChronologicalEntries(normalized, { max: 16 });
+  const workEntries = allEntries.filter((entry) => classifyChronologicalEntry(entry) === "work");
+  const projectEntries = allEntries.filter((entry) => classifyChronologicalEntry(entry) === "project");
+  const educationEntries = allEntries.filter((entry) => classifyChronologicalEntry(entry) === "education");
+  const projectTitleLines = splitLines(normalized).filter(
+    (line) =>
+      /^(?:19|20)\d{2}[./-]\d{1,2}\s*[-–—至]\s*(?:(?:19|20)\d{2}[./-]\d{1,2}|至今)/.test(line) &&
+      /(小组|诊断|课题|项目组|企业诊断)/i.test(line)
+  );
+
+  const name =
+    extractLabeledValue(normalized, [/姓名[：:]\s*([^\s]+)/i]) ||
+    extractContact(normalized).name ||
+    "";
+  const email =
+    extractLabeledValue(normalized, [/邮箱[：:]\s*([^\s]+)/i]) ||
+    extractContact(normalized).email ||
+    "";
+  const phone =
+    extractLabeledValue(normalized, [/手机(?:号码)?[：:]\s*([0-9+\-\s()]{8,})/i]) ||
+    extractContact(normalized).phone ||
+    "";
+  const location =
+    extractLabeledValue(normalized, [/(?:籍贯|所在地|现居地)[：:]\s*([^\n]+)/i]) ||
+    extractContact(normalized).location ||
+    "";
+  const personalInfoSummary = [
+    name ? `姓名：${name}` : "",
+    phone ? `电话：${phone}` : "",
+    email ? `邮箱：${email}` : "",
+    location ? `城市：${location}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const narrativeLines = extractNarrativeSummaryLines(`${personalInfoBlock}\n${selfBlock}\n${normalized}`);
+  const selfSummary = truncateText(
+    dedupeItems(
+      narrativeLines
+      .filter(
+        (line) =>
+          /(工科本科|MBA|逻辑思维|商业视角|沟通协调|团队协作|SQL|Excel|文字功底|英语水平|学习能力|执行力|分析能力)/i.test(line) &&
+          !/(项目进度管理|流程标准化建设|风险预警|大客户服务与支持|跨部门协同与危机处置|业务痛点洞察与复盘)/.test(line)
+      )
+      .slice(0, 4),
+      4
+    ).join(" "),
+    600
+  );
+
+  const experience = limitItems(
+    workEntries.length
+      ? workEntries.map(formatChronologicalEntry)
+      : extractBulletLikeItems(workBlock, 10, 260),
+    8,
+    320
+  );
+
+  const projectHeaders = dedupeItems(
+    [...projectTitleLines, ...projectEntries.map((entry) => truncateText(entry.header, 180))],
+    4,
+    180
+  );
+  const projects = limitItems(
+    [...projectHeaders, ...extractBulletLikeItems(projectBlock, 8, 240)],
+    6,
+    320
+  );
+
+  const educationLines = splitLines(educationBlock).filter((line) =>
+    /(大学|学院).*(专业|本科|硕士|博士|MBA)|(?:19|20)\d{2}[./-]\d{1,2}.*(?:大学|学院).*(专业|本科|硕士|博士|MBA)/i.test(line)
+  );
+  const education = limitItems(
+    educationEntries.length
+      ? educationEntries
+          .map((entry) => truncateText(entry.header, 180))
+          .filter((item) => /(专业|本科|硕士|博士|学士|MBA|master|bachelor)/i.test(item))
+      : educationLines.length
+        ? educationLines
+        : extractBulletLikeItems(educationBlock, 6, 180).filter((item) => /(专业|本科|硕士|博士|学士|MBA|master|bachelor)/i.test(item)),
+    6,
+    180
+  );
+
+  const workExperience = buildStructuredWorkExperience(workEntries);
+  const projectExperience = projectTitleLines.length
+    ? buildStructuredProjectExperience(
+        projectTitleLines.map((header, index) => ({
+          header,
+          bullets: index === 0 ? extractBulletLikeItems(projectBlock, 8, 240) : []
+        }))
+      )
+    : buildStructuredProjectExperience(projectEntries);
+  const educationItems = buildStructuredEducation(
+    educationEntries.length
+      ? educationEntries
+      : educationLines.map((line) => ({ header: line, bullets: [] }))
+  );
+
+  const sections = [
+    { key: "personal_info", heading: "个人信息", content: truncateText(personalInfoSummary || personalInfoBlock, MAX_SECTION_CONTENT_LENGTH) },
+    { key: "experience", heading: "工作经历", content: truncateText(experience.join("\n"), MAX_SECTION_CONTENT_LENGTH) },
+    { key: "projects", heading: "项目经历", content: truncateText(projects.join("\n"), MAX_SECTION_CONTENT_LENGTH) },
+    { key: "summary", heading: "自我评价", content: truncateText(selfSummary, MAX_SECTION_CONTENT_LENGTH) },
+    { key: "education", heading: "教育背景", content: truncateText(education.join("\n"), MAX_SECTION_CONTENT_LENGTH) }
+  ].filter((section) => section.content);
+
+  return {
+    name,
+    email,
+    phone,
+    location,
+    summary: selfSummary,
+    experience,
+    workExperience,
+    projects,
+    projectExperience,
+    skills: extractSkillTokens(normalized),
+    education,
+    educationItems,
+    achievements: [],
+    certifications: [],
+    sections,
+    extractionMethod
+  };
+}
+
 function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") {
+  if (/(工作经历|项目经历|教育背景|自我评价|个人简历|个人信息|基本信息)/.test(cleanedText)) {
+    return buildChineseStructuredProfile(cleanedText, extractionMethod);
+  }
   const sections = chunkResumeSections(cleanedText);
   const getSectionText = (key) =>
     sections
@@ -297,7 +584,9 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
     ...extractContact(cleanedText),
     summary: truncateText(summaryText, 1200),
     experience: extractBulletLikeItems(getSectionText("experience") || fallbackExperienceLines.join("\n"), 10, 260),
+    workExperience: [],
     projects: extractBulletLikeItems(getSectionText("projects"), 8, 240),
+    projectExperience: [],
     skills: limitItems(
       (skillsText || fallbackSkillLines.join("\n"))
         .split(/,|\/|\n|•|·/)
@@ -307,6 +596,7 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
       80
     ),
     education: extractBulletLikeItems(getSectionText("education") || fallbackEducationLines.join("\n"), 6, 180),
+    educationItems: [],
     achievements: extractBulletLikeItems(getSectionText("achievements"), 8, 180),
     certifications: extractBulletLikeItems(getSectionText("certifications"), 6, 140),
     sections,

@@ -293,7 +293,7 @@ async function handleApiRequest(req, res, pathname) {
 
     if (req.method === "GET" && /^\/api\/jobs\/[^/]+\/tailoring-workspace$/.test(pathname)) {
       const jobId = pathname.split("/")[3];
-      return success(res, await orchestrator.buildTailoringWorkspace(jobId));
+      return success(res, await orchestrator.getOrBuildTailoringWorkspace(jobId));
     }
 
     if (req.method === "POST" && /^\/api\/jobs\/[^/]+\/tailoring-workspace\/save$/.test(pathname)) {

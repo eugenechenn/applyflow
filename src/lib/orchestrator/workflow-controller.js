@@ -1,4 +1,4 @@
-const store = require("../../server/store");
+﻿const store = require("../../server/store");
 const { createId, nowIso } = require("../utils/id");
 const jobStatusModule = require("../state/job-status");
 const { updateJob } = require("./shared-state-helpers");
@@ -8,16 +8,14 @@ const { runAgentStage } = require("./stage-runner");
 const logger = require("../../server/platform/logger");
 const { exportTailoredResumeDocx } = require("../resume/resume-exporter");
 const { parseResumeWithBestEffort, getResumeParserUrl } = require("../resume/resume-parser-client");
+const { runRuleBasedResumeTailoringAgent, refineResumeBullet } = require("./agents/resume-tailoring-agent-v2");
 const {
-  buildResumeSnapshot,
-  buildTailoredPreview,
-  buildTailoredResumeSections,
-  buildDiffView,
-  buildExplainability,
-  normalizeTailoringBullets,
-  refineResumeBullet,
-  compressResumeLine
-} = require("./agents/resume-tailoring-agent-v2");
+  buildJobSummaryModel,
+  normalizeResumeWorkspaceAsset: normalizeResumeWorkspaceAssetModel,
+  buildTailoredWorkspaceResume: buildTailoredWorkspaceResumeModel,
+  buildWorkspaceInsights,
+  buildWorkspaceReviewModules
+} = require("../workspace/tailoring-workspace-model");
 
 const assertJobStatusTransition =
   jobStatusModule?.assertJobStatusTransition ||
@@ -109,50 +107,7 @@ function cleanWorkspaceJobLines(items = [], { max = 5, allowWeakNote = false } =
 }
 
 function normalizeJobWorkspaceSummary(job = {}, fitAssessment = null, tailoringOutput = null) {
-  const jdStructured = job.jdStructured || {};
-  const roleSummary = truncateText(
-    jdStructured.summary ||
-      fitAssessment?.suggestedAction ||
-      `${job.company || "目标公司"} 的 ${job.title || "岗位"}，重点关注 ${pickTopItems(jdStructured.keywords || [], 3).join("、") || "职责范围与任职要求"}。`,
-    180
-  );
-  const coreResponsibilities = cleanWorkspaceJobLines(jdStructured.responsibilities || [], { max: 5 });
-  const coreRequirements = cleanWorkspaceJobLines(jdStructured.requirements || [], { max: 5 });
-  const targetKeywords = cleanWorkspaceJobLines(
-    tailoringOutput?.targetingBrief?.targetKeywords || jdStructured.keywords || [],
-    { max: 8 }
-  );
-  const rawRiskNotes = cleanWorkspaceJobLines(
-    fitAssessment?.riskFlags || jdStructured.riskFlags || [],
-    { max: 2, allowWeakNote: false }
-  );
-  const riskNotes = rawRiskNotes.length
-    ? rawRiskNotes
-    : cleanWorkspaceJobLines(
-        [...(jdStructured.preferredQualifications || []), ...(fitAssessment?.keyGaps || [])],
-        { max: 1, allowWeakNote: false }
-      );
-  const weakSignalNote =
-    coreResponsibilities.length || coreRequirements.length
-      ? ""
-      : "岗位原文结构化信息较少，建议在确认投递前快速核对 JD 原文。";
-
-  return {
-    id: job.id,
-    title: job.title,
-    company: job.company,
-    location: job.location,
-    status: job.status,
-    fitScore: fitAssessment?.fitScore ?? null,
-    recommendation: fitAssessment?.recommendation || null,
-    strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
-    roleSummary,
-    coreResponsibilities,
-    coreRequirements,
-    targetKeywords,
-    riskNotes,
-    weakSignalNote
-  };
+  return buildJobSummaryModel(job, fitAssessment, tailoringOutput);
 }
 
 function classifyResumeEntry(entry = "") {
@@ -171,104 +126,11 @@ function classifyResumeEntry(entry = "") {
 }
 
 function normalizeResumeWorkspaceAsset(resumeDocument = null, profile = {}) {
-  const structured = resumeDocument?.structuredProfile || {};
-  const sections = Array.isArray(structured.sections) ? structured.sections : [];
-  const sectionItems = (key, max = 8) =>
-    sections
-      .filter((section) => section.key === key)
-      .flatMap((section) => splitStructuredContent(section.content || "", max))
-      .slice(0, max);
-  const combinedLines = dedupeStrings([
-    ...sectionItems("experience", 12),
-    ...(structured.experience || []),
-    ...sectionItems("projects", 10),
-    ...(structured.projects || []),
-    ...sectionItems("education", 8),
-    ...(structured.education || []),
-    ...sectionItems("skills", 12),
-    ...(structured.skills || [])
-  ], 32);
-
-  const workExperience = [];
-  const projectExperience = [];
-  const education = [];
-  const skills = [];
-
-  combinedLines.forEach((item) => {
-    const normalized = normalizeLineItem(item);
-    const category = classifyResumeEntry(normalized);
-    if (category === "work" && workExperience.length < 8) workExperience.push(normalized);
-    else if (category === "project" && projectExperience.length < 6) projectExperience.push(normalized);
-    else if (category === "education" && education.length < 4) education.push(normalized);
-    else if (category === "skill" && skills.length < 12) {
-      normalized
-        .split(/,|\/|、|\|/)
-        .map((part) => normalizeLineItem(part, 80))
-        .filter(Boolean)
-        .forEach((part) => {
-          if (skills.length < 12 && !skills.find((entry) => entry.toLowerCase() === part.toLowerCase())) {
-            skills.push(part);
-          }
-        });
-    }
-  });
-
-  return {
-    id: resumeDocument?.id || null,
-    name: resumeDocument?.fileName || "原始简历",
-    sourceResumeId: resumeDocument?.id || null,
-    personalInfo: {
-      name: structured.name || profile.name || "",
-      email: structured.email || "",
-      phone: structured.phone || "",
-      location: structured.location || (profile.targetLocations || [])[0] || ""
-    },
-    selfSummary: truncateText(structured.summary || resumeDocument?.summary || profile.background || "", 280),
-    education: dedupeStrings([...education, ...(structured.education || [])], 4),
-    workExperience: dedupeStrings([...workExperience, ...(structured.experience || [])], 8),
-    projectExperience: dedupeStrings([...projectExperience, ...(structured.projects || [])], 6),
-    skills: dedupeStrings([...skills, ...(structured.skills || [])], 12),
-    strengths: dedupeStrings(structured.achievements || structured.highlights || profile.strengths || [], 6),
-    sections: sections
-  };
+  return normalizeResumeWorkspaceAssetModel(resumeDocument, profile);
 }
 
 function buildTailoredWorkspaceResume(tailoringOutput = null, baseResumeAsset = {}) {
-  if (!tailoringOutput) {
-    return {
-      summary: "",
-      workExperience: [],
-      projectExperience: [],
-      skills: [],
-      lengthBudget: {
-        target: "一页纸简历",
-        totalChars: 0,
-        totalBullets: 0,
-        status: "within_budget",
-        notes: []
-      }
-    };
-  }
-
-  const preview = tailoringOutput.tailoredResumePreview || {};
-  const sections = buildTailoredResumeSections({
-    tailoredSummary: tailoringOutput.tailoredSummary || preview.summary || "",
-    rewrittenBullets: tailoringOutput.rewrittenBullets || [],
-    selectedProjects: (preview.projectExperience || preview.projectHighlights || []).map((item) => ({ text: item })),
-    selectedSkills: preview.skills || tailoringOutput.selectionPlan?.selectedSkills || [],
-    resumeSnapshot: tailoringOutput.resumeSnapshot || buildResumeSnapshot(null, {}),
-    targetKeywords: tailoringOutput.targetingBrief?.targetKeywords || []
-  });
-
-  return {
-    summary: sections.summary,
-    workExperience: sections.workExperience,
-    projectExperience: sections.projectExperience.length
-      ? sections.projectExperience
-      : pickTopItems(baseResumeAsset.projectExperience || [], 3),
-    skills: sections.skills,
-    lengthBudget: sections.lengthBudget
-  };
+  return buildTailoredWorkspaceResumeModel(tailoringOutput, baseResumeAsset);
 }
 
 function deriveRoleBucket(job) {
@@ -950,137 +812,215 @@ async function evaluateJob(jobId) {
   return { job: updatedJob, fitAssessment, nextTask, globalPolicy };
 }
 
-function buildTailoringOutputRecord({
-  existingTailoringOutput,
-  tailoringResult,
-  applicationPrep = null,
-  fitAssessment = null,
-  resumeDocument = null
-}) {
-  const normalizedBullets = normalizeTailoringBullets(
-    tailoringResult.rewrittenBullets || existingTailoringOutput?.rewrittenBullets || [],
-    [],
-    tailoringResult.targetingBrief?.targetKeywords || existingTailoringOutput?.targetingBrief?.targetKeywords || [],
-    { jdStructured: {} }
+function containsPersonalInfoContamination(value = "") {
+  return /@|(?:\+?86[-\s]?)?1[3-9]\d{9}|姓名|电话|手机|邮箱|出生年月|籍贯/i.test(String(value || ""));
+}
+
+function containsEducationContamination(value = "") {
+  return /(大学|学院|本科|硕士|博士|MBA|学位|专业)/i.test(String(value || ""));
+}
+
+function containsFallbackPlaceholder(value = "") {
+  return /建议人工补充确认|建议人工确认|暂无可展示|信息较少|岗位职责没有被清晰列出|核心要求没有被清晰列出/i.test(String(value || ""));
+}
+
+function sanitizeTailoringLine(value = "", max = 180) {
+  const text = truncateText(
+    String(value || "")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+    max
   );
-  const resumeSnapshot =
-    tailoringResult.resumeSnapshot ||
-    existingTailoringOutput?.resumeSnapshot ||
-    buildResumeSnapshot(resumeDocument, store.getProfile() || {});
-  const orderingPlan =
-    tailoringResult.selectionPlan?.orderingPlan ||
-    existingTailoringOutput?.selectionPlan?.orderingPlan ||
-    ["summary", "experience", "projects", "skills"];
-  const tailoredSummary = tailoringResult.tailoredSummary || existingTailoringOutput?.tailoredSummary || "";
-  const whyMe = tailoringResult.whyMe || existingTailoringOutput?.whyMe || "";
-  const explainability =
-    tailoringResult.explainability ||
-    tailoringResult.tailoringExplainability ||
-    existingTailoringOutput?.tailoringExplainability ||
-    buildExplainability({
-      rewrittenBullets: normalizedBullets,
-      selectedExperience: [],
-      targetKeywords: tailoringResult.targetingBrief?.targetKeywords || [],
-      fitAssessment,
-      job: { title: "", jdStructured: {} }
-    });
-  const existingWorkspace = existingTailoringOutput?.workspace || {};
-  const requestedWorkspace = tailoringResult.workspace || {};
-  const workspaceName =
-    requestedWorkspace.name ||
-    existingWorkspace.name ||
-    `${tailoringResult.jobCompany || "岗位"} ${tailoringResult.jobTitle || "定制版"}工作区`;
-  const workspaceVersion = Math.max(
-    Number(requestedWorkspace.activeVersion || 0),
-    Number(existingWorkspace.activeVersion || 0),
-    Number(tailoringResult.version || 0),
-    Number(existingTailoringOutput?.version || 0),
-    1
+  if (!text) return "";
+  if (containsFallbackPlaceholder(text)) return "";
+  return text;
+}
+
+function sanitizeTailoringBullets(items = [], max = 5) {
+  return dedupeStrings((Array.isArray(items) ? items : []).map((item) => sanitizeTailoringLine(item, 220)).filter(Boolean), max);
+}
+
+function sanitizeCanonicalResumeAsset(asset = {}) {
+  const workExperience = (Array.isArray(asset.workExperience) ? asset.workExperience : [])
+    .map((entry, index) => ({
+      id: entry?.id || `work_${index + 1}`,
+      company: sanitizeTailoringLine(entry?.company || "", 80),
+      role: sanitizeTailoringLine(entry?.role || "", 60),
+      timeRange: sanitizeTailoringLine(entry?.timeRange || "", 40),
+      bullets: sanitizeTailoringBullets(entry?.bullets || [], 6)
+    }))
+    .filter((entry) => entry.company && !containsPersonalInfoContamination(entry.company) && !containsEducationContamination(entry.company));
+
+  const projectExperience = (Array.isArray(asset.projectExperience) ? asset.projectExperience : [])
+    .map((entry, index) => ({
+      id: entry?.id || `project_${index + 1}`,
+      projectName: sanitizeTailoringLine(entry?.projectName || entry?.company || "", 90),
+      role: sanitizeTailoringLine(entry?.role || "", 60),
+      timeRange: sanitizeTailoringLine(entry?.timeRange || "", 40),
+      bullets: sanitizeTailoringBullets(entry?.bullets || [], 6)
+    }))
+    .filter((entry) => entry.projectName && !containsPersonalInfoContamination(entry.projectName) && !containsEducationContamination(entry.projectName));
+
+  const selfSummary = sanitizeTailoringLine(asset.selfSummary || "", 260);
+  const cleanedSelfSummary = containsPersonalInfoContamination(selfSummary) || containsEducationContamination(selfSummary) ? "" : selfSummary;
+
+  return {
+    ...asset,
+    workExperience,
+    projectExperience,
+    selfSummary: cleanedSelfSummary,
+    education: Array.isArray(asset.education) ? asset.education : [],
+    skills: Array.isArray(asset.skills) ? asset.skills : []
+  };
+}
+
+function buildReviewSummary(reviewModules = []) {
+  const count = Array.isArray(reviewModules)
+    ? reviewModules.reduce((sum, module) => sum + (Array.isArray(module.items) ? module.items.length : 0), 0)
+    : 0;
+  return {
+    acceptedCount: count,
+    rejectedCount: 0,
+    pendingCount: 0
+  };
+}
+
+function scoreEntryForJob(entry = {}, jobSummary = {}, fitAssessment = null) {
+  const haystack = [entry.company, entry.projectName, entry.role, ...(entry.bullets || [])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const signals = [
+    ...(jobSummary.targetKeywords || []),
+    ...(jobSummary.coreResponsibilities || []),
+    ...(jobSummary.coreRequirements || [])
+  ].filter(Boolean);
+
+  let score = 0;
+  signals.forEach((signal) => {
+    const token = String(signal || "").trim().toLowerCase();
+    if (!token) return;
+    if (haystack.includes(token)) score += 3;
+    else if (token.length >= 2 && haystack.includes(token.slice(0, Math.min(token.length, 4)))) score += 1;
+  });
+
+  if (fitAssessment?.recommendation === "apply") score += 2;
+  if (fitAssessment?.recommendation === "cautious") score += 1;
+  return score;
+}
+
+function buildTailoredEntries(entries = [], jobSummary = {}, fitAssessment = null, kind = "work", refinePrompt = "") {
+  const refinedInstruction = String(refinePrompt || "").trim();
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => {
+      const relevantRequirement = (jobSummary.coreRequirements || [])[index] || (jobSummary.targetKeywords || [])[index] || "";
+      const bullets = sanitizeTailoringBullets(entry.bullets || [], kind === "project" ? 4 : 5).map((bullet) =>
+        refinedInstruction ? refineResumeBullet(bullet, refinedInstruction, relevantRequirement) : bullet
+      );
+      return {
+        ...entry,
+        bullets,
+        priorityScore: scoreEntryForJob(entry, jobSummary, fitAssessment)
+      };
+    })
+    .sort((left, right) => right.priorityScore - left.priorityScore)
+    .slice(0, kind === "project" ? 2 : 3)
+    .map(({ priorityScore, ...entry }) => entry);
+}
+
+function buildCanonicalWorkspaceDraft(baseResumeAsset = {}, jobSummary = {}, fitAssessment = null, options = {}) {
+  const refinePrompt = truncateText(options.refinePrompt || "", 200);
+  const workExperience = buildTailoredEntries(baseResumeAsset.workExperience || [], jobSummary, fitAssessment, "work", refinePrompt);
+  const projectExperience = buildTailoredEntries(baseResumeAsset.projectExperience || [], jobSummary, fitAssessment, "project", refinePrompt);
+  const selfEvaluationSource = sanitizeTailoringLine(baseResumeAsset.selfSummary || "", 160);
+  const strongestSignal = (jobSummary.targetKeywords || [])[0] || (jobSummary.coreRequirements || [])[0] || "岗位重点";
+  const selfEvaluation = sanitizeTailoringLine(
+    options.selfEvaluation ||
+      (selfEvaluationSource
+        ? `${selfEvaluationSource}，优先突出与${strongestSignal}最相关的真实经历和执行结果。`
+        : `这版简历优先突出与${strongestSignal}最相关的真实经历与项目成果。`),
+    160
   );
 
   return {
+    workExperience,
+    projectExperience,
+    selfEvaluation,
+    education: []
+  };
+}
+
+function buildCompatibilityRewrittenBullets(workspaceDraft = {}) {
+  const workBullets = (workspaceDraft.workExperience || []).flatMap((entry, index) =>
+    (entry.bullets || []).map((bullet, bulletIndex) => ({
+      bulletId: `work_${index + 1}_${bulletIndex + 1}`,
+      before: bullet,
+      after: bullet,
+      suggestion: bullet,
+      rewritten: bullet,
+      status: "accepted",
+      reason: "已基于结构化工作经历生成当前定制版。",
+      jdRequirement: ""
+    }))
+  );
+  const projectBullets = (workspaceDraft.projectExperience || []).flatMap((entry, index) =>
+    (entry.bullets || []).map((bullet, bulletIndex) => ({
+      bulletId: `project_${index + 1}_${bulletIndex + 1}`,
+      before: bullet,
+      after: bullet,
+      suggestion: bullet,
+      rewritten: bullet,
+      status: "accepted",
+      reason: "已基于结构化项目经历生成当前定制版。",
+      jdRequirement: ""
+    }))
+  );
+  return [...workBullets, ...projectBullets];
+}
+
+function buildTailoringOutputRecord({
+  existingTailoringOutput = null,
+  job = null,
+  fitAssessment = null,
+  resumeDocument = null,
+  workspaceDraft = {},
+  workspaceName = "",
+  refinePrompt = "",
+  llmMeta = null,
+  targetingBrief = null,
+  reviewModules = [],
+  insights = {}
+}) {
+  const activeVersion = Math.max(Number(existingTailoringOutput?.workspace?.activeVersion || 0), Number(existingTailoringOutput?.version || 0), 1);
+  const resolvedName = workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job || {});
+  const rewrittenBullets = buildCompatibilityRewrittenBullets(workspaceDraft);
+
+  return {
     ...(existingTailoringOutput || {}),
-    ...tailoringResult,
-    id: existingTailoringOutput?.id || tailoringResult.id || createId("tailoring"),
-    jobId: tailoringResult.jobId,
-    resumeSnapshot,
-    resumeDocumentId: resumeDocument?.id || tailoringResult.resumeDocumentId || existingTailoringOutput?.resumeDocumentId || null,
-    applicationPrepId: applicationPrep?.id || existingTailoringOutput?.applicationPrepId || null,
+    id: existingTailoringOutput?.id || createId("tailoring"),
+    jobId: job?.id || existingTailoringOutput?.jobId || null,
     fitAssessmentId: fitAssessment?.id || existingTailoringOutput?.fitAssessmentId || null,
-    tailoredSummary,
-    whyMe,
-    rewrittenBullets: normalizedBullets,
-    whyThisChange: tailoringResult.whyThisVersion || existingTailoringOutput?.whyThisChange || "",
-    tailoringExplainability: explainability,
-    explainability,
-    diff:
-      tailoringResult.diff ||
-      buildDiffView({
-        resumeSnapshot,
-        rewrittenBullets: normalizedBullets,
-        orderingPlan,
-        tailoredSummary,
-        whyMe
-      }).diff,
-    diffView:
-      tailoringResult.diffView ||
-      buildDiffView({
-        resumeSnapshot,
-        rewrittenBullets: normalizedBullets,
-        orderingPlan,
-        tailoredSummary,
-        whyMe
-      }),
-    original:
-      tailoringResult.original || existingTailoringOutput?.original || {
-        summary: resumeSnapshot.summary || "",
-        experienceBullets: (resumeSnapshot.experience || []).slice(0, 6),
-        skills: (resumeSnapshot.skills || []).slice(0, 12),
-        projects: (resumeSnapshot.projects || []).slice(0, 4)
-      },
-    tailored:
-      tailoringResult.tailored || existingTailoringOutput?.tailored || {
-        summary: tailoredSummary || resumeSnapshot.summary || "",
-        experienceBullets: normalizedBullets.map((item) => item.after || item.rewritten).filter(Boolean)
-      },
-    prepNarrative: tailoringResult.prepNarrative || existingTailoringOutput?.prepNarrative || { whyMe },
-    tailoredResumePreview:
-      tailoringResult.tailoredResumePreview ||
-      existingTailoringOutput?.tailoredResumePreview ||
-      buildTailoredPreview({
-        tailoredSummary,
-        whyMe,
-        rewrittenBullets: normalizedBullets,
-        selectedProjects: [],
-        selectedSkills:
-          tailoringResult.selectionPlan?.selectedSkills || existingTailoringOutput?.selectionPlan?.selectedSkills || [],
-        resumeSnapshot,
-        targetKeywords:
-          tailoringResult.targetingBrief?.targetKeywords || existingTailoringOutput?.targetingBrief?.targetKeywords || []
-      }),
-    applicationPrepSnapshot: applicationPrep || existingTailoringOutput?.applicationPrepSnapshot || null,
+    resumeDocumentId: resumeDocument?.id || existingTailoringOutput?.resumeDocumentId || null,
+    tailoredSummary: workspaceDraft.selfEvaluation || "",
+    whyMe: "",
+    workspaceDraft,
+    rewrittenBullets,
+    reviewModules,
+    insights,
+    targetingBrief: targetingBrief || existingTailoringOutput?.targetingBrief || { targetKeywords: job ? buildJobSummaryModel(job, fitAssessment, null).targetKeywords : [] },
+    llmMeta: llmMeta || existingTailoringOutput?.llmMeta || { provider: "rule_based_workspace", model: null, fallbackUsed: true },
+    version: activeVersion,
     workspace: {
-      id:
-        requestedWorkspace.id ||
-        existingWorkspace.id ||
-        `workspace_${tailoringResult.jobId || existingTailoringOutput?.jobId || createId("tailoring_workspace")}`,
-      name: workspaceName,
-      activeVersion: workspaceVersion,
-      baseResumeAssetId:
-        requestedWorkspace.baseResumeAssetId ||
-        existingWorkspace.baseResumeAssetId ||
-        resumeDocument?.id ||
-        existingTailoringOutput?.resumeDocumentId ||
-        null,
-      lastRefinePrompt:
-        requestedWorkspace.lastRefinePrompt ||
-        tailoringResult.refinePrompt ||
-        existingWorkspace.lastRefinePrompt ||
-        "",
-      lastSavedAt: nowIso(),
-      updatedAt: nowIso()
+      id: existingTailoringOutput?.workspace?.id || `workspace_${job?.id || createId("workspace")}`,
+      name: resolvedName,
+      activeVersion,
+      baseResumeAssetId: resumeDocument?.id || existingTailoringOutput?.workspace?.baseResumeAssetId || null,
+      lastRefinePrompt: refinePrompt || existingTailoringOutput?.workspace?.lastRefinePrompt || "",
+      updatedAt: nowIso(),
+      lastSavedAt: nowIso()
     },
-    createdAt: existingTailoringOutput?.createdAt || tailoringResult.createdAt || nowIso(),
+    createdAt: existingTailoringOutput?.createdAt || nowIso(),
     updatedAt: nowIso()
   };
 }
@@ -1096,101 +1036,134 @@ async function generateResumeTailoringOutput(jobId, options = {}) {
   const resumeDocument = store.getLatestResumeDocument();
   const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
   const refinePrompt = truncateText(options.refinePrompt || "", 500);
-  const workspaceName = truncateText(
-    options.workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job || {}),
-    120
-  );
+  const workspaceName = truncateText(options.workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job || {}), 120);
 
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
     error.code = "NOT_FOUND";
     throw error;
   }
-
   if (!profile) {
     const error = new Error("Profile is required before resume tailoring.");
     error.code = "PROFILE_REQUIRED";
     throw error;
   }
-
   if (!resumeDocument) {
     const error = new Error("请先上传原始简历，再生成岗位定制简历。");
     error.code = "RESUME_REQUIRED";
     throw error;
   }
 
-  const tailoringStage = await runAgentStage(
-    {
-      stageKey: "resume_tailoring",
-      stageLabel: "简历定制阶段",
-      agentName: "Resume Tailoring Agent",
-      entityType: "tailoring_output",
-      entityId: existingTailoringOutput?.id || job.id,
-      jobId,
-      inputSummary: `系统会结合岗位 ${job.title}、当前简历 ${resumeDocument.fileName} 与匹配评估结果，生成岗位定制版简历初稿。`
-    },
-    () =>
-      agentRegistry.resumeTailoring({
-        job,
-        profile,
-        fitAssessment,
-        resumeDocument,
-        existingOutput: existingTailoringOutput,
-        refinePrompt
-      })
-  );
-
+  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, profile));
+  const jobSummary = buildJobSummaryModel(job, fitAssessment, existingTailoringOutput);
+  const fallbackAgentResult = runRuleBasedResumeTailoringAgent({
+    job,
+    profile,
+    fitAssessment,
+    resumeDocument,
+    refinePrompt
+  });
+  const workspaceDraft = buildCanonicalWorkspaceDraft(baseResumeAsset, jobSummary, fitAssessment, {
+    refinePrompt,
+    selfEvaluation: fallbackAgentResult?.tailoredSummary || ""
+  });
+  const draftForModel = { workspaceDraft, tailoredSummary: workspaceDraft.selfEvaluation };
+  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset);
+  const reviewModules = buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
+  const insights = buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume);
   const tailoringOutput = buildTailoringOutputRecord({
     existingTailoringOutput,
-    tailoringResult: {
-      ...tailoringStage.result,
-      jobCompany: job.company,
-      jobTitle: job.title,
-      workspace: {
-        ...(existingTailoringOutput?.workspace || {}),
-        name: workspaceName,
-        lastRefinePrompt: refinePrompt
-      }
-    },
+    job,
     fitAssessment,
-    resumeDocument
+    resumeDocument,
+    workspaceDraft,
+    workspaceName,
+    refinePrompt,
+    llmMeta: fallbackAgentResult?.llmMeta || null,
+    targetingBrief: { targetKeywords: jobSummary.targetKeywords || [] },
+    reviewModules,
+    insights
   });
 
   store.saveTailoringOutput(tailoringOutput);
-  const updatedJob = updateJob(jobId, () => ({
-    resumeDocumentId: resumeDocument.id
-  }));
-
   logActivity({
     type: "tailoring_generated",
     entityType: "tailoring_output",
     entityId: tailoringOutput.id,
     action: "tailoring_generated",
+    summary: `已为 ${job.company} 生成岗位定制版简历。`,
     jobId,
-    summary: `已为 ${job.company} 生成岗位定制简历。`,
-    metadata: {
-      jobId,
-      resumeDocumentId: resumeDocument.id,
-      changedBulletCount: tailoringOutput.diffView?.changedBulletCount || tailoringOutput.rewrittenBullets?.length || 0,
-      llm: tailoringOutput.llmMeta || null
-    },
-    agentName: "Resume Tailoring Agent",
-    inputSummary: `岗位关键词 ${summarizeList(tailoringOutput.targetingBrief?.targetKeywords || [], "暂无")}；原始简历 ${resumeDocument.fileName}。`,
-    outputSummary:
-      tailoringOutput.decisionSummary ||
-      `已生成岗位定制版简历，改写 ${tailoringOutput.rewrittenBullets?.length || 0} 条经历表达。`,
-    decisionReason:
-      tailoringOutput.whyThisVersion ||
-      "系统根据 JD 重点、原始简历中的真实证据和当前匹配判断，选择并强化了最相关的经历。",
-    activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
-    policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
-    overrideApplied: Boolean(job.policyOverride?.active),
-    overrideSummary: job.policyOverride?.active
-      ? `${job.policyOverride.action}${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : ""}`
-      : null
+    agentName: "简历定制阶段",
+    inputSummary: `已基于岗位 ${job.title}、当前简历 ${resumeDocument.fileName} 与匹配评估结果生成定制版。`,
+    outputSummary: `生成 ${workspaceDraft.workExperience.length} 段定制工作经历、${workspaceDraft.projectExperience.length} 段定制项目经历。`,
+    decisionReason: "系统已切换到结构化简历实体建模路径，只保留公司、岗位、时间和要点进入工作区。"
   });
 
-  return { job: updatedJob, tailoringOutput, resumeDocument, fitAssessment };
+  return {
+    job,
+    fitAssessment,
+    tailoringOutput,
+    workspace: buildTailoringWorkspace(jobId).workspace
+  };
+}
+
+function saveResumeTailoringOutput(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  const profile = store.getProfile();
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const resumeDocument = store.getLatestResumeDocument();
+  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, profile || {}));
+  const jobSummary = buildJobSummaryModel(job, fitAssessment, existingTailoringOutput);
+  const suppliedDraft = payload.workspaceDraft || existingTailoringOutput?.workspaceDraft || {};
+  const sanitizedDraftSource = sanitizeCanonicalResumeAsset({
+    workExperience: suppliedDraft.workExperience || [],
+    projectExperience: suppliedDraft.projectExperience || [],
+    selfSummary: payload.tailoredSummary || suppliedDraft.selfEvaluation || existingTailoringOutput?.tailoredSummary || baseResumeAsset.selfSummary || ""
+  });
+  const workspaceDraft = {
+    workExperience: sanitizedDraftSource.workExperience,
+    projectExperience: sanitizedDraftSource.projectExperience,
+    selfEvaluation: sanitizedDraftSource.selfSummary,
+    education: []
+  };
+  const draftForModel = { workspaceDraft, tailoredSummary: workspaceDraft.selfEvaluation };
+  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset);
+  const reviewModules = buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
+  const insights = buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume);
+  const tailoringOutput = buildTailoringOutputRecord({
+    existingTailoringOutput,
+    job,
+    fitAssessment,
+    resumeDocument,
+    workspaceDraft,
+    workspaceName: truncateText(payload.workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job), 120),
+    refinePrompt: truncateText(payload.refinePrompt || existingTailoringOutput?.workspace?.lastRefinePrompt || "", 500),
+    llmMeta: existingTailoringOutput?.llmMeta || null,
+    targetingBrief: { targetKeywords: jobSummary.targetKeywords || [] },
+    reviewModules,
+    insights
+  });
+
+  store.saveTailoringOutput(tailoringOutput);
+  logActivity({
+    type: "tailoring_review_saved",
+    entityType: "tailoring_output",
+    entityId: tailoringOutput.id,
+    action: "tailoring_review_saved",
+    summary: `已保存 ${job.company} 的当前定制版。`,
+    jobId,
+    metadata: {
+      acceptedCount: buildReviewSummary(reviewModules).acceptedCount
+    }
+  });
+  return tailoringOutput;
 }
 
 async function prepareJobApplication(jobId) {
@@ -1204,13 +1177,11 @@ async function prepareJobApplication(jobId) {
     error.code = "NOT_FOUND";
     throw error;
   }
-
   if (!profile) {
     const error = new Error("Profile is required before preparation.");
     error.code = "PROFILE_REQUIRED";
     throw error;
   }
-
   if (!resumeDocument) {
     const error = new Error("请先上传原始简历，再生成申请准备包。");
     error.code = "RESUME_REQUIRED";
@@ -1233,26 +1204,12 @@ async function prepareJobApplication(jobId) {
     },
     () => agentRegistry.applicationPrep({ job, profile, fitAssessment, resumeDocument, tailoringOutput })
   );
+
   const applicationPrep = prepStage.result;
   store.saveApplicationPrep(applicationPrep);
-
-  const updatedTailoringOutput = buildTailoringOutputRecord({
-    existingTailoringOutput: tailoringOutput,
-    tailoringResult: tailoringOutput,
-    applicationPrep,
-    fitAssessment,
-    resumeDocument
-  });
-  store.saveTailoringOutput(updatedTailoringOutput);
-
   const updatedJob = updateJob(jobId, () => ({
     applicationPrepId: applicationPrep.id,
-    resumeDocumentId: resumeDocument.id,
-    status:
-      ["inbox", "archived"].includes(job.status) && ["deprioritize", "avoid"].includes(job.strategyDecision)
-        ? "to_prepare"
-        : job.status,
-    priority: job.priority === "low" ? "medium" : job.priority
+    resumeDocumentId: resumeDocument.id
   }));
 
   logActivity({
@@ -1261,148 +1218,27 @@ async function prepareJobApplication(jobId) {
     entityId: applicationPrep.id,
     action: "prep_saved",
     summary: `已为 ${job.company} 生成申请准备包。`,
-    metadata: {
-      jobId,
-      checklistCompleted: isPrepReady(applicationPrep),
-      llm: applicationPrep.llmMeta || null,
-      resumeDocumentId: resumeDocument.id,
-      tailoringExplainabilityCount: applicationPrep.tailoringExplainability?.length || 0
-    },
-    agentName: "Application Prep Agent",
-    inputSummary: `基于岗位定制简历结果继续生成申请叙事与沟通材料。`,
-    outputSummary: `问答草稿 ${applicationPrep.qaDraft?.length || 0} 条，沟通重点 ${(applicationPrep.talkingPoints || []).length} 条。`,
-    decisionReason:
-      ["deprioritize", "avoid"].includes(job.strategyDecision)
-        ? "虽然策略层对该岗位较谨慎，但系统仍为你生成一版可编辑申请包，方便你人工决策。"
-        : job.strategyDecision === "cautious_proceed"
-          ? "系统在保留风险提示的前提下，补齐了申请叙事与投递材料，帮助你更有准备地推进。"
-          : "系统已把岗位定制简历进一步扩展为完整申请准备包，便于你直接进入后续投递与面试准备。",
-    activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
-    policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
-    overrideApplied: Boolean(job.policyOverride?.active),
-    overrideSummary: job.policyOverride?.active
-      ? `${job.policyOverride.action}${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : ""}`
-      : null
-  });
-
-  return { job: updatedJob, applicationPrep, tailoringOutput: updatedTailoringOutput, resumeDocument };
-}
-
-function saveResumeTailoringOutput(jobId, payload = {}) {
-  const job = store.getJob(jobId);
-  const profile = store.getProfile();
-  const fitAssessment = store.getFitAssessmentByJobId(jobId);
-  const resumeDocument = store.getLatestResumeDocument();
-  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
-
-  if (!job) {
-    const error = new Error(`Job ${jobId} not found.`);
-    error.code = "NOT_FOUND";
-    throw error;
-  }
-
-  if (!existingTailoringOutput) {
-    const error = new Error("请先生成岗位定制简历，再保存人工确认结果。");
-    error.code = "TAILORING_REQUIRED";
-    throw error;
-  }
-
-  const incomingBullets = Array.isArray(payload.rewrittenBullets) ? payload.rewrittenBullets : [];
-  const normalizedBullets = normalizeTailoringBullets(
-    incomingBullets.length ? incomingBullets : existingTailoringOutput.rewrittenBullets || [],
-    [],
-    existingTailoringOutput.targetingBrief?.targetKeywords || [],
-    job
-  );
-  const acceptedBullets = normalizedBullets.filter((item) => item.status === "accepted");
-  const tailoredSummary = payload.tailoredSummary ?? existingTailoringOutput.tailoredSummary ?? "";
-  const whyMe = payload.whyMe ?? existingTailoringOutput.whyMe ?? "";
-  const explainability = buildExplainability({
-    rewrittenBullets: normalizedBullets,
-    selectedExperience: [],
-    targetKeywords: existingTailoringOutput.targetingBrief?.targetKeywords || [],
-    fitAssessment,
-    job
-  });
-  const diffView = buildDiffView({
-    resumeSnapshot:
-      existingTailoringOutput.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile || {}),
-    rewrittenBullets: normalizedBullets,
-    orderingPlan: existingTailoringOutput.selectionPlan?.orderingPlan || ["summary", "experience", "projects", "skills"],
-    tailoredSummary,
-    whyMe
-  });
-
-  const nextTailoringOutput = {
-    ...existingTailoringOutput,
-    tailoredSummary,
-    whyMe,
-    rewrittenBullets: normalizedBullets,
-    explainability,
-    tailoringExplainability: explainability,
-    diff: diffView.diff,
-    diffView,
-    tailoredResumePreview: buildTailoredPreview({
-      tailoredSummary,
-      whyMe,
-      rewrittenBullets: normalizedBullets,
-      selectedProjects: [],
-      selectedSkills: existingTailoringOutput.selectionPlan?.selectedSkills || [],
-      resumeSnapshot:
-        existingTailoringOutput.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile || {}),
-      targetKeywords: existingTailoringOutput.targetingBrief?.targetKeywords || []
-    }),
-    humanReview: {
-      acceptedBulletCount: acceptedBullets.length,
-      rejectedBulletCount: normalizedBullets.filter((item) => item.status === "rejected").length,
-      pendingBulletCount: normalizedBullets.filter((item) => item.status === "pending").length,
-      updatedAt: nowIso()
-    },
-    updatedAt: nowIso()
-  };
-
-  store.saveTailoringOutput(nextTailoringOutput);
-
-  logActivity({
-    type: "tailoring_review_saved",
-    entityType: "tailoring_output",
-    entityId: nextTailoringOutput.id,
-    action: "tailoring_review_saved",
-    actor: "user",
     jobId,
-    summary: `已保存 ${job.company} 的岗位定制简历人工确认结果。`,
-    metadata: {
-      acceptedCount: acceptedBullets.length,
-      rejectedCount: normalizedBullets.filter((item) => item.status === "rejected").length,
-      pendingCount: normalizedBullets.filter((item) => item.status === "pending").length,
-      prepWillUseAcceptedOnly: true
-    },
-    agentName: "Resume Tailoring Agent",
-    inputSummary: `用户对 ${normalizedBullets.length} 条改写建议进行了接受 / 拒绝 / 编辑。`,
-    outputSummary: `当前已接受 ${acceptedBullets.length} 条，已拒绝 ${normalizedBullets.filter((item) => item.status === "rejected").length} 条，待确认 ${normalizedBullets.filter((item) => item.status === "pending").length} 条。Prep Agent 后续只会使用已接受内容。`,
-    decisionReason: "Resume Tailoring Agent 允许用户在生成后逐条确认建议，确保后续申请准备只使用人确认过的内容。"
+    agentName: "Application Prep Agent",
+    inputSummary: "系统已基于岗位定制简历结果继续生成申请准备材料。",
+    outputSummary: `问答草稿 ${applicationPrep.qaDraft?.length || 0} 条，沟通重点 ${(applicationPrep.talkingPoints || []).length || 0} 条。`,
+    decisionReason: "申请准备阶段只消费当前定制版与用户确认过的内容，不再直接读取脏文本。"
   });
 
-  return {
-    job,
-    tailoringOutput: nextTailoringOutput,
-    acceptedCount: acceptedBullets.length,
-    pendingCount: normalizedBullets.filter((item) => item.status === "pending").length
-  };
+  return { job: updatedJob, applicationPrep, tailoringOutput, resumeDocument };
 }
 
-function saveApplicationPrep(jobId, payload) {
+function saveApplicationPrep(jobId, payload = {}) {
   const job = store.getJob(jobId);
   const profile = store.getProfile();
   const existing = store.getApplicationPrepByJobId(jobId);
-  const existingTailoringOutput = store.getTailoringOutputByJobId(jobId);
+  const tailoringOutput = store.getTailoringOutputByJobId(jobId);
 
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
     error.code = "NOT_FOUND";
     throw error;
   }
-
   if (!profile) {
     const error = new Error("Profile is required before saving prep.");
     error.code = "PROFILE_REQUIRED";
@@ -1411,19 +1247,15 @@ function saveApplicationPrep(jobId, payload) {
 
   const normalizeLines = (value) =>
     Array.isArray(value)
-      ? value
+      ? value.filter(Boolean)
       : String(value || "")
           .split("\n")
           .map((item) => item.trim())
           .filter(Boolean);
 
-  const editedLines = normalizeLines(payload.tailoredResumeBullets);
-  const existingAcceptedBullets = (existingTailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted");
-  const rewriteBullets = editedLines.map((line, index) => ({
-    ...(existingAcceptedBullets[index] || {}),
-    bulletId: existingAcceptedBullets[index]?.bulletId || `accepted_bullet_${index + 1}`,
-    source: existingAcceptedBullets[index]?.source || existing?.resumeTailoring?.rewriteBullets?.[index]?.source || `经历 ${index + 1}`,
-    before: existingAcceptedBullets[index]?.before || existingAcceptedBullets[index]?.source || "",
+  const rewriteBullets = normalizeLines(payload.tailoredResumeBullets).map((line, index) => ({
+    bulletId: `accepted_bullet_${index + 1}`,
+    before: line,
     after: line,
     suggestion: line,
     rewritten: line,
@@ -1433,23 +1265,16 @@ function saveApplicationPrep(jobId, payload) {
   const qaDraft = normalizeLines(payload.qaDraft).map((line, index) => {
     const [question, ...answerParts] = line.split("::");
     return {
-      question: (question || `?? ${index + 1}`).trim(),
-      draftAnswer: (answerParts.join("::") || "").trim()
+      question: (question || `问题 ${index + 1}`).trim(),
+      draftAnswer: answerParts.join("::").trim()
     };
   });
 
-  const checklist = (payload.checklist || []).map((item, index) => ({
+  const checklist = (Array.isArray(payload.checklist) ? payload.checklist : []).map((item, index) => ({
     key: item.key || `check_${index + 1}`,
-    label: item.label || `??? ${index + 1}`,
+    label: item.label || `检查项 ${index + 1}`,
     completed: Boolean(item.completed)
   }));
-
-  const baseExplainability = Array.isArray(existing?.tailoringExplainability) ? existing.tailoringExplainability : [];
-  const targetKeywords =
-    payload.targetKeywords ||
-    existing?.resumeTailoring?.targetKeywords ||
-    job.jdStructured?.keywords?.slice(0, 5) ||
-    [];
 
   const applicationPrep = {
     ...(existing || {}),
@@ -1458,83 +1283,33 @@ function saveApplicationPrep(jobId, payload) {
     profileId: profile.id,
     version: (existing?.version || 0) + 1,
     resumeDocumentId: payload.resumeDocumentId || existing?.resumeDocumentId || job.resumeDocumentId || null,
-    resumeSnapshot: existing?.resumeSnapshot || null,
+    tailoredSummary: payload.tailoredSummary || existing?.tailoredSummary || tailoringOutput?.tailoredSummary || "",
+    whyMe: payload.whyMe || existing?.whyMe || "",
     resumeTailoring: {
       ...(existing?.resumeTailoring || {}),
-      targetKeywords,
       rewriteBullets,
       usedBullets: rewriteBullets,
-      unusedBullets: existingTailoringOutput?.rewrittenBullets
-        ? existingTailoringOutput.rewrittenBullets.filter(
-            (item) => !rewriteBullets.find((candidate) => candidate.bulletId === item.bulletId)
-          )
-        : [],
-      strengthenAreas: payload.strengthenAreas || existing?.resumeTailoring?.strengthenAreas || targetKeywords.slice(0, 4),
-      deEmphasizeAreas: payload.deEmphasizeAreas || existing?.resumeTailoring?.deEmphasizeAreas || [],
-      keywordSuggestions: payload.keywordSuggestions || existing?.resumeTailoring?.keywordSuggestions || targetKeywords.slice(0, 6)
+      unusedBullets: [],
+      targetKeywords: tailoringOutput?.targetingBrief?.targetKeywords || []
     },
     selfIntro: {
       short: payload.selfIntroShort || existing?.selfIntro?.short || "",
       medium: payload.selfIntroMedium || existing?.selfIntro?.medium || ""
     },
-    tailoredSummary: payload.tailoredSummary || existing?.tailoredSummary || "",
-    whyMe: payload.whyMe || existing?.whyMe || "",
     qaDraft,
     talkingPoints: normalizeLines(payload.talkingPoints || existing?.talkingPoints || []),
     coverNote: payload.coverNote || existing?.coverNote || "",
     outreachNote: payload.outreachNote || existing?.outreachNote || "",
     checklist,
     contentWithSources: existing?.contentWithSources || [],
-    tailoringExplainability:
-      (payload.tailoringExplainability || baseExplainability).map((item, index) => ({
-        id: item.id || `tailoring_reason_${index + 1}`,
-        title: item.title || `???? ${index + 1}`,
-        before: item.before || rewriteBullets[index]?.source || "",
-        after: item.after || rewriteBullets[index]?.rewritten || "",
-        reason: item.reason || "??????????????",
-        jdRequirement: item.jdRequirement || targetKeywords[index] || "",
-        goal: item.goal || "????????",
-        evidenceAnchor: item.evidenceAnchor || ""
-      })) || [],
-    tailoredResumePreview: {
-      ...(existing?.tailoredResumePreview || {}),
-      summary: payload.tailoredSummary || existing?.tailoredResumePreview?.summary || existing?.tailoredSummary || "",
-      positioning: payload.whyMe || existing?.tailoredResumePreview?.positioning || existing?.whyMe || "",
-      experienceBullets: rewriteBullets.map((item) => item.rewritten).filter(Boolean),
-      projectHighlights: normalizeLines(payload.talkingPoints || existing?.tailoredResumePreview?.projectHighlights || []),
-      skills: targetKeywords,
-      education: existing?.tailoredResumePreview?.education || existing?.resumeSnapshot?.education || [],
-      keywords: targetKeywords
-    },
-    whyThisVersion: payload.whyThisVersion || existing?.whyThisVersion || "????????????????????",
+    tailoringExplainability: existing?.tailoringExplainability || [],
+    tailoredResumePreview: existing?.tailoredResumePreview || null,
     createdAt: existing?.createdAt || nowIso(),
     updatedAt: nowIso()
   };
 
   store.saveApplicationPrep(applicationPrep);
-  store.saveTailoringOutput({
-    ...(existingTailoringOutput || {}),
-    id: existingTailoringOutput?.id || createId("tailoring"),
-    jobId,
-    resumeDocumentId: applicationPrep.resumeDocumentId || existingTailoringOutput?.resumeDocumentId || null,
-    applicationPrepId: applicationPrep.id,
-    fitAssessmentId: store.getFitAssessmentByJobId(jobId)?.id || existingTailoringOutput?.fitAssessmentId || null,
-    tailoredSummary: applicationPrep.tailoredSummary || existingTailoringOutput?.tailoredSummary || "",
-    whyMe: applicationPrep.whyMe || existingTailoringOutput?.whyMe || "",
-    whyThisChange: applicationPrep.whyThisVersion || existingTailoringOutput?.whyThisChange || "",
-    rewrittenBullets: (existingTailoringOutput?.rewrittenBullets || []).map((item) => {
-      const matchedAccepted = rewriteBullets.find((candidate) => candidate.bulletId === item.bulletId);
-      return matchedAccepted ? { ...item, ...matchedAccepted, status: "accepted" } : item;
-    }),
-    explainability: applicationPrep.tailoringExplainability || existingTailoringOutput?.explainability || [],
-    tailoringExplainability: applicationPrep.tailoringExplainability || existingTailoringOutput?.tailoringExplainability || [],
-    tailoredResumePreview: applicationPrep.tailoredResumePreview || existingTailoringOutput?.tailoredResumePreview || null,
-    applicationPrepSnapshot: applicationPrep,
-    createdAt: existingTailoringOutput?.createdAt || nowIso(),
-    updatedAt: nowIso()
-  });
-
-  const updatedJob = updateJob(jobId, () => ({
+  updateJob(jobId, () => ({
     applicationPrepId: applicationPrep.id,
     resumeDocumentId: applicationPrep.resumeDocumentId || job.resumeDocumentId || null
   }));
@@ -1544,24 +1319,12 @@ function saveApplicationPrep(jobId, payload) {
     entityType: "application_prep",
     entityId: applicationPrep.id,
     action: "prep_saved",
-    actor: "user",
-    jobId,
-    summary: `??? ${job.company} ??????????`,
-    agentName: "??????",
-    inputSummary: `????????????????? ${checklist.filter((item) => item.completed).length}/${checklist.length} ????`,
-    outputSummary: `???? ${applicationPrep.version} ??????????????=${isPrepReady(applicationPrep)}??????=${applicationPrep.tailoringExplainability?.length || 0}?`,
-    decisionReason:
-      "????????????????????????????????????????????????",
-    activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy()),
-    policyProposalId: store.getGlobalStrategyPolicy()?.appliedProposalId || null,
-    overrideApplied: Boolean(job.policyOverride?.active),
-    overrideSummary: job.policyOverride?.active
-      ? `${job.policyOverride.action}${job.policyOverride.reason ? `: ${job.policyOverride.reason}` : ""}`
-      : null
+    summary: `已保存 ${job.company} 的申请准备内容。`,
+    jobId
   });
 
   return {
-    job: updatedJob,
+    job: store.getJob(jobId),
     applicationPrep,
     prepReady: isPrepReady(applicationPrep)
   };
@@ -1570,11 +1333,10 @@ function saveApplicationPrep(jobId, payload) {
 function isPrepReady(applicationPrep) {
   const requiredKeys = ["resume_reviewed", "intro_ready", "qa_ready"];
   const doneKeys = new Set(
-    (applicationPrep.checklist || [])
+    (applicationPrep?.checklist || [])
       .filter((item) => item.completed)
       .map((item) => item.key)
   );
-
   return requiredKeys.every((key) => doneKeys.has(key));
 }
 
@@ -1591,19 +1353,14 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
   if (nextStatus === "ready_to_apply") {
     const prep = store.getApplicationPrepByJobId(jobId);
     if (!prep || !isPrepReady(prep)) {
-      const error = new Error(
-        "在核心申请准备清单完成之前，不能推进到可投递状态。"
-      );
+      const error = new Error("在核心申请准备清单完成之前，不能推进到可投递状态。");
       error.code = "PREP_NOT_READY";
       error.details = { jobId, requiredChecklist: ["resume_reviewed", "intro_ready", "qa_ready"] };
       throw error;
     }
   }
 
-  const updatedJob = updateJob(jobId, () => ({
-    status: nextStatus
-  }));
-
+  const updatedJob = updateJob(jobId, () => ({ status: nextStatus }));
   const globalPolicy =
     store.getGlobalStrategyPolicy() ||
     refreshGlobalStrategyPolicy(store.getStrategyProfile() || refreshStrategyProfile(), {
@@ -1611,7 +1368,6 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
       triggerType: "metrics_shift",
       triggerSource: "pipeline_manager"
     });
-
   const nextTask = agentRegistry.pipelineManager({
     job: updatedJob,
     nextStatus,
@@ -1620,9 +1376,7 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     globalPolicy
   });
 
-  if (nextTask) {
-    store.saveTask(nextTask);
-  }
+  if (nextTask) store.saveTask(nextTask);
 
   logActivity({
     type: "job_status_changed",
@@ -1631,28 +1385,10 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     action: "job_status_changed",
     actor: options.actor || "user",
     jobId,
-    summary: `已将 ${updatedJob.company} 更新到 ${humanizeLifecycleStatus(nextStatus)}。`,
-    metadata: { currentStatus: job.status, nextStatus },
-    agentName: "流程管理阶段",
-    inputSummary: `请求将岗位状态从 ${humanizeLifecycleStatus(job.status)} 更新为 ${humanizeLifecycleStatus(nextStatus)}。`,
-    outputSummary: nextTask
-      ? `状态已更新为 ${humanizeLifecycleStatus(nextStatus)}；并创建了后续任务：${nextTask.title}。`
-      : `状态已更新为 ${humanizeLifecycleStatus(nextStatus)}；当前没有额外后续任务。`,
-    decisionReason:
-      nextStatus === "ready_to_apply"
-        ? "只有在核心申请准备清单完成后，系统才允许推进到可投递状态。"
-        : "这次状态变化遵循岗位生命周期状态机，并同步更新了共享流程状态。",
-    policyInfluenceSummary: `本次流转在聚焦模式=${globalPolicy.focusMode}、风险偏好=${globalPolicy.riskTolerance} 的策略上下文中执行。`,
-    activePolicyVersion: createPolicyVersion(globalPolicy),
-    policyProposalId: globalPolicy.appliedProposalId || null,
-    overrideApplied: Boolean(updatedJob.policyOverride?.active),
-    overrideSummary: updatedJob.policyOverride?.active
-      ? `${updatedJob.policyOverride.action}${updatedJob.policyOverride.reason ? `: ${updatedJob.policyOverride.reason}` : ""}`
-      : null
+    summary: `已将 ${updatedJob.company} 更新到 ${humanizeLifecycleStatus(nextStatus)}。`
   });
 
-  const strategyProfile = refreshStrategyProfile();
-  refreshGlobalStrategyPolicy(strategyProfile, {
+  refreshGlobalStrategyPolicy(refreshStrategyProfile(), {
     reason: "status_transition",
     triggerType: "metrics_shift",
     triggerSource: "pipeline_manager"
@@ -1682,50 +1418,24 @@ function saveProfile(payload) {
     yearsOfExperience: Number(payload.yearsOfExperience ?? current?.yearsOfExperience ?? 0),
     targetRoles: csvToArray(payload.targetRoles ?? current?.targetRoles ?? []),
     targetIndustries: csvToArray(payload.targetIndustries ?? current?.targetIndustries ?? []),
-    preferredLocations: csvToArray(
-      payload.targetLocations ?? payload.preferredLocations ?? current?.preferredLocations ?? []
-    ),
-    targetLocations: csvToArray(
-      payload.targetLocations ?? payload.preferredLocations ?? current?.targetLocations ?? []
-    ),
+    preferredLocations: csvToArray(payload.targetLocations ?? payload.preferredLocations ?? current?.preferredLocations ?? []),
+    targetLocations: csvToArray(payload.targetLocations ?? payload.preferredLocations ?? current?.targetLocations ?? []),
     strengths: csvToArray(payload.strengths ?? current?.strengths ?? []),
     constraints: csvToArray(payload.constraints ?? current?.constraints ?? []),
     baseResume: payload.masterResume || payload.baseResume || current?.baseResume || "",
     masterResume: payload.masterResume || payload.baseResume || current?.masterResume || "",
     policyPreferences: {
-      manualPreferredRoles: csvToArray(
-        payload.manualPreferredRoles ?? current?.policyPreferences?.manualPreferredRoles ?? []
-      ),
-      ignoredRiskyRoles: csvToArray(
-        payload.ignoredRiskyRoles ?? current?.policyPreferences?.ignoredRiskyRoles ?? []
-      ),
-      riskToleranceOverride:
-        payload.riskToleranceOverride ||
-        current?.policyPreferences?.riskToleranceOverride ||
-        ""
+      manualPreferredRoles: csvToArray(payload.manualPreferredRoles ?? current?.policyPreferences?.manualPreferredRoles ?? []),
+      ignoredRiskyRoles: csvToArray(payload.ignoredRiskyRoles ?? current?.policyPreferences?.ignoredRiskyRoles ?? []),
+      riskToleranceOverride: payload.riskToleranceOverride || current?.policyPreferences?.riskToleranceOverride || ""
     },
-    summary:
-      payload.background ||
-      payload.summary ||
-      current?.summary ||
-      payload.headline ||
-      "",
+    summary: payload.background || payload.summary || current?.summary || payload.headline || "",
     createdAt: current?.createdAt || nowIso(),
     updatedAt: nowIso()
   };
 
   store.saveProfile(profile);
-  if (
-    JSON.stringify(current?.policyPreferences || {}) !== JSON.stringify(profile.policyPreferences || {})
-  ) {
-    logPolicyAudit({
-      eventType: "user_override_applied",
-      actor: "user",
-      summary: "Updated profile-level policy overrides."
-    });
-  }
-  const strategyProfile = refreshStrategyProfile();
-  const globalPolicy = refreshGlobalStrategyPolicy(strategyProfile, {
+  refreshGlobalStrategyPolicy(refreshStrategyProfile(), {
     reason: "profile_updated",
     triggerType: "profile_update",
     triggerSource: "user_profile",
@@ -1738,11 +1448,7 @@ function saveProfile(payload) {
     entityId: profile.id,
     action: "profile_saved",
     actor: "user",
-    summary: `已保存 ${profile.fullName || "候选人"} 的个人画像。`,
-    inputSummary: `画像已更新：目标岗位=${summarizeList(profile.targetRoles)}，目标行业=${summarizeList(profile.targetIndustries)}。`,
-    outputSummary: `画像当前记录 ${profile.yearsOfExperience} 年经验，以及 ${profile.strengths.length} 项优势。`,
-    decisionReason: "个人画像是长期生效的核心事实源，岗位导入、匹配评估和申请准备都会读取这里的内容。",
-    policyInfluenceSummary: `全局策略已基于最新画像刷新：聚焦模式=${globalPolicy.focusMode}，风险偏好=${globalPolicy.riskTolerance}。`
+    summary: `已保存 ${profile.fullName || "候选人"} 的个人画像。`
   });
   return profile;
 }
@@ -1759,47 +1465,24 @@ function reflectInterview(payload) {
 
   const reflection = agentRegistry.interviewReflection({ payload, profile });
   store.saveInterviewReflection(reflection);
-  const updatedJob = updateJob(payload.jobId, () => ({
+  updateJob(payload.jobId, () => ({
     latestInterviewReflectionId: reflection.id,
     latestFailureReasons: reflection.failureReasons || [],
     latestSuccessSignals: reflection.successSignals || [],
     latestSkillGaps: reflection.skillGaps || []
   }));
 
-  if (profile) {
-    store.saveProfile({
-      ...profile,
-      learnedStrengths: [
-        ...new Set([...(profile.learnedStrengths || []), ...(reflection.successSignals || [])])
-      ].slice(0, 8),
-      learnedSkillGaps: [
-        ...new Set([...(profile.learnedSkillGaps || []), ...(reflection.skillGaps || [])])
-      ].slice(0, 8),
-      successSignals: [
-        ...new Set([...(profile.successSignals || []), ...(reflection.successSignals || [])])
-      ].slice(0, 8),
-      updatedAt: nowIso()
-    });
-  }
-
-  const strategyProfile = refreshStrategyProfile();
-  const globalPolicy = refreshGlobalStrategyPolicy(strategyProfile, {
+  refreshGlobalStrategyPolicy(refreshStrategyProfile(), {
     reason: "interview_reflection",
     triggerType: "interview_reflection",
     triggerSource: "interview_reflection"
   });
-
   logActivity({
     type: "interview_reflected",
     entityType: "interview_reflection",
     entityId: reflection.id,
     action: "interview_reflected",
-    summary: `已记录 ${job.company} 的面试复盘。`,
-    metadata: { jobId: job.id, skillGaps: reflection.skillGaps || [] },
-    agentName: "面试复盘阶段",
-    inputSummary: `已记录 ${updatedJob.title} 的面试笔记。`,
-    outputSummary: `本次复盘提取出 ${reflection.successSignals?.length || 0} 个成功信号，以及 ${reflection.skillGaps?.length || 0} 个技能短板。`,
-    decisionReason: `这次复盘会继续影响后续评分偏置和策略建议。策略画像已在 ${strategyProfile.updatedAt} 刷新，全局策略已在 ${globalPolicy.updatedAt} 刷新。`
+    summary: `已记录 ${job.company} 的面试复盘。`
   });
 
   return reflection;
@@ -1868,590 +1551,93 @@ function getJobDetail(jobId) {
 
 function buildTailoringWorkspace(jobId) {
   const detail = getJobDetail(jobId);
-  const { job, fitAssessment, tailoringOutput, applicationPrep, resumeDocument, activityLogs, nextAction } = detail;
-  const workspaceMeta = tailoringOutput?.workspace || {
-    id: `workspace_${job.id}`,
-    name: buildDefaultTailoringWorkspaceName(job),
-    activeVersion: tailoringOutput?.version || 1,
-    baseResumeAssetId: resumeDocument?.id || null,
-    lastRefinePrompt: ""
+  const { job, fitAssessment, activityLogs, nextAction } = detail;
+  const tailoringOutput = store.getTailoringOutputByJobId(jobId) || null;
+  const resumeDocument = job.resumeDocumentId
+    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
+    : store.getLatestResumeDocument();
+  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, store.getProfile() || {}));
+  const safeTailoringOutput = tailoringOutput || {
+    workspaceDraft: null,
+    tailoredSummary: "",
+    reviewModules: [],
+    insights: {}
   };
-  const structuredProfile = resumeDocument?.structuredProfile || {};
-  const baseResumeAsset = {
-    id: workspaceMeta.baseResumeAssetId || resumeDocument?.id || `resume_asset_${job.id}`,
-    name: resumeDocument?.fileName || "主简历",
-    sourceResumeId: resumeDocument?.id || null,
-    summary: structuredProfile.summary || resumeDocument?.summary || "",
-    experience: structuredProfile.experience || [],
-    projects: structuredProfile.projects || [],
-    skills: structuredProfile.skills || [],
-    education: structuredProfile.education || [],
-    achievements: structuredProfile.achievements || structuredProfile.highlights || []
-  };
-  const reviewSummary = {
-    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
-    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
-    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status !== "accepted" && item.status !== "rejected").length
-  };
+  const tailoredResume = buildTailoredWorkspaceResumeModel(safeTailoringOutput, baseResumeAsset);
+  const jobSummary = buildJobSummaryModel(job, fitAssessment, safeTailoringOutput);
+  const reviewModules = safeTailoringOutput.reviewModules?.length
+    ? safeTailoringOutput.reviewModules
+    : buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
 
   return {
     ...detail,
+    tailoringOutput: safeTailoringOutput,
     workspace: {
-      id: workspaceMeta.id,
-      name: workspaceMeta.name,
-      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
-      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
-      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
+      id: safeTailoringOutput.workspace?.id || `workspace_${job.id}`,
+      name: safeTailoringOutput.workspace?.name || buildDefaultTailoringWorkspaceName(job),
+      activeVersion: safeTailoringOutput.workspace?.activeVersion || safeTailoringOutput.version || 1,
+      lastRefinePrompt: safeTailoringOutput.workspace?.lastRefinePrompt || "",
+      updatedAt: safeTailoringOutput.workspace?.updatedAt || safeTailoringOutput.updatedAt || job.updatedAt,
       canGeneratePrepFromAcceptedOnly: true,
       baseResumeAsset,
-      reviewSummary,
-      jobSummary: {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        status: job.status,
-        fitScore: fitAssessment?.fitScore ?? null,
-        recommendation: fitAssessment?.recommendation || null,
-        strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
-        keyRequirements: pickTopItems(job.jdStructured?.requirements || [], 5),
-        targetKeywords:
-          tailoringOutput?.targetingBrief?.targetKeywords ||
-          applicationPrep?.resumeTailoring?.targetKeywords ||
-          pickTopItems(job.jdStructured?.keywords || [], 8)
-      },
+      tailoredResume,
+      reviewSummary: buildReviewSummary(reviewModules),
+      reviewModules,
+      insights: safeTailoringOutput.insights || buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume),
+      jobSummary,
       nextAction
     },
-    workspaceActivity: (activityLogs || []).filter((entry) =>
-      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
-    )
+    workspaceActivity: (activityLogs || []).filter((entry) => ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type))
   };
 }
 
 async function saveTailoringWorkspace(jobId, payload = {}) {
-  const normalizedName = truncateText(payload.workspaceName || "", 120);
-  const saved = saveResumeTailoringOutput(jobId, payload);
-  const current = store.getTailoringOutputByJobId(jobId);
-  if (current) {
-    store.saveTailoringOutput({
-      ...current,
-      workspace: {
-        ...(current.workspace || {}),
-        id: current.workspace?.id || `workspace_${jobId}`,
-        name: normalizedName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        activeVersion: current.workspace?.activeVersion || current.version || 1,
-        lastRefinePrompt:
-          truncateText(payload.refinePrompt || "", 500) ||
-          current.workspace?.lastRefinePrompt ||
-          "",
-        updatedAt: nowIso(),
-        lastSavedAt: nowIso()
-      }
-    });
-  }
+  saveResumeTailoringOutput(jobId, payload);
   return buildTailoringWorkspace(jobId);
 }
 
 async function refineTailoringWorkspace(jobId, payload = {}) {
-  const workspaceName = truncateText(payload.workspaceName || "", 120);
-  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
-  const generated = await generateResumeTailoringOutput(jobId, {
-    workspaceName,
-    refinePrompt
-  });
+  const job = store.getJob(jobId);
   const current = store.getTailoringOutputByJobId(jobId);
-  if (current) {
-    store.saveTailoringOutput({
-      ...current,
-      workspace: {
-        ...(current.workspace || {}),
-        id: current.workspace?.id || `workspace_${jobId}`,
-        name: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        activeVersion: current.version || current.workspace?.activeVersion || 1,
-        lastRefinePrompt: refinePrompt,
-        updatedAt: nowIso(),
-        lastSavedAt: nowIso()
-      }
-    });
+  const workspaceName = truncateText(payload.workspaceName || current?.workspace?.name || buildDefaultTailoringWorkspaceName(job || {}), 120);
+  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
+  const moduleKey = String(payload.moduleKey || "").trim();
+
+  if (!current) {
+    return generateResumeTailoringOutput(jobId, { workspaceName, refinePrompt });
   }
-  return {
-    ...generated,
-    workspace: buildTailoringWorkspace(jobId).workspace
-  };
-}
 
-function buildWorkspaceBulletRefinement(currentOutput, payload = {}) {
-  const targetBulletId = String(payload.targetBulletId || "").trim();
-  const refinePrompt = truncateText(payload.refinePrompt || payload.bulletRefinePrompt || "", 200);
-  if (!targetBulletId) return null;
+  const draft = JSON.parse(JSON.stringify(current.workspaceDraft || {}));
+  if (moduleKey === "self_summary") {
+    draft.selfEvaluation = refineResumeBullet(String(payload.currentText || draft.selfEvaluation || ""), refinePrompt, "自我评价");
+  } else if (moduleKey === "work_experience") {
+    draft.workExperience = (Array.isArray(draft.workExperience) ? draft.workExperience : []).map((entry) => ({
+      ...entry,
+      bullets: sanitizeTailoringBullets((entry.bullets || []).map((bullet) => refineResumeBullet(bullet, refinePrompt, entry.role || entry.company || "工作经历")), 6)
+    }));
+  } else if (moduleKey === "project_experience") {
+    draft.projectExperience = (Array.isArray(draft.projectExperience) ? draft.projectExperience : []).map((entry) => ({
+      ...entry,
+      bullets: sanitizeTailoringBullets((entry.bullets || []).map((bullet) => refineResumeBullet(bullet, refinePrompt, entry.projectName || "项目经历")), 6)
+    }));
+  }
 
-  const rewrittenBullets = (currentOutput?.rewrittenBullets || []).map((item) => {
-    if (item.bulletId !== targetBulletId) return item;
-    const baseText = String(payload.currentText || item.after || item.rewritten || item.suggestion || "");
-    const refinedText = refineResumeBullet(baseText, refinePrompt, item.jdRequirement || "");
-    return {
-      ...item,
-      after: refinedText,
-      rewritten: refinedText,
-      suggestion: refinedText,
-      status: item.status === "rejected" ? "pending" : item.status,
-      reason: refinePrompt
-        ? `${item.reason || "已根据岗位要求做定制改写。"} 已根据你的补充要求继续微调：${refinePrompt}`
-        : item.reason || "已根据岗位要求做定制改写。"
-    };
+  await saveTailoringWorkspace(jobId, {
+    workspaceName,
+    workspaceDraft: draft,
+    tailoredSummary: draft.selfEvaluation || current.tailoredSummary || "",
+    refinePrompt
   });
-
-  return rewrittenBullets;
+  return buildTailoringWorkspace(jobId);
 }
 
-function buildTailoringWorkspace(jobId) {
-  const detail = getJobDetail(jobId);
-  const { job, fitAssessment, tailoringOutput, activityLogs, nextAction } = detail;
-  const resumeDocument = job.resumeDocumentId
-    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
-    : store.getLatestResumeDocument();
-  const workspaceMeta = tailoringOutput?.workspace || {
-    id: `workspace_${job.id}`,
-    name: buildDefaultTailoringWorkspaceName(job),
-    activeVersion: tailoringOutput?.version || 1,
-    baseResumeAssetId: resumeDocument?.id || null,
-    lastRefinePrompt: ""
-  };
-  const baseResumeAsset = normalizeResumeWorkspaceAsset(resumeDocument, store.getProfile() || {});
-  const tailoredResume = buildTailoredWorkspaceResume(tailoringOutput, baseResumeAsset);
-  const reviewSummary = {
-    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
-    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
-    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter(
-      (item) => item.status !== "accepted" && item.status !== "rejected"
-    ).length
-  };
-
-  return {
-    ...detail,
-    workspace: {
-      id: workspaceMeta.id,
-      name: workspaceMeta.name,
-      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
-      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
-      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
-      canGeneratePrepFromAcceptedOnly: true,
-      helpNote: "左侧是全局 Base Resume；右侧是当前岗位专属版本；只有已接受内容会进入申请准备。",
-      baseResumeAsset,
-      tailoredResume,
-      reviewSummary,
-      jobSummary: normalizeJobWorkspaceSummary(job, fitAssessment, tailoringOutput),
-      nextAction
-    },
-    workspaceActivity: (activityLogs || []).filter((entry) =>
-      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
-    )
-  };
-}
-
-async function refineTailoringWorkspace(jobId, payload = {}) {
-  const workspaceName = truncateText(payload.workspaceName || "", 120);
-  const targetBulletId = String(payload.targetBulletId || "").trim();
+async function getOrBuildTailoringWorkspace(jobId) {
   const current = store.getTailoringOutputByJobId(jobId);
-
-  if (targetBulletId && current) {
-    const rewrittenBullets = buildWorkspaceBulletRefinement(current, payload);
-    if (rewrittenBullets) {
-      const savePayload = {
-        workspaceName: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        rewrittenBullets,
-        tailoredSummary: current.tailoredSummary || "",
-        whyMe: current.whyMe || "",
-        refinePrompt: current.workspace?.lastRefinePrompt || ""
-      };
-      await saveTailoringWorkspace(jobId, savePayload);
-      return buildTailoringWorkspace(jobId);
-    }
+  if (!current) {
+    await generateResumeTailoringOutput(jobId);
   }
-
-  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
-  const generated = await generateResumeTailoringOutput(jobId, {
-    workspaceName,
-    refinePrompt
-  });
-  const latest = store.getTailoringOutputByJobId(jobId);
-  if (latest) {
-    store.saveTailoringOutput({
-      ...latest,
-      workspace: {
-        ...(latest.workspace || {}),
-        id: latest.workspace?.id || `workspace_${jobId}`,
-        name: workspaceName || latest.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        activeVersion: latest.version || latest.workspace?.activeVersion || 1,
-        lastRefinePrompt: refinePrompt,
-        updatedAt: nowIso(),
-        lastSavedAt: nowIso()
-      }
-    });
-  }
-  return {
-    ...generated,
-    workspace: buildTailoringWorkspace(jobId).workspace
-  };
+  return buildTailoringWorkspace(jobId);
 }
-
-function normalizeJdSourceLines(job = {}) {
-  const rawBlocks = [
-    job.jdRaw,
-    job.rawJdText,
-    job.description,
-    job.jdStructured?.summary,
-    ...(job.jdStructured?.responsibilities || []),
-    ...(job.jdStructured?.requirements || []),
-    ...(job.jdStructured?.preferredQualifications || [])
-  ];
-  return dedupeStrings(
-    rawBlocks
-      .flatMap((item) => String(item || "").split(/\n|•|·|▪|●|■/))
-      .map((item) => normalizeLineItem(item, 200))
-      .filter((item) => item.length >= 6),
-    40
-  );
-}
-
-function looksLikePlaceholderNote(value = "") {
-  return /人工补充|人工确认|未清晰列出|未明确列出|建议确认|待补充/i.test(String(value || ""));
-}
-
-function cleanWorkspaceJobLines(items = [], { max = 5, allowWeakNote = false } = {}) {
-  const cleaned = dedupeStrings(items, max * 2).filter((item) => {
-    if (!item) return false;
-    if (looksLikePlaceholderNote(item)) return allowWeakNote;
-    return true;
-  });
-  return cleaned.slice(0, max);
-}
-
-function inferJdBuckets(job = {}) {
-  const lines = normalizeJdSourceLines(job);
-  const responsibilities = [];
-  const requirements = [];
-  const keywords = [];
-
-  lines.forEach((line) => {
-    const lower = line.toLowerCase();
-    if (
-      /(负责|推动|主导|协调|落地|分析|制定|支持|manage|lead|drive|coordinate|build|support|conduct|own)/i.test(line) &&
-      responsibilities.length < 5
-    ) {
-      responsibilities.push(line);
-    }
-    if (
-      /(要求|需要|熟悉|能力|经验|本科|硕士|years|experience|must|preferred|qualification|skill)/i.test(line) &&
-      requirements.length < 5
-    ) {
-      requirements.push(line);
-    }
-    line
-      .split(/,|\/|、|\||：|:/)
-      .map((item) => normalizeLineItem(item, 60))
-      .filter((item) => item.length >= 2 && item.length <= 40)
-      .forEach((item) => {
-        const token = item.toLowerCase();
-        if (
-          keywords.length < 8 &&
-          !looksLikePlaceholderNote(item) &&
-          !/(职位|公司|地点|location|salary|benefit|apply now)/i.test(token)
-        ) {
-          keywords.push(item);
-        }
-      });
-  });
-
-  return {
-    responsibilities: dedupeStrings(responsibilities, 5),
-    requirements: dedupeStrings(requirements, 5),
-    keywords: dedupeStrings(keywords, 8)
-  };
-}
-
-function normalizeJobWorkspaceSummary(job = {}, fitAssessment = null, tailoringOutput = null) {
-  const jdStructured = job.jdStructured || {};
-  const inferred = inferJdBuckets(job);
-  const coreResponsibilities = cleanWorkspaceJobLines(
-    [...(jdStructured.responsibilities || []), ...inferred.responsibilities],
-    { max: 5 }
-  );
-  const coreRequirements = cleanWorkspaceJobLines(
-    [...(jdStructured.requirements || []), ...(jdStructured.preferredQualifications || []), ...inferred.requirements],
-    { max: 5 }
-  );
-  const targetKeywords = cleanWorkspaceJobLines(
-    [
-      ...(tailoringOutput?.targetingBrief?.targetKeywords || []),
-      ...(jdStructured.keywords || []),
-      ...inferred.keywords
-    ],
-    { max: 8 }
-  );
-  const roleSummary = truncateText(
-    jdStructured.summary ||
-      fitAssessment?.suggestedAction ||
-      `${job.company || "目标公司"}的${job.title || "岗位"}，重点关注${
-        targetKeywords.slice(0, 3).join("、") || "岗位职责与核心要求"
-      }。`,
-    120
-  );
-  const riskNotes = cleanWorkspaceJobLines(
-    [...(fitAssessment?.riskFlags || []), ...(jdStructured.riskFlags || [])],
-    { max: 2, allowWeakNote: false }
-  );
-  const weakSignalNote =
-    coreResponsibilities.length >= 2 || coreRequirements.length >= 2
-      ? ""
-      : "部分岗位信息来自系统归纳，建议在投递前再快速核对 JD 原文。";
-
-  return {
-    id: job.id,
-    title: job.title,
-    company: job.company,
-    location: job.location,
-    status: job.status,
-    fitScore: fitAssessment?.fitScore ?? null,
-    recommendation: fitAssessment?.recommendation || null,
-    strategyDecision: fitAssessment?.strategyDecision || job.strategyDecision || null,
-    roleSummary,
-    coreResponsibilities,
-    coreRequirements,
-    targetKeywords,
-    riskNotes,
-    weakSignalNote
-  };
-}
-
-function looksLikeResumeSentence(text = "") {
-  return /[，。；;]/.test(text) || text.length > 90;
-}
-
-function isLikelySkillToken(text = "") {
-  const value = String(text || "").trim();
-  if (!value || value.length > 40) return false;
-  if (looksLikeResumeSentence(value)) return false;
-  return /(sql|python|excel|tableau|power bi|figma|notion|jira|ai|llm|agent|product strategy|stakeholder|growth|analysis|go-to-market|roadmap|data|research|沟通|分析|策略|增长|产品)/i.test(
-    value
-  );
-}
-
-function isLikelyWorkLine(text = "") {
-  return /(20\d{2}|19\d{2}|公司|任职|担任|负责|主导|推动|经理|分析师|产品|strategy|manager|analyst|lead|director|intern)/i.test(
-    text
-  );
-}
-
-function isLikelyProjectLine(text = "") {
-  return /(项目|project|系统|平台|搭建|上线|试点|pilot|workflow|tooling|enablement)/i.test(text);
-}
-
-function normalizeResumeWorkspaceAsset(resumeDocument = null, profile = {}) {
-  const structured = resumeDocument?.structuredProfile || {};
-  const sections = Array.isArray(structured.sections) ? structured.sections : [];
-  const rawBuckets = {
-    work: [...(structured.experience || []), ...sections.filter((item) => item.key === "experience").flatMap((item) => splitStructuredContent(item.content || "", 12))],
-    project: [...(structured.projects || []), ...sections.filter((item) => item.key === "projects").flatMap((item) => splitStructuredContent(item.content || "", 10))],
-    education: [...(structured.education || []), ...sections.filter((item) => item.key === "education").flatMap((item) => splitStructuredContent(item.content || "", 8))],
-    skills: [...(structured.skills || []), ...sections.filter((item) => item.key === "skills").flatMap((item) => splitStructuredContent(item.content || "", 16))],
-    other: sections
-      .filter((item) => !["experience", "projects", "education", "skills"].includes(item.key))
-      .flatMap((item) => splitStructuredContent(item.content || "", 10))
-  };
-
-  const workExperience = dedupeStrings(
-    rawBuckets.work
-      .map((item) => normalizeLineItem(item, 180))
-      .filter((item) => item && isLikelyWorkLine(item) && !isLikelySkillToken(item)),
-    8
-  );
-
-  const projectExperience = dedupeStrings(
-    [...rawBuckets.project, ...rawBuckets.other]
-      .map((item) => normalizeLineItem(item, 180))
-      .filter((item) => item && isLikelyProjectLine(item) && !isLikelySkillToken(item)),
-    6
-  );
-
-  const education = dedupeStrings(
-    rawBuckets.education
-      .map((item) => normalizeLineItem(item, 140))
-      .filter((item) => /(大学|学院|本科|硕士|博士|MBA|bachelor|master|university|college|school)/i.test(item)),
-    4
-  );
-
-  const skills = dedupeStrings(
-    rawBuckets.skills
-      .flatMap((item) => String(item || "").split(/,|\/|、|\|/))
-      .map((item) => normalizeLineItem(item, 40))
-      .filter((item) => isLikelySkillToken(item)),
-    12
-  );
-
-  return {
-    id: resumeDocument?.id || null,
-    name: resumeDocument?.fileName || "原始简历",
-    sourceResumeId: resumeDocument?.id || null,
-    personalInfo: {
-      name: structured.name || profile.name || "",
-      email: structured.email || "",
-      phone: structured.phone || "",
-      location: structured.location || (profile.targetLocations || [])[0] || ""
-    },
-    selfSummary: truncateText(structured.summary || resumeDocument?.summary || profile.background || "", 220),
-    education,
-    workExperience,
-    projectExperience,
-    skills,
-    strengths: dedupeStrings(structured.achievements || structured.highlights || profile.strengths || [], 6),
-    sections
-  };
-}
-
-function ensureTailoringOutputCompatibility(tailoringOutput = null) {
-  if (!tailoringOutput) return null;
-  const rewrittenBullets = (tailoringOutput.rewrittenBullets || []).map((item, index) => ({
-    bulletId: item.bulletId || `tailored_bullet_${index + 1}`,
-    before: item.before || item.source || "",
-    after: compressResumeLine(item.after || item.rewritten || item.suggestion || "", 145),
-    suggestion: compressResumeLine(item.suggestion || item.after || item.rewritten || "", 145),
-    reason: item.reason || "系统已按岗位重点改写这条经历。",
-    jdRequirement: item.jdRequirement || "",
-    status: ["pending", "accepted", "rejected"].includes(item.status) ? item.status : "pending",
-    type: item.type || "modified"
-  }));
-
-  const bulletDiffs = rewrittenBullets.map((item) => ({
-    bulletId: item.bulletId,
-    before: item.before,
-    after: item.after,
-    reason: item.reason,
-    jdRequirement: item.jdRequirement,
-    status: item.status
-  }));
-
-  return {
-    ...tailoringOutput,
-    rewrittenBullets,
-    diffView: {
-      ...(tailoringOutput.diffView || {}),
-      bulletDiffs
-    }
-  };
-}
-
-function buildWorkspaceBulletRefinement(currentOutput, payload = {}) {
-  const targetBulletId = String(payload.targetBulletId || "").trim();
-  const refinePrompt = truncateText(payload.refinePrompt || payload.bulletRefinePrompt || "", 200);
-  if (!targetBulletId) return null;
-
-  return (currentOutput?.rewrittenBullets || []).map((item) => {
-    if (item.bulletId !== targetBulletId) return item;
-    const baseText = String(payload.currentText || item.after || item.rewritten || item.suggestion || "");
-    const refinedText = refineResumeBullet(baseText, refinePrompt, item.jdRequirement || "");
-    return {
-      ...item,
-      after: refinedText,
-      rewritten: refinedText,
-      suggestion: refinedText,
-      status: item.status === "rejected" ? "pending" : item.status,
-      reason: item.reason || "已根据岗位重点完成改写。"
-    };
-  });
-}
-
-function buildTailoringWorkspace(jobId) {
-  const detail = getJobDetail(jobId);
-  const { job, fitAssessment, activityLogs, nextAction } = detail;
-  const tailoringOutput = ensureTailoringOutputCompatibility(detail.tailoringOutput);
-  const resumeDocument = job.resumeDocumentId
-    ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
-    : store.getLatestResumeDocument();
-  const workspaceMeta = tailoringOutput?.workspace || {
-    id: `workspace_${job.id}`,
-    name: buildDefaultTailoringWorkspaceName(job),
-    activeVersion: tailoringOutput?.version || 1,
-    baseResumeAssetId: resumeDocument?.id || null,
-    lastRefinePrompt: ""
-  };
-  const baseResumeAsset = normalizeResumeWorkspaceAsset(resumeDocument, store.getProfile() || {});
-  const tailoredResume = buildTailoredWorkspaceResume(tailoringOutput, baseResumeAsset);
-  const reviewSummary = {
-    acceptedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted").length,
-    rejectedCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "rejected").length,
-    pendingCount: (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status !== "accepted" && item.status !== "rejected").length
-  };
-
-  return {
-    ...detail,
-    tailoringOutput,
-    workspace: {
-      id: workspaceMeta.id,
-      name: workspaceMeta.name,
-      activeVersion: workspaceMeta.activeVersion || tailoringOutput?.version || 1,
-      lastRefinePrompt: workspaceMeta.lastRefinePrompt || "",
-      updatedAt: workspaceMeta.updatedAt || tailoringOutput?.updatedAt || job.updatedAt,
-      canGeneratePrepFromAcceptedOnly: true,
-      helpNote: "左侧是全局 Base Resume；右侧只服务当前岗位；进入 Prep 的仅有已接受内容。",
-      baseResumeAsset,
-      tailoredResume,
-      reviewSummary,
-      jobSummary: normalizeJobWorkspaceSummary(job, fitAssessment, tailoringOutput),
-      nextAction
-    },
-    workspaceActivity: (activityLogs || []).filter((entry) =>
-      ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type)
-    )
-  };
-}
-
-async function refineTailoringWorkspace(jobId, payload = {}) {
-  const workspaceName = truncateText(payload.workspaceName || "", 120);
-  const targetBulletId = String(payload.targetBulletId || "").trim();
-  const current = ensureTailoringOutputCompatibility(store.getTailoringOutputByJobId(jobId));
-
-  if (targetBulletId && current) {
-    const rewrittenBullets = buildWorkspaceBulletRefinement(current, payload);
-    if (rewrittenBullets) {
-      const savePayload = {
-        workspaceName: workspaceName || current.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        rewrittenBullets,
-        tailoredSummary: current.tailoredSummary || "",
-        whyMe: current.whyMe || "",
-        refinePrompt: current.workspace?.lastRefinePrompt || ""
-      };
-      await saveTailoringWorkspace(jobId, savePayload);
-      return buildTailoringWorkspace(jobId);
-    }
-  }
-
-  const refinePrompt = truncateText(payload.refinePrompt || "", 500);
-  const generated = await generateResumeTailoringOutput(jobId, {
-    workspaceName,
-    refinePrompt
-  });
-  const latest = store.getTailoringOutputByJobId(jobId);
-  if (latest) {
-    store.saveTailoringOutput({
-      ...latest,
-      workspace: {
-        ...(latest.workspace || {}),
-        id: latest.workspace?.id || `workspace_${jobId}`,
-        name: workspaceName || latest.workspace?.name || buildDefaultTailoringWorkspaceName(store.getJob(jobId) || {}),
-        activeVersion: latest.version || latest.workspace?.activeVersion || 1,
-        lastRefinePrompt: refinePrompt,
-        updatedAt: nowIso(),
-        lastSavedAt: nowIso()
-      }
-    });
-  }
-  return {
-    ...generated,
-    workspace: buildTailoringWorkspace(jobId).workspace
-  };
-}
-
 function humanizeRecommendationCode(value) {
   const map = {
     apply: "建议投递",
@@ -3253,6 +2439,7 @@ module.exports = {
   reflectInterview,
   getJobDetail,
   buildTailoringWorkspace,
+  getOrBuildTailoringWorkspace,
   saveTailoringWorkspace,
   refineTailoringWorkspace,
   getDashboardSummary,
@@ -3271,3 +2458,4 @@ module.exports = {
   listBadCases,
   isPrepReady
 };
+

@@ -1,0 +1,32 @@
+name: Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate schema
+        run: npm run validate:schema
+
+      - name: Validate contamination
+        run: npm run validate:contamination
+
+      - name: Validate fixtures
+        run: npm run validate:fixtures

@@ -509,6 +509,183 @@ function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailore
   };
 }
 
+function buildResumeSnapshot(resumeDocument = null, profile = {}) {
+  const structured = resumeDocument?.structuredProfile || resumeDocument?.structured || {};
+  const workExperience = (structured.workExperience || []).map((entry, index) => ({
+    id: entry.id || `work_${index + 1}`,
+    company: entry.company || "",
+    role: entry.role || "",
+    timeRange: entry.timeRange || "",
+    bullets: pickTopItems(entry.bullets || [], 4),
+    displayTitle: entry.displayTitle || [entry.timeRange, entry.company, entry.role].filter(Boolean).join(" ")
+  }));
+  const projectExperience = (structured.projectExperience || []).map((entry, index) => ({
+    id: entry.id || `project_${index + 1}`,
+    name: entry.name || "",
+    role: entry.role || "",
+    timeRange: entry.timeRange || "",
+    bullets: pickTopItems(entry.bullets || [], 4),
+    displayTitle: entry.displayTitle || [entry.timeRange, entry.name, entry.role].filter(Boolean).join(" ")
+  }));
+  const education = (structured.educationItems || []).map((entry, index) => ({
+    id: entry.id || `edu_${index + 1}`,
+    school: entry.school || "",
+    major: entry.major || "",
+    timeRange: entry.timeRange || "",
+    displayTitle: entry.displayTitle || [entry.timeRange, entry.school, entry.major].filter(Boolean).join(" ")
+  }));
+
+  return {
+    sourceResumeId: resumeDocument?.id || null,
+    fileName: resumeDocument?.fileName || "未上传原始简历",
+    status: resumeDocument?.parseStatus || resumeDocument?.status || "missing",
+    parseQuality: resumeDocument?.parseQuality || null,
+    parseWarning: resumeDocument?.parseWarning || "",
+    summary:
+      structured.summary ||
+      resumeDocument?.summary ||
+      String(resumeDocument?.cleanedText || "").slice(0, 1200) ||
+      profile.masterResume ||
+      profile.baseResume ||
+      "",
+    workExperience,
+    projectExperience,
+    education,
+    skills: pickTopItems(structured.skills || [], 16),
+    achievements: pickTopItems(structured.achievements || structured.highlights || [], 8),
+    cleanedText: resumeDocument?.cleanedText || "",
+    extractionMethod: resumeDocument?.extractionMethod || "profile_master_resume",
+    experience: workExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join("｜")),
+    projects: projectExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join("｜"))
+  };
+}
+
+function normalizeTailoringBullets(items = [], selectedExperience = [], targetKeywords = [], job = {}) {
+  return (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      const sourceItem = selectedExperience[index] || {};
+      const before = normalizeText(item.before || item.source || sourceItem.text || "");
+      const suggestion = compressResumeLine(item.suggestion || item.rewritten || item.after || "", 145);
+      if (!before && !suggestion) return null;
+      return {
+        bulletId: item.bulletId || `tailored_bullet_${index + 1}`,
+        sourceId: item.sourceId || sourceItem.id || `resume_item_${index + 1}`,
+        type: item.type || "modified",
+        before,
+        after: compressResumeLine(item.after || item.rewritten || item.suggestion || "", 145),
+        source: before,
+        suggestion,
+        rewritten: compressResumeLine(item.rewritten || item.after || item.suggestion || "", 145),
+        status: ["pending", "accepted", "rejected"].includes(item.status) ? item.status : "pending",
+        reason:
+          normalizeText(item.reason) ||
+          `这条经历最接近 ${targetKeywords[index] || targetKeywords[0] || job.title || "岗位重点"}，因此优先保留并前置。`,
+        jdRequirement:
+          normalizeText(item.jdRequirement) ||
+          normalizeText(job.jdStructured?.requirements?.[index] || job.jdStructured?.responsibilities?.[index] || targetKeywords[index] || ""),
+        goal: normalizeText(item.goal) || "让招聘方更快看到与你最相关的真实能力证据。",
+        evidenceAnchor: normalizeText(item.evidenceAnchor || sourceItem.text || before || "")
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildTailoredResumeSections({
+  tailoredSummary,
+  rewrittenBullets,
+  selectedProjects,
+  selectedSkills,
+  resumeSnapshot,
+  targetKeywords
+}) {
+  const summary = compressResumeLine(tailoredSummary || resumeSnapshot.summary || "", 140);
+  const workExperience = (resumeSnapshot.workExperience || []).slice(0, 5).map((entry, index) => {
+    const rewritten = (rewrittenBullets || []).filter((item) => item.status !== "rejected")[index];
+    return {
+      ...entry,
+      bullets: rewritten
+        ? [compressResumeLine(rewritten.after || rewritten.rewritten || rewritten.suggestion || "", 145)]
+        : pickTopItems(entry.bullets || [], 4)
+    };
+  });
+  const projectExperience = ((selectedProjects || []).length ? selectedProjects : resumeSnapshot.projectExperience || [])
+    .slice(0, 3)
+    .map((entry, index) => ({
+      id: entry.id || `project_${index + 1}`,
+      name: entry.name || entry.text || "",
+      role: entry.role || "",
+      timeRange: entry.timeRange || "",
+      bullets: pickTopItems(entry.bullets || [compressResumeLine(entry.text || "", 135)].filter(Boolean), 4),
+      displayTitle: entry.displayTitle || [entry.timeRange, entry.name || entry.text, entry.role].filter(Boolean).join(" ")
+    }));
+  const skills = pickTopItems(
+    (selectedSkills && selectedSkills.length ? selectedSkills : targetKeywords || [])
+      .map((item) => normalizeText(item))
+      .filter((item) => item && item.length <= 40),
+    10
+  );
+
+  return {
+    summary,
+    selfEvaluation: summary,
+    workExperience,
+    projectExperience,
+    skills,
+    education: pickTopItems(resumeSnapshot.education || [], 3),
+    lengthBudget: estimateLengthBudget({
+      summary,
+      workExperience: workExperience.flatMap((entry) => entry.bullets || []),
+      projectExperience: projectExperience.flatMap((entry) => entry.bullets || []),
+      skills
+    })
+  };
+}
+
+function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailoredSummary }) {
+  const tailoredSections = buildTailoredResumeSections({
+    tailoredSummary,
+    rewrittenBullets,
+    selectedProjects: resumeSnapshot.projectExperience || [],
+    selectedSkills: resumeSnapshot.skills || [],
+    resumeSnapshot,
+    targetKeywords: []
+  });
+  return {
+    original: {
+      summary: resumeSnapshot.summary || "",
+      workExperience: resumeSnapshot.workExperience || [],
+      projectExperience: resumeSnapshot.projectExperience || [],
+      education: resumeSnapshot.education || []
+    },
+    tailored: {
+      summary: tailoredSections.summary,
+      workExperience: tailoredSections.workExperience,
+      projectExperience: tailoredSections.projectExperience,
+      education: tailoredSections.education
+    },
+    diff: (rewrittenBullets || []).map((item) => ({
+      type: item.type || "modified",
+      section: "work_experience",
+      bulletId: item.bulletId,
+      before: item.before || "",
+      after: item.after || "",
+      reason: item.reason || ""
+    })),
+    summaryChanged: Boolean(tailoredSummary),
+    positioningChanged: false,
+    changedBulletCount: (rewrittenBullets || []).length,
+    reorderedSections: orderingPlan,
+    bulletDiffs: (rewrittenBullets || []).map((item) => ({
+      bulletId: item.bulletId,
+      before: item.before || "",
+      after: item.after || "",
+      reason: item.reason || "",
+      jdRequirement: item.jdRequirement || "",
+      status: item.status || "pending"
+    }))
+  };
+}
+
 function buildTailoredPreview({
   tailoredSummary,
   whyMe,
@@ -529,8 +706,8 @@ function buildTailoredPreview({
 
   return {
     ...sections,
-    experienceBullets: sections.workExperience,
-    projectHighlights: sections.projectExperience,
+    experienceBullets: sections.workExperience.flatMap((entry) => entry.bullets || []),
+    projectHighlights: sections.projectExperience.flatMap((entry) => entry.bullets || []),
     keywords: pickTopItems(targetKeywords || [], 8),
     prepNarrative: whyMe || ""
   };
@@ -952,6 +1129,17 @@ function buildRuleBasedRewrite(item, job, targetKeywords, index) {
   return compressResumeLine(`${base}，突出 ${keyword} 相关成果`, 145);
 }
 
+function buildResumeStyleSummary({ targetKeywords = [], selection = {}, resumeSnapshot = {} }) {
+  const focusKeywords = pickTopItems(targetKeywords, 3);
+  const strongestSignal =
+    selection?.selectedExperience?.[0]?.text ||
+    selection?.selectedProjects?.[0]?.text ||
+    resumeSnapshot.summary ||
+    "";
+  const focusText = focusKeywords.length ? `聚焦 ${focusKeywords.join("、")}` : "聚焦岗位最相关的执行与协同能力";
+  return compressResumeLine(`${focusText}，突出 ${truncateText(strongestSignal, 44)}`, 120);
+}
+
 function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailoredSummary }) {
   const diffItems = buildDiffItems({ resumeSnapshot, rewrittenBullets, tailoredSummary });
   const tailoredSections = buildTailoredResumeSections({
@@ -1016,6 +1204,97 @@ function buildTailoredPreview({
     keywords: pickTopItems(targetKeywords || [], 8),
     prepNarrative: whyMe || ""
   };
+}
+
+function buildRuleBasedRewrite(item, job, targetKeywords, index) {
+  const keyword = targetKeywords[index] || targetKeywords[0] || job.title || "岗位重点";
+  const base = compressResumeLine(item.text || "", 130);
+  if (!base) return "";
+  if (base.includes(keyword)) return base;
+  return compressResumeLine(`${base}，突出与${keyword}相关的执行与结果`, 145);
+}
+
+function buildResumeStyleSummary({ targetKeywords = [], selection = {}, resumeSnapshot = {} }) {
+  const focusKeywords = pickTopItems(targetKeywords, 3);
+  const strongestSignal =
+    selection?.selectedExperience?.[0]?.text ||
+    selection?.selectedProjects?.[0]?.text ||
+    resumeSnapshot.summary ||
+    "";
+  const focusText = focusKeywords.length ? `聚焦 ${focusKeywords.join("、")}` : "聚焦岗位最相关的执行与协同能力";
+  return compressResumeLine(`${focusText}，优先突出 ${truncateText(strongestSignal, 40)}`, 120);
+}
+
+function runRuleBasedResumeTailoringAgent({
+  job,
+  profile,
+  fitAssessment = null,
+  resumeDocument = null,
+  refinePrompt = ""
+}) {
+  const resumeSnapshot = buildResumeSnapshot(resumeDocument, profile);
+  const targetKeywords = extractTargetKeywords(job, fitAssessment);
+  const selection = selectResumeEvidence(resumeSnapshot, targetKeywords, fitAssessment);
+  const rewrittenBullets = normalizeTailoringBullets(
+    selection.selectedExperience.map((item, index) => ({
+      sourceId: item.id,
+      before: item.text,
+      suggestion: buildRuleBasedRewrite(item, job, targetKeywords, index),
+      status: "pending",
+      reason:
+        item.score > 3
+          ? `这段经历和 ${job.title} 的核心要求最接近，适合优先前置。`
+          : `这段经历能支撑 ${targetKeywords[index] || "岗位重点"}，因此保留并压缩表达。`,
+      jdRequirement:
+        job.jdStructured?.requirements?.[index] ||
+        job.jdStructured?.responsibilities?.[index] ||
+        targetKeywords[index] ||
+        ""
+    })),
+    selection.selectedExperience,
+    targetKeywords,
+    job
+  );
+
+  const tailoredSummary =
+    `${job.title} 这条岗位最看重的是 ${pickTopItems(targetKeywords, 3).join("、") || "与岗位最相关的执行与协同能力"}。` +
+    "这版简历会优先把最贴近这些要求的真实经历放到前面。";
+  const whyMe =
+    `结合当前岗位要求与原始简历，最值得强化的是 ${pickTopItems(selection.selectedSkills, 3).join("、") || "最相关的经历证据"}。` +
+    "这版定制会减少弱相关内容占位。";
+  const refinedTailoredSummary = applyRefinePrompt(tailoredSummary, refinePrompt);
+  const refinedWhyMe = applyRefinePrompt(whyMe, refinePrompt);
+  const orderingPlan = ["summary", "experience", "projects", "skills"];
+  const explainability = buildExplainability({
+    rewrittenBullets,
+    selectedExperience: selection.selectedExperience,
+    targetKeywords,
+    fitAssessment,
+    job
+  });
+
+  return buildTailoringOutputShape({
+    job,
+    profile,
+    resumeDocument,
+    fitAssessment,
+    resumeSnapshot,
+    targetKeywords,
+    selection,
+    rewrittenBullets,
+    tailoredSummary: refinedTailoredSummary,
+    whyMe: refinedWhyMe,
+    explainability,
+    orderingPlan,
+    status: "completed_with_fallback",
+    llmMeta: {
+      provider: "heuristic_fallback",
+      model: null,
+      fallbackUsed: true,
+      errorSummary: null,
+      latencyMs: null
+    }
+  });
 }
 
 module.exports = {

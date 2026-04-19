@@ -1,0 +1,19 @@
+个人信息
+Li Ming
+Email: liming@example.com
+Phone: 13911112222
+
+工作经历
+2025.01-2026.03 Alpha AI Ltd Product Ops Intern
+- Supported AI workflow rollout and documented process updates.
+- Coordinated stakeholders and tracked issue resolution.
+
+项目经历
+2024.06-2024.12 AI Copilot Pilot Project Lead
+- Ran pilot planning, user feedback collection and iteration review.
+
+个人优势
+Strong in execution, documentation and cross-functional collaboration.
+
+教育背景
+2020.09-2024.06 Shanghai University Information Management
