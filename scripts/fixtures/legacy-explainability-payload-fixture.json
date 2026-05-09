@@ -1,0 +1,243 @@
+{
+  "cases": [
+    {
+      "id": "legacy_flat_only",
+      "description": "旧 payload 只有 legacy 平铺字段",
+      "scoringView": {
+        "recommendationReasonSummary": "legacy-recommendation",
+        "blockerReasonSummary": "legacy-blocker",
+        "sourceRiskSummary": "legacy-source-risk",
+        "confidenceExplanation": "legacy-confidence",
+        "preferenceDriftSummary": "legacy-drift"
+      },
+      "expected": {
+        "recommendationReasonSummary": "legacy-recommendation",
+        "blockerReasonSummary": "legacy-blocker",
+        "sourceRiskSummary": "legacy-source-risk",
+        "confidenceExplanation": "legacy-confidence",
+        "preferenceDriftSummary": "legacy-drift"
+      }
+    },
+    {
+      "id": "container_and_legacy",
+      "description": "旧 payload 同时有 container + legacy，容器应优先",
+      "scoringView": {
+        "recommendationReasonSummary": "legacy-recommendation",
+        "blockerReasonSummary": "legacy-blocker",
+        "sourceRiskSummary": "legacy-source-risk",
+        "confidenceExplanation": "legacy-confidence",
+        "preferenceDriftSummary": "legacy-drift",
+        "explainabilityFeatures": {
+          "recommendationReasonSummary": "container-recommendation",
+          "blockerReasonSummary": "container-blocker",
+          "sourceRiskSummary": "container-source-risk",
+          "confidenceExplanation": "container-confidence",
+          "preferenceDriftSummary": "container-drift"
+        }
+      },
+      "expected": {
+        "recommendationReasonSummary": "container-recommendation",
+        "blockerReasonSummary": "container-blocker",
+        "sourceRiskSummary": "container-source-risk",
+        "confidenceExplanation": "container-confidence",
+        "preferenceDriftSummary": "container-drift"
+      }
+    },
+    {
+      "id": "missing_explainability_features",
+      "description": "旧 payload 缺 explainabilityFeatures",
+      "scoringView": {
+        "recommendationReasonSummary": "legacy-only-recommendation",
+        "blockerReasonSummary": "legacy-only-blocker",
+        "sourceRiskSummary": "legacy-only-source-risk",
+        "confidenceExplanation": "legacy-only-confidence",
+        "preferenceDriftSummary": "legacy-only-drift"
+      },
+      "expected": {
+        "recommendationReasonSummary": "legacy-only-recommendation",
+        "blockerReasonSummary": "legacy-only-blocker",
+        "sourceRiskSummary": "legacy-only-source-risk",
+        "confidenceExplanation": "legacy-only-confidence",
+        "preferenceDriftSummary": "legacy-only-drift"
+      }
+    },
+    {
+      "id": "missing_scoring_view",
+      "description": "旧 payload 缺 scoringView",
+      "scoringView": null,
+      "expected": {
+        "recommendationReasonSummary": "",
+        "blockerReasonSummary": "",
+        "sourceRiskSummary": "",
+        "confidenceExplanation": "",
+        "preferenceDriftSummary": ""
+      }
+    }
+  ],
+  "feedbackCases": [
+    {
+      "id": "feedback_legacy_flat_only",
+      "description": "旧 payload 只有 feedback legacy 平铺字段",
+      "scoringView": {
+        "feedbackSignalType": "good_fit",
+        "feedbackConfidence": "high",
+        "feedbackRecencyTier": "recent",
+        "feedbackConsistency": "aligned",
+        "feedbackConflictRisk": "low",
+        "preferenceEvolutionCandidate": true
+      },
+      "expected": {
+        "feedbackSignalType": "good_fit",
+        "feedbackConfidence": "high",
+        "feedbackRecencyTier": "recent",
+        "feedbackConsistency": "aligned",
+        "feedbackConflictRisk": "low",
+        "preferenceEvolutionCandidate": true
+      }
+    },
+    {
+      "id": "feedback_container_and_legacy",
+      "description": "旧 payload 同时有 feedbackGovernanceFeatures + legacy，容器应优先",
+      "scoringView": {
+        "feedbackSignalType": "bad_fit",
+        "feedbackConfidence": "low",
+        "feedbackRecencyTier": "none",
+        "feedbackConsistency": "conflicting",
+        "feedbackConflictRisk": "high",
+        "preferenceEvolutionCandidate": false,
+        "feedbackGovernanceFeatures": {
+          "feedbackSignalType": "applied",
+          "feedbackConfidence": "medium",
+          "feedbackRecencyTier": "recent",
+          "feedbackConsistency": "aligned",
+          "feedbackConflictRisk": "low",
+          "preferenceEvolutionCandidate": true
+        }
+      },
+      "expected": {
+        "feedbackSignalType": "applied",
+        "feedbackConfidence": "medium",
+        "feedbackRecencyTier": "recent",
+        "feedbackConsistency": "aligned",
+        "feedbackConflictRisk": "low",
+        "preferenceEvolutionCandidate": true
+      }
+    },
+    {
+      "id": "feedback_missing_container",
+      "description": "旧 payload 缺 feedbackGovernanceFeatures",
+      "scoringView": {
+        "feedbackSignalType": "saved",
+        "feedbackConfidence": "low",
+        "feedbackRecencyTier": "none",
+        "feedbackConsistency": "unknown",
+        "feedbackConflictRisk": "medium",
+        "preferenceEvolutionCandidate": false
+      },
+      "expected": {
+        "feedbackSignalType": "saved",
+        "feedbackConfidence": "low",
+        "feedbackRecencyTier": "none",
+        "feedbackConsistency": "unknown",
+        "feedbackConflictRisk": "medium",
+        "preferenceEvolutionCandidate": false
+      }
+    },
+    {
+      "id": "feedback_missing_scoring_view",
+      "description": "旧 payload 缺 scoringView",
+      "scoringView": null,
+      "expected": {
+        "feedbackSignalType": "none",
+        "feedbackConfidence": "low",
+        "feedbackRecencyTier": "none",
+        "feedbackConsistency": "unknown",
+        "feedbackConflictRisk": "low",
+        "preferenceEvolutionCandidate": false
+      }
+    }
+  ],
+  "jobFeaturesCases": [
+    {
+      "id": "job_features_role_purity_only",
+      "description": "旧 payload 只有 rolePurity",
+      "scoringView": {
+        "jobFeaturesView": {
+          "rolePurity": "low"
+        }
+      },
+      "expected": {
+        "semanticRolePurityLegacy": "low",
+        "semanticRoleSemanticPurity": "low",
+        "sourceFreshnessTierLegacy": "unknown",
+        "sourceGovernanceFreshnessTier": "unknown"
+      }
+    },
+    {
+      "id": "job_features_source_freshness_only",
+      "description": "旧 payload 只有 sourceFreshnessTier",
+      "scoringView": {
+        "jobFeaturesView": {
+          "sourceFreshnessTier": "stale"
+        }
+      },
+      "expected": {
+        "semanticRoleSemanticPurity": "medium",
+        "semanticRolePurityLegacy": "medium",
+        "sourceFreshnessTierLegacy": "stale",
+        "sourceGovernanceFreshnessTier": "unknown"
+      }
+    },
+    {
+      "id": "job_features_container_and_legacy",
+      "description": "legacy 与容器并存时，容器子字段优先",
+      "scoringView": {
+        "jobFeaturesView": {
+          "rolePurity": "low",
+          "sourceFreshnessTier": "unknown",
+          "featureLayerModules": {
+            "semanticFeatures": {
+              "rolePurityLegacy": "high"
+            },
+            "sourceGovernanceFeatures": {
+              "sourceFreshnessTierLegacy": "fresh"
+            }
+          }
+        }
+      },
+      "expected": {
+        "semanticRoleSemanticPurity": "high",
+        "semanticRolePurityLegacy": "high",
+        "sourceFreshnessTierLegacy": "fresh",
+        "sourceGovernanceFreshnessTier": "unknown"
+      }
+    },
+    {
+      "id": "job_features_missing_feature_layer_modules",
+      "description": "旧 payload 缺 featureLayerModules",
+      "scoringView": {
+        "jobFeaturesView": {
+          "rolePurity": "high",
+          "sourceFreshnessTier": "recent"
+        }
+      },
+      "expected": {
+        "semanticRoleSemanticPurity": "high",
+        "semanticRolePurityLegacy": "high",
+        "sourceFreshnessTierLegacy": "recent",
+        "sourceGovernanceFreshnessTier": "unknown"
+      }
+    },
+    {
+      "id": "job_features_missing_job_features_view",
+      "description": "旧 payload 缺 jobFeaturesView",
+      "scoringView": {},
+      "expected": {
+        "semanticRoleSemanticPurity": "medium",
+        "semanticRolePurityLegacy": "medium",
+        "sourceFreshnessTierLegacy": "unknown",
+        "sourceGovernanceFreshnessTier": "unknown"
+      }
+    }
+  ]
+}

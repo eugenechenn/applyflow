@@ -1,192 +1,218 @@
 ﻿# ApplyFlow
 
-更新时间：2026-04-18
+更新时间：2026-04-29
 
-ApplyFlow 是一个面向真实求职执行闭环的半自动求职工作台。它不是“自动海投机器人”，也不是单点简历润色工具，而是把岗位导入、匹配评估、申请准备、状态推进、反馈回流放进一个可追踪、可解释、可持续迭代的系统里。
+ApplyFlow 是一个“先筛后投”的半自动求职执行系统：
+- 批量获取岗位并去重标准化
+- 给出可解释的投递优先级判断
+- 基于岗位生成定制申请材料
+- 在人工确认下执行网页申请
 
-## 1. 项目定位
+ApplyFlow 不是自动海投机器人，也不是单点简历美化工具。
 
-ApplyFlow 当前最准确的定位是：
+## 一句话定位
 
-- 一个可部署、可多用户、具备基础 Agent 编排能力的求职执行系统
-- 一个以人机协作为核心的求职工作台，而不是全自动外投工具
-- 一个兼顾产品闭环与工程能力的 AI 岗位作品集项目
+ApplyFlow = 求职意图输入 + 岗位筛选决策 + 定制材料生成 + 可控申请执行。
 
-当前明确不做：
+## 作品集能力快照（2026-04-29）
 
-- 全自动海投
-- 重型浏览器自动投递
-- 复杂 RAG 平台
-- 企业级权限系统
-- 重型分布式多 Agent 框架
+- 多维偏好决策系统：`jobPreferenceProfile`（行业/岗位/地点/技能/公司类型/排除项/求职类型）。
+- CareerOps-like 决策输出：`go/review/no_go`、`A-F`、`confidence`、`hardBlockers`、`nextAction`。
+- Human-in-the-loop：反馈状态（good_fit/bad_fit/misclassified）以低风险 derived 信号影响后续排序解释。
+- 求职执行闭环：tracker + materials + submission audit + follow-up（均为 metadata-only，不污染 canonical job）。
+- 工程化回归门禁：`core22 + gate` 固定门禁，`diagnostic/full44` 仅观察，不混入 PASS/FAIL。
 
-## 2. 当前架构
+当前稳定门禁基线：
+- `core22/gate p@5=90.9%`
+- `core22/gate p@10=90.0%`
+- `hardFail=0`
 
-### 前端 / 主应用
+已知透明缺口（非阻塞）：
+- `phase45_game_pm_planning_045` 仍是 diagnostic known gap（英文 alias 映射 + 数据覆盖不足 + 多岗位打包 JD 稀释）。
+- 中文对照样本 `phase45_game_pm_planning_zh_057` 已通过，当前策略是持续观察与数据侧改进优先。
 
-- 前端与 API 主系统运行在 Cloudflare Worker / 静态页面链路上
-- 页面包含：Dashboard、Jobs、Job Detail、Prep、Profile、Governance、Interviews
-- 前端通过轻量 view-model 层消费 API，不直接耦合后端原始字段
+## 目标用户
 
-### 数据层
+- 同时管理几十到数百个岗位的求职者
+- 需要“效率 + 判断质量 + 可控执行”的用户
+- 希望把求职从零散操作变成可追踪流程的人
 
-- 数据库：Cloudflare D1
-- 持久化对象包括：用户画像、岗位、评估结果、申请准备、策略、提案、审计日志、简历解析结果等
-- Worker 端通过 repository / facade 层访问数据，不直接散落 SQL
+## 为什么用 ApplyFlow
 
-### 简历解析服务
+相比普通求职 SOP，ApplyFlow 的核心价值是：
+1. 岗位批量处理：不是手工逐条看 JD，而是先统一解析、去重、排序。
+2. 投递判断可解释：每条岗位都说明为什么该投/不该投、主要短板是什么。
+3. 定制材料可追踪：从 master resume 到岗位定制版有结构化链路，不是黑盒改写。
+4. 执行可控：先预填和 dry-run，再人工确认提交，避免脆弱全自动。
 
-- 独立运行在 Railway 的 `resume-parser` Node 服务
-- 负责 PDF / DOCX 简历文本提取、清洗、结构化与质量评估
-- Cloudflare Worker 通过外部解析服务调用，不在 Worker 内做重型文档解析
+## 新主链路（Phase 1）
 
-### LLM 层
+1. 用户输入求职意图
+- 岗位关键词
+- 城市偏好
+- 校招 / 社招
+- 可选：薪资 / 行业
 
-- 已支持 OpenAI-compatible provider 配置
-- 统一环境变量：`LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`
-- Job Ingestion / Fit Evaluation / Prep Generation 均支持 LLM 优先 + fallback
+2. 批量岗位导入与标准化
+- URL 批量导入
+- 解析结构化岗位信息
+- 去重并生成统一岗位列表
 
-## 3. 当前产品能力
+3. 岗位评分与优先级
+- 匹配度评分
+- 投递建议（建议投递 / 谨慎投递 / 暂不投递）
+- 解释与风险
 
-### 已具备的主流程能力
+4. 岗位详情解释
+- 关键要求
+- 匹配证据
+- 主要短板
+- 下一步建议
 
-- 用户画像编辑与保存
-- New Job / URL 导入岗位
-- Job Ingestion
-- Fit Evaluation
-- Prep 生成与编辑
-- Job 状态推进
-- Dashboard / Jobs / Job Detail 联动
-- Governance / Policy / Audit 展示
+5. PDF 简历链路
+- 导入 -> 结构化 -> 清洗 -> canonical resume
+- 生成岗位定制版材料
+- 导出（优先 PDF / DOCX）
 
-### 已具备的简历链路能力
+6. 申请执行
+- 一键进入岗位网页
+- 预填 / dry-run
+- 人工确认后提交
 
-- 用户可上传 PDF / DOCX 原始简历
-- 简历解析结果写入数据库并可回显
-- 页面优先展示结构化结果与摘要，而不是直接展示原始文本
-- 后续申请准备会优先使用简历结构化结果
+## 功能边界
 
-## 4. 最近已解决的问题
+### 必做
+- 批量岗位导入、去重、评分、排序
+- 岗位详情解释
+- master resume + tailored resume
+- 申请执行页（预填 / dry-run / 人工确认）
 
-### 已验证通过
+### 可选
+- 批量任务调度与重试
+- 多站点采集扩展
+- 申请后复盘增强
 
-- PDF 上传链路已打通：前端 -> Cloudflare Worker -> Railway resume-parser -> D1 -> 页面回显
-- 普通文本型 PDF 已可成功解析，并返回真实文本
-- 对文本型 PDF，解析方式可返回 `pdf-parse`，状态可达 `success`
+### 暂不做
+- 默认全自动海投
+- 复杂企业权限系统
+- 重型 RAG 平台
+- 复杂模板编辑器
 
-### 仓库中已完成，待线上重新部署验证
+## 架构原则（partial_rebuild）
 
-- 对异常 / Canva-like / 非标准 PDF，已增加多阶段解析 pipeline：
-  - Stage A：`pdf-parse`
-  - Stage B：`pdfjs-dist`
-  - Stage C：低质量回退与清洗
-- 已增加清洗逻辑，避免 `%PDF-1.4`、`obj`、`xref`、`trailer` 等 PDF 结构噪音直接进入前端
-- 已在 Worker 存取层增加兜底净化：即使解析结果低质量，前端也不应再直接看到 PDF 垃圾原文
-- 已把前端简历展示逻辑收紧为：优先结构化结果，其次安全摘要，低质量回退只显示用户提示
+1. 单一数据源（SSOT）
+- UI 只读 workspace view-model
+- workspace 只读 canonical contracts
+- parser 原始输出不直接进入 UI
 
-### 为什么 Cloudflare 与 Railway 需要分别部署
+2. 分层边界清晰
+- document extraction
+- resume structuring
+- normalization / contamination cleanup
+- workspace model
+- render
 
-- Railway：负责 `resume-parser`，承载 Node 文档解析能力
-- Cloudflare：负责主应用、前端、API、D1 读写与页面展示
-- 因此简历相关线上修复往往需要两边分别部署：
-  - Railway 更新解析能力
-  - Cloudflare 更新展示逻辑与持久化净化逻辑
+3. 失败信息隔离
+- fallback / warning 只进入系统日志或状态字段
+- 不进入用户核心内容字段
 
-## 5. 当前系统边界
+4. 受控迁移
+- 保留基础设施（CI、guardrails、deploy、skills）
+- 删除旧路径，不长期并存
 
-### 当前可用边界
+## 参考项目吸收点
 
-- 文本型 PDF：可用
-- DOCX：通常更稳定，仍是推荐上传格式
-- 非标准 / Canva-like PDF：已有多阶段解析与清洗，但鲁棒性仍需继续提升
+- career-ops：批处理与执行系统思维
+- ApplyPilot：岗位聚合、评分、执行流程
+- claude-code-job-tailor：master resume 到 job-tailored 的结构化路径
+- Job-Application-Automator：网页申请自动化边界与可控执行
 
-### 当前明确未完成
+ApplyFlow 不照搬任何一个项目，而是吸收其主链路价值。
 
-- 扫描型 / 图片型 PDF：仍可能失败
-- 当前没有 OCR
-- 当前没有“上传后自动二次识别图片型 PDF”的能力
+## 当前阶段
 
-## 6. 当前项目状态判断
+当前仓库进入 partial_rebuild 的 Phase 0：
+- 文档重写
+- 边界冻结
+- 删除计划
 
-当前项目已经不再是纯 demo 页面，而是：
+代码重构从 Phase 1 开始，按 docs 中的计划分阶段执行。
 
-- 一个可继续迭代的产品原型
-- 一个具备部署结构、真实外部服务、持久化与多用户边界的候选产品
-- 一个在 AI 岗位面试中可讲清楚系统设计、部署拆分、失败兜底和人机边界的工程项目
+补充（2026-04-28）：
+- Phase 1/2 已完成并形成稳定 baseline（`core22/gate: p@5=89.1%, p@10=86.4%, hardFail=0`）。
+- Phase 3 Step 1（Decision Verdict Layer）已完成：
+  - 在 jobs derived/view 层新增 `go/review/no_go`、`A-F`、`confidence`、`hardBlockers`、`weightedSummary`、`nextAction`。
+  - Jobs 页面已最小展示 verdict 信息。
+  - `no_go` 已收窄为仅明确硬阻断来源。
+- Phase 3 Step 2（Profile-driven Skill Gap Layer）已完成：
+  - 新增 `skillGapView`（derived-only，不写 canonical job）。
+  - 仅基于 profile 技能与岗位文本做 deterministic 技能偏好匹配。
+  - 不接入 PDF / resume parser / OCR / LLM 简历解析。
+  - `skills` 为空时返回 `overallFit=unknown`，不影响排序和 decisionVerdict。
+- Phase 3 Step 3（Application Tracker Core）已完成：
+  - 新增 tracker 状态机：`none / saved / applied / interview / rejected / offer`。
+  - Jobs 页面支持状态 badge、状态切换、状态过滤、timeline 展示。
+  - 状态可持久化回显。
+  - 非法 tracker state 在后端写入接口会返回 `400` 拒绝。
+  - 旧数据读取保持安全 fallback（缺失/异常状态按 `none` 展示）。
+- Phase 3 Step 4（Human Feedback Loop）已完成：
+  - 新增反馈状态：`none / good_fit / bad_fit / misclassified`。
+  - Jobs 页面支持反馈按钮与反馈时间线。
+  - 反馈以 deterministic 低权重方式影响同类岗位排序（derived signal，小幅加减分）。
+  - explanation 会提示反馈影响来源。
+  - role 为空时不参与同类反馈聚合，避免空桶扩散。
+  - 非法 feedback state 后端 `400` 拒绝，重复同状态不重复追加时间线。
+  - Jobs 页面增加提示：“反馈会轻微影响后续同类岗位排序”。
+  - eval 运行路径已禁用 feedback influence（仅评估隔离，不影响生产 `/api/jobs`）。
+  - 不改 canonical job、不改硬阻断、不自动改写用户原始偏好。
+- Phase 3 Step 5（Batch Compare + Shortlist Workflow）已完成：
+  - 新增 shortlist 状态：`none / shortlisted` 与 `shortlistTimeline`。
+  - Jobs 页面支持 `Add to Shortlist / Remove`、Shortlist filter。
+  - 新增 Compare panel（仅展示 shortlisted jobs）用于并排决策对比。
+  - 新增 `applyPriority`（`high / medium / low`）用于投递优先级提示。
+  - 非法 shortlist state 后端 `400` 拒绝；重复点击 shortlisted 不重复追加 timeline。
+  - compare 面板对缺失字段具备安全兜底，不影响页面渲染。
+- Phase 4 Step 1（Application Workflow Expansion）已完成：
+  - tracker 状态扩展为 `none / saved / prep / tailored / applied / interview / rejected / offer`。
+  - `prep / tailored` 已支持写入、回显、过滤与 timeline 记录。
+  - 非法 tracker state 后端 `400` 拒绝，重复同状态不重复追加 timeline。
+  - tracker 状态过滤仅影响 view，不影响岗位排序主链。
+- Phase 4 Step 2（Materials Prep Record）已完成：
+  - 新增 `materialsPrepView`（metadata-only）：
+    - `resumeStatus: none / draft / tailored / finalized`
+    - `coverLetterStatus: none / draft / tailored / finalized`
+    - `interviewPrepStatus: none / draft / ready`
+    - `notes`
+    - `lastUpdatedAt`
+  - 新增材料记录保存接口并启用严格枚举校验，非法状态后端 `400` 拒绝。
+  - `notes` 支持保存、清空、回显。
+  - `lastUpdatedAt` 仅在材料内容实际变化时刷新（no-op 保存不刷新）。
+  - materials 仅作为 metadata，不自动改 trackerState，不接入 PDF/parser/OCR/LLM。
+- Phase 4 Step 3（Submission Audit / Plugin Linkage 最小版）已完成：
+  - 新增 `submissionAuditView`（metadata-only）：
+    - `status: none / ready / submitted / failed / needs_review`
+    - `source: manual / plugin / system`
+    - `submittedAt / lastAttemptAt / attemptCount / lastError / notes`
+  - 新增投递审计更新接口并启用严格枚举校验，非法 `status/source` 后端 `400` 拒绝。
+  - `submittedAt` 首次进入 `submitted` 时写入，重复 `submitted` 不覆盖。
+  - no-op 保存不递增 `attemptCount`、不刷新 `lastAttemptAt`。
+  - `notes` 支持保存、清空、回显。
+  - 不自动修改 `trackerState`，不改 plugin 主流程。
+- Phase 4 Step 4（Follow-up / Reminder 最小版）已完成：
+  - 新增 `followUpView`（metadata-only）：
+    - `status: none / planned / done / skipped`
+    - `channel: email / phone / linkedin / other`
+    - `dueAt / notes / lastUpdatedAt`
+  - 新增 follow-up 更新接口并启用严格校验：
+    - 非法 `status/channel/dueAt` 后端 `400` 拒绝。
+  - `dueAt` 支持清空，`notes` 支持保存/清空/回显。
+  - no-op 保存不刷新 `lastUpdatedAt`。
+  - 不接入日历、自动提醒、后台任务；不改 `tracker/submission/scoring/decisionVerdict`。
 
-但它还不是生产级 SaaS，主要差距在：
+## 相关文档
 
-- 简历解析鲁棒性还未完全覆盖非标准 PDF
-- 申请准备输出质量仍需更强的 job-specific 优化
-- 多阶段 pipeline 还不是异步队列化执行系统
-- 认证、监控、可观测性仍是最小版本
-
-## 7. 本地运行与部署
-
-### 本地开发
-
-```bash
-npm install
-npm run dev
-```
-
-### Railway resume-parser
-
-Start Command:
-
-```bash
-npm run start:resume-parser
-```
-
-### Cloudflare
-
-```bash
-npx wrangler deploy --config wrangler.jsonc
-```
-
-## 8. 当前最重要的下一步
-
-### P0
-
-- 完成线上简历链路的最终验收：
-  - 普通 PDF 成功解析
-  - Canva-like PDF 不再向前端暴露垃圾文本
-- 提升申请准备（Resume Tailoring / Explainability）的真实使用价值
-
-### P1
-
-- 强化岗位定制化简历优化
-- 强化申请准备包（自我介绍 / 问答 / why me / talking points）
-- 让 Prep 更接近真实求职材料工作区
-
-### P2
-
-- OCR fallback
-- 异步队列 / retry / replay
-- 更强的 pipeline trace UI
-- 更完整的可观测性与生产级认证
-
-## 9. 失败治理规则
-
-当项目进入“多轮失败 / 修复回退 / 新旧逻辑混版 / 乱码重新出现”的状态时，不应直接继续补丁式改业务代码。
-
-从现在开始，必须先运行：
-
-- [skills/method-switch-and-recovery/SKILL.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\SKILL.md)
-
-适用场景包括：
-
-- 同类问题连续两轮未解决
-- 修复后再次回退
-- 页面重新出现乱码
-- schema 已变但 UI 仍按旧字段渲染
-- 工作区左/右任一侧再次失真或为空
-
-执行顺序：
-
-1. 看 [failure-triggers.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\failure-triggers.md)
-2. 看 [decision-matrix.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-matrix.md)
-3. 锁定 [validation-gates.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\validation-gates.md)
-4. 用 [decision-log-template.md](E:\my-agent\applyflow\skills\method-switch-and-recovery\decision-log-template.md) 记录本轮决策
-
-这样做的目的不是增加流程，而是避免在旧方法已经失效时继续无边界地乱改。
+- [PROJECT_CONTEXT.md](E:\my-agent\applyflow\PROJECT_CONTEXT.md)
+- [docs/APPLYFLOW_REBUILD_PLAN.md](E:\my-agent\applyflow\docs\APPLYFLOW_REBUILD_PLAN.md)
+- [docs/APPLYFLOW_ARCHITECTURE.md](E:\my-agent\applyflow\docs\APPLYFLOW_ARCHITECTURE.md)
+- [docs/DEPRECATION_AND_REMOVAL_PLAN.md](E:\my-agent\applyflow\docs\DEPRECATION_AND_REMOVAL_PLAN.md)
+- [docs/ENGINEERING_GUARDRAILS.md](E:\my-agent\applyflow\docs\ENGINEERING_GUARDRAILS.md)

@@ -1,0 +1,54 @@
+{
+  "valid": {
+    "intentId": "intent_fixture_001",
+    "userId": "user_fixture_001",
+    "keywords": ["ai product manager", "agent workflow"],
+    "city": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "mid",
+    "salaryRange": {
+      "min": 25000,
+      "max": 45000,
+      "currency": "CNY",
+      "period": "monthly"
+    },
+    "constraints": {
+      "remoteOnly": false,
+      "visaRequired": false,
+      "mustHaveSkills": ["llm", "experimentation"],
+      "blockedCompanies": ["Example Inc"],
+      "notes": "Need explainable AI-agent product ownership."
+    },
+    "riskTolerance": "medium",
+    "createdAt": "2026-04-20T10:00:00.000Z",
+    "updatedAt": "2026-04-20T10:00:00.000Z"
+  },
+  "invalidCases": [
+    {
+      "name": "missing_intent_id",
+      "intent": {
+        "userId": "user_fixture_001",
+        "keywords": ["ai product manager"]
+      },
+      "expectedErrorContains": "intentId is required"
+    },
+    {
+      "name": "keywords_not_array",
+      "intent": {
+        "intentId": "intent_bad_001",
+        "userId": "user_fixture_001",
+        "keywords": "ai product manager"
+      },
+      "expectedErrorContains": "keywords must be a non-empty array"
+    },
+    {
+      "name": "missing_user_id",
+      "intent": {
+        "intentId": "intent_bad_002",
+        "keywords": ["ai product manager"],
+        "jobType": "full_time"
+      },
+      "expectedErrorContains": "userId is required"
+    }
+  ]
+}

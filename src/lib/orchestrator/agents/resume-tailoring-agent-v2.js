@@ -1,5 +1,6 @@
 const { createId, nowIso } = require("../../utils/id");
 const { generateResumeTailoring, getLlmConfig } = require("../../llm/applyflow-llm-service");
+const { createMasterResumeContract } = require("../../contracts/master-resume-contracts");
 
 function pickTopItems(items = [], max = 5) {
   return (Array.isArray(items) ? items : []).filter(Boolean).slice(0, max);
@@ -132,7 +133,53 @@ function buildTailoredResumeSections({
   };
 }
 
-function buildResumeSnapshot(resumeDocument = null, profile = {}) {
+function buildResumeSnapshot(resumeDocument = null, profile = {}, masterResume = null) {
+  if (masterResume) {
+    const contract = createMasterResumeContract(masterResume);
+    const workExperience = (contract.workExperience || []).map((entry, index) => ({
+      id: entry.id || `work_${index + 1}`,
+      company: entry.company || "",
+      role: entry.role || "",
+      timeRange: entry.timeRange || "",
+      bullets: pickTopItems(entry.bullets || [], 4),
+      displayTitle: [entry.timeRange, entry.company, entry.role].filter(Boolean).join(" ")
+    }));
+    const projectExperience = (contract.projectExperience || []).map((entry, index) => ({
+      id: entry.id || `project_${index + 1}`,
+      name: entry.projectName || entry.name || "",
+      role: entry.role || "",
+      timeRange: entry.timeRange || "",
+      bullets: pickTopItems(entry.bullets || [], 4),
+      displayTitle: [entry.timeRange, entry.projectName || entry.name || "", entry.role].filter(Boolean).join(" ")
+    }));
+    const education = (contract.education || []).map((entry, index) => ({
+      id: entry.id || `edu_${index + 1}`,
+      school: entry.school || "",
+      major: entry.major || "",
+      timeRange: entry.timeRange || "",
+      displayTitle: [entry.timeRange, entry.school, entry.major].filter(Boolean).join(" ")
+    }));
+
+    return {
+      sourceResumeId: resumeDocument?.id || contract.trace?.sourceResumeId || null,
+      sourceMasterResumeId: contract.masterResumeId,
+      fileName: resumeDocument?.fileName || "canonical_master_resume",
+      status: resumeDocument?.parseStatus || resumeDocument?.status || "canonical_saved",
+      parseQuality: resumeDocument?.parseQuality || null,
+      parseWarning: resumeDocument?.parseWarning || "",
+      summary: contract.summary || profile.baseResume || "",
+      workExperience,
+      projectExperience,
+      education,
+      skills: pickTopItems(contract.skills || [], 16),
+      achievements: [],
+      cleanedText: "",
+      extractionMethod: "canonical_master_resume",
+      experience: workExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join(" · ")),
+      projects: projectExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join(" · "))
+    };
+  }
+
   const structured = resumeDocument?.structuredProfile || resumeDocument?.structured || {};
   return {
     sourceResumeId: resumeDocument?.id || null,
@@ -509,7 +556,53 @@ function buildDiffView({ resumeSnapshot, rewrittenBullets, orderingPlan, tailore
   };
 }
 
-function buildResumeSnapshot(resumeDocument = null, profile = {}) {
+function buildResumeSnapshot(resumeDocument = null, profile = {}, masterResume = null) {
+  if (masterResume) {
+    const contract = createMasterResumeContract(masterResume);
+    const workExperience = (contract.workExperience || []).map((entry, index) => ({
+      id: entry.id || `work_${index + 1}`,
+      company: entry.company || "",
+      role: entry.role || "",
+      timeRange: entry.timeRange || "",
+      bullets: pickTopItems(entry.bullets || [], 4),
+      displayTitle: [entry.timeRange, entry.company, entry.role].filter(Boolean).join(" ")
+    }));
+    const projectExperience = (contract.projectExperience || []).map((entry, index) => ({
+      id: entry.id || `project_${index + 1}`,
+      name: entry.projectName || entry.name || "",
+      role: entry.role || "",
+      timeRange: entry.timeRange || "",
+      bullets: pickTopItems(entry.bullets || [], 4),
+      displayTitle: [entry.timeRange, entry.projectName || entry.name || "", entry.role].filter(Boolean).join(" ")
+    }));
+    const education = (contract.education || []).map((entry, index) => ({
+      id: entry.id || `edu_${index + 1}`,
+      school: entry.school || "",
+      major: entry.major || "",
+      timeRange: entry.timeRange || "",
+      displayTitle: [entry.timeRange, entry.school, entry.major].filter(Boolean).join(" ")
+    }));
+
+    return {
+      sourceResumeId: resumeDocument?.id || contract.trace?.sourceResumeId || null,
+      sourceMasterResumeId: contract.masterResumeId,
+      fileName: resumeDocument?.fileName || "canonical_master_resume",
+      status: resumeDocument?.parseStatus || resumeDocument?.status || "canonical_saved",
+      parseQuality: resumeDocument?.parseQuality || null,
+      parseWarning: resumeDocument?.parseWarning || "",
+      summary: contract.summary || profile.baseResume || "",
+      workExperience,
+      projectExperience,
+      education,
+      skills: pickTopItems(contract.skills || [], 16),
+      achievements: [],
+      cleanedText: "",
+      extractionMethod: "canonical_master_resume",
+      experience: workExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join(" · ")),
+      projects: projectExperience.map((entry) => [entry.displayTitle, ...(entry.bullets || [])].filter(Boolean).join(" · "))
+    };
+  }
+
   const structured = resumeDocument?.structuredProfile || resumeDocument?.structured || {};
   const workExperience = (structured.workExperience || []).map((entry, index) => ({
     id: entry.id || `work_${index + 1}`,
@@ -822,9 +915,10 @@ function runRuleBasedResumeTailoringAgent({
   profile,
   fitAssessment = null,
   resumeDocument = null,
+  masterResume = null,
   refinePrompt = ""
 }) {
-  const resumeSnapshot = buildResumeSnapshot(resumeDocument, profile);
+  const resumeSnapshot = buildResumeSnapshot(resumeDocument, profile, masterResume);
   const targetKeywords = extractTargetKeywords(job, fitAssessment);
   const selection = selectResumeEvidence(resumeSnapshot, targetKeywords, fitAssessment);
   const rewrittenBullets = normalizeTailoringBullets(
@@ -894,6 +988,7 @@ async function runResumeTailoringAgent({
   profile,
   fitAssessment = null,
   resumeDocument = null,
+  masterResume = null,
   existingOutput = null,
   refinePrompt = ""
 }) {
@@ -902,6 +997,7 @@ async function runResumeTailoringAgent({
     profile,
     fitAssessment,
     resumeDocument,
+    masterResume,
     refinePrompt
   });
   const llmResult = await generateResumeTailoring({
@@ -1230,9 +1326,10 @@ function runRuleBasedResumeTailoringAgent({
   profile,
   fitAssessment = null,
   resumeDocument = null,
+  masterResume = null,
   refinePrompt = ""
 }) {
-  const resumeSnapshot = buildResumeSnapshot(resumeDocument, profile);
+  const resumeSnapshot = buildResumeSnapshot(resumeDocument, profile, masterResume);
   const targetKeywords = extractTargetKeywords(job, fitAssessment);
   const selection = selectResumeEvidence(resumeSnapshot, targetKeywords, fitAssessment);
   const rewrittenBullets = normalizeTailoringBullets(

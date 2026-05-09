@@ -10,6 +10,23 @@ const { SESSION_COOKIE_NAME } = authModule;
 const logger = loggerModule;
 const { createWorkerOverrideStore } = d1RuntimeStoreModule;
 
+function resolveWorkspaceScope(pathname, method) {
+  const normalizedMethod = String(method || "").trim().toUpperCase();
+  if (normalizedMethod !== "POST") {
+    return null;
+  }
+
+  const metadataRouteMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/(materials-prep|submission-audit|follow-up)$/);
+  if (!metadataRouteMatch) {
+    return null;
+  }
+
+  return {
+    jobId: metadataRouteMatch[1],
+    keys: ["jobs", "activityLogs"]
+  };
+}
+
 function createDebugErrorResponse({ error, env, request, pathname }) {
   const stackPreview = String(error?.stack || "")
     .split("\n")
@@ -120,7 +137,8 @@ async function handleApiFetch(request, env) {
   const requestUrl = new URL(request.url);
   const pathname = requestUrl.pathname;
   try {
-    const workerState = await createWorkerOverrideStore({ env, request });
+    const workspaceScope = resolveWorkspaceScope(pathname, request.method);
+    const workerState = await createWorkerOverrideStore({ env, request, workspaceScope });
     const reqShim = new FetchRequestShim(request);
     const resShim = new FetchResponseShim();
 

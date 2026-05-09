@@ -1,0 +1,15 @@
+{
+  "requiredTokens": [
+    "function ensureArray(value)",
+    "function safeJoin(value, separator = \", \")",
+    "if (!targetRoles.length || !preferredLocations.length)",
+    "safeJoin(jobPreference.preferredIndustries, \", \")",
+    "safeJoin(profile.constraints, \", \")",
+    "ensureArray(intent?.keywords)"
+  ],
+  "forbiddenTokens": [
+    "(profile.targetIndustries || []).join(\", \")",
+    "(profile.constraints || []).join(\", \")",
+    "(intent?.keywords || [\"AI Product Manager\"]).join(\", \")"
+  ]
+}

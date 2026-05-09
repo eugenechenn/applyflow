@@ -202,6 +202,27 @@ function saveProfile(profile) {
   return getRepository().saveProfile(getActiveUserId(), { ...profile, userId: getActiveUserId() });
 }
 
+function getMasterResume() {
+  const override = getOverrideStore();
+  if (override?.getMasterResume) return override.getMasterResume();
+  const profile = getProfile();
+  const masterResume = profile?.masterResumeCanonical || profile?.masterResumeRecord || null;
+  return masterResume && typeof masterResume === "object" ? masterResume : null;
+}
+
+function saveMasterResume(masterResume) {
+  const override = getOverrideStore();
+  if (override?.saveMasterResume) return override.saveMasterResume(masterResume);
+  const currentProfile = getProfile() || {};
+  const nextProfile = {
+    ...currentProfile,
+    masterResumeCanonical: masterResume,
+    updatedAt: nowIso()
+  };
+  saveProfile(nextProfile);
+  return masterResume;
+}
+
 function listResumeDocuments() {
   const override = getOverrideStore();
   if (override?.listResumeDocuments) return override.listResumeDocuments();
@@ -455,6 +476,8 @@ module.exports = {
   deleteSession,
   getProfile,
   saveProfile,
+  getMasterResume,
+  saveMasterResume,
   listResumeDocuments,
   getResumeDocument,
   getLatestResumeDocument,

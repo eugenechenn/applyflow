@@ -54,6 +54,27 @@ export interface UserProfile {
   updatedAt: ISODateString;
 }
 
+export interface JobPreferencePriorityWeights {
+  industry: number;
+  role: number;
+  skill: number;
+  location: number;
+  company: number;
+}
+
+export interface JobPreferenceProfile {
+  preferredIndustries: string[];
+  excludedIndustries: string[];
+  targetRoles: string[];
+  excludedRoles: string[];
+  skills: string[];
+  preferredLocations: string[];
+  companyTypes: string[];
+  avoidCompanyTypes: string[];
+  jobType: "校招" | "实习" | "社招" | "不限";
+  priorityWeights: JobPreferencePriorityWeights;
+}
+
 export interface Job {
   id: string;
   source: "manual" | "url" | "import";

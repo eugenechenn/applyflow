@@ -1,0 +1,13 @@
+{
+  "seed": {
+    "company": "ApplyFlow Labs",
+    "title": "AI Product Manager",
+    "location": "Shanghai",
+    "jobUrl": "https://example.com/jobs/export-e2e"
+  },
+  "expected": {
+    "docxMimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdfMimeType": "application/pdf",
+    "failureErrorCode": "INVALID_EXPORT_DTO"
+  }
+}

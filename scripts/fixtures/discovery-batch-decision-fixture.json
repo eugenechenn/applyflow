@@ -1,0 +1,62 @@
+{
+  "intentInput": {
+    "userId": "user_batch_fixture",
+    "keywords": ["ai agent", "product manager", "workflow"],
+    "city": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "mid",
+    "constraints": {
+      "mustHaveSkills": ["llm", "experimentation"],
+      "blockedCompanies": ["Blocked Corp"]
+    },
+    "riskTolerance": "medium"
+  },
+  "candidates": [
+    {
+      "sourceUrl": "https://www.linkedin.com/jobs/view/456?trk=foo",
+      "title": "AI Agent Product Manager",
+      "company": "NovaAI",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "Build decision-first AI agent workflows for growth.",
+      "requirements": ["LLM product experience", "experimentation"]
+    },
+    {
+      "sourceUrl": "https://www.linkedin.com/jobs/view/456?trk=bar",
+      "title": "Product Manager - AI Agent",
+      "company": "NovaAI",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "Build decision-first AI agent workflows for growth.",
+      "requirements": ["LLM product experience", "experimentation"]
+    },
+    {
+      "sourceUrl": "https://jobs.example.com/blocked/pm-agent",
+      "title": "AI Product Manager",
+      "company": "Blocked Corp",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "Own AI workflow strategy.",
+      "requirements": ["pm"]
+    },
+    {
+      "sourceUrl": "https://careers.discoverylabs.com/jobs/agent-pm",
+      "title": "AI Workflow PM",
+      "company": "Discovery Labs",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "senior",
+      "jdSummary": "",
+      "requirements": ["analytics", "experimentation"]
+    }
+  ],
+  "expected": {
+    "minPrimaryListings": 3,
+    "duplicatesShouldNotBeDecidedTwice": true,
+    "requiredDecisionFields": ["recommendation", "evidence", "gaps", "risks", "nextAction"],
+    "blockedCompanyShouldProduceSkip": true
+  }
+}

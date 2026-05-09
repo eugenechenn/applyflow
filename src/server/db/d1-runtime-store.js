@@ -69,101 +69,149 @@ async function loadSessionById(db, sessionId) {
   return selectJsonRow(db, "SELECT json_text FROM sessions WHERE session_id = ?", [sessionId]);
 }
 
-async function loadWorkspaceState(db, userId) {
+function createEmptyWorkspaceState() {
+  return {
+    profile: null,
+    resumeDocuments: [],
+    strategyProfile: null,
+    globalStrategyPolicy: null,
+    policyHistory: [],
+    policyProposals: [],
+    policyAuditLogs: [],
+    jobs: [],
+    fitAssessments: [],
+    applicationPreps: [],
+    tailoringOutputs: [],
+    applicationTasks: [],
+    interviewReflections: [],
+    activityLogs: [],
+    badCases: []
+  };
+}
+
+function shouldLoadWorkspaceKey(scope = null, key = "") {
+  if (!scope || !Array.isArray(scope.keys) || scope.keys.length === 0) {
+    return true;
+  }
+  return scope.keys.includes(key);
+}
+
+async function loadWorkspaceState(db, userId, scope = null) {
   if (!userId) {
-    return {
-      profile: null,
-      resumeDocuments: [],
-      strategyProfile: null,
-      globalStrategyPolicy: null,
-      policyHistory: [],
-      policyProposals: [],
-      policyAuditLogs: [],
-      jobs: [],
-      fitAssessments: [],
-      applicationPreps: [],
-      tailoringOutputs: [],
-      applicationTasks: [],
-      interviewReflections: [],
-      activityLogs: [],
-      badCases: []
-    };
+    return createEmptyWorkspaceState();
   }
 
-  const profile = await selectJsonRow(db, "SELECT json_text FROM profiles WHERE user_id = ?", [userId]);
-  const strategyProfile = await selectJsonRow(db, "SELECT json_text FROM strategy_profiles WHERE user_id = ?", [userId]);
-  const globalStrategyPolicy = await selectJsonRow(db, "SELECT json_text FROM global_policies WHERE user_id = ?", [userId]);
-  const resumeDocuments = await selectJsonRows(
-    db,
-    "SELECT json_text FROM resume_documents WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
+  const state = createEmptyWorkspaceState();
 
-  const policyHistory = await selectJsonRows(
-    db,
-    "SELECT json_text FROM policy_history WHERE user_id = ? ORDER BY created_at DESC",
-    [userId]
-  );
-  const policyProposals = await selectJsonRows(
-    db,
-    "SELECT json_text FROM policy_proposals WHERE user_id = ? ORDER BY created_at DESC",
-    [userId]
-  );
-  const policyAuditLogs = await selectJsonRows(
-    db,
-    "SELECT json_text FROM policy_audit_logs WHERE user_id = ? ORDER BY timestamp DESC",
-    [userId]
-  );
-  const jobs = await selectJsonRows(db, "SELECT json_text FROM jobs WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
-  const fitAssessments = await selectJsonRows(
-    db,
-    "SELECT json_text FROM fit_assessments WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
-  const applicationPreps = await selectJsonRows(
-    db,
-    "SELECT json_text FROM application_preps WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
-  const tailoringOutputs = await selectJsonRows(
-    db,
-    "SELECT json_text FROM tailoring_outputs WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
-  const applicationTasks = await selectJsonRows(
-    db,
-    "SELECT json_text FROM application_tasks WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
-  const interviewReflections = await selectJsonRows(
-    db,
-    "SELECT json_text FROM interview_reflections WHERE user_id = ? ORDER BY updated_at DESC",
-    [userId]
-  );
-  const activityLogs = await selectJsonRows(
-    db,
-    "SELECT json_text FROM activity_logs WHERE user_id = ? ORDER BY timestamp DESC",
-    [userId]
-  );
-  const badCases = await selectJsonRows(db, "SELECT json_text FROM bad_cases WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
+  if (shouldLoadWorkspaceKey(scope, "profile")) {
+    state.profile = await selectJsonRow(db, "SELECT json_text FROM profiles WHERE user_id = ?", [userId]);
+  }
+  if (shouldLoadWorkspaceKey(scope, "strategyProfile")) {
+    state.strategyProfile = await selectJsonRow(db, "SELECT json_text FROM strategy_profiles WHERE user_id = ?", [userId]);
+  }
+  if (shouldLoadWorkspaceKey(scope, "globalStrategyPolicy")) {
+    state.globalStrategyPolicy = await selectJsonRow(db, "SELECT json_text FROM global_policies WHERE user_id = ?", [userId]);
+  }
+  if (shouldLoadWorkspaceKey(scope, "resumeDocuments")) {
+    state.resumeDocuments = await selectJsonRows(
+      db,
+      "SELECT json_text FROM resume_documents WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "policyHistory")) {
+    state.policyHistory = await selectJsonRows(
+      db,
+      "SELECT json_text FROM policy_history WHERE user_id = ? ORDER BY created_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "policyProposals")) {
+    state.policyProposals = await selectJsonRows(
+      db,
+      "SELECT json_text FROM policy_proposals WHERE user_id = ? ORDER BY created_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "policyAuditLogs")) {
+    state.policyAuditLogs = await selectJsonRows(
+      db,
+      "SELECT json_text FROM policy_audit_logs WHERE user_id = ? ORDER BY timestamp DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "jobs")) {
+    if (scope?.jobId) {
+      const job = await selectJsonRow(db, "SELECT json_text FROM jobs WHERE user_id = ? AND id = ? LIMIT 1", [userId, scope.jobId]);
+      state.jobs = job ? [job] : [];
+    } else {
+      state.jobs = await selectJsonRows(db, "SELECT json_text FROM jobs WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
+    }
+  }
+  if (shouldLoadWorkspaceKey(scope, "fitAssessments")) {
+    state.fitAssessments = await selectJsonRows(
+      db,
+      "SELECT json_text FROM fit_assessments WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "applicationPreps")) {
+    state.applicationPreps = await selectJsonRows(
+      db,
+      "SELECT json_text FROM application_preps WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "tailoringOutputs")) {
+    state.tailoringOutputs = await selectJsonRows(
+      db,
+      "SELECT json_text FROM tailoring_outputs WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "applicationTasks")) {
+    state.applicationTasks = await selectJsonRows(
+      db,
+      "SELECT json_text FROM application_tasks WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "interviewReflections")) {
+    state.interviewReflections = await selectJsonRows(
+      db,
+      "SELECT json_text FROM interview_reflections WHERE user_id = ? ORDER BY updated_at DESC",
+      [userId]
+    );
+  }
+  if (shouldLoadWorkspaceKey(scope, "activityLogs")) {
+    if (scope?.jobId) {
+      state.activityLogs = await selectJsonRows(
+        db,
+        "SELECT json_text FROM activity_logs WHERE user_id = ? AND job_id = ? ORDER BY timestamp DESC",
+        [userId, scope.jobId]
+      );
+    } else {
+      state.activityLogs = await selectJsonRows(
+        db,
+        "SELECT json_text FROM activity_logs WHERE user_id = ? ORDER BY timestamp DESC",
+        [userId]
+      );
+    }
+  }
+  if (shouldLoadWorkspaceKey(scope, "badCases")) {
+    if (scope?.jobId) {
+      const badCase = await selectJsonRow(
+        db,
+        "SELECT json_text FROM bad_cases WHERE user_id = ? AND job_id = ? LIMIT 1",
+        [userId, scope.jobId]
+      );
+      state.badCases = badCase ? [badCase] : [];
+    } else {
+      state.badCases = await selectJsonRows(db, "SELECT json_text FROM bad_cases WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
+    }
+  }
 
-  return {
-    profile,
-    resumeDocuments,
-    strategyProfile,
-    globalStrategyPolicy,
-    policyHistory,
-    policyProposals,
-    policyAuditLogs,
-    jobs,
-    fitAssessments,
-    applicationPreps,
-    tailoringOutputs,
-    applicationTasks,
-    interviewReflections,
-    activityLogs,
-    badCases
-  };
+  return state;
 }
 
 async function persistWorkspaceState(db, userId, workspaceState) {
@@ -244,7 +292,73 @@ function createArrayStore(list = [], idField = "id") {
   };
 }
 
-async function createWorkerOverrideStore({ env, request, resolvedUserId = null }) {
+function ensureDirtyCollectionMap(state, key) {
+  if (!state.collections.has(key)) {
+    state.collections.set(key, new Map());
+  }
+  return state.collections.get(key);
+}
+
+function queueCollectionUpsert(dirtyState, key, item, idField = "id") {
+  if (!item || !item[idField]) return;
+  const map = ensureDirtyCollectionMap(dirtyState, key);
+  map.set(item[idField], item);
+  const deleted = dirtyState.deletedCollections.get(key);
+  if (deleted) {
+    deleted.delete(item[idField]);
+  }
+}
+
+function queueCollectionDelete(dirtyState, key, itemId) {
+  if (!itemId) return;
+  if (!dirtyState.deletedCollections.has(key)) {
+    dirtyState.deletedCollections.set(key, new Set());
+  }
+  dirtyState.deletedCollections.get(key).add(itemId);
+  const map = dirtyState.collections.get(key);
+  if (map) {
+    map.delete(itemId);
+  }
+}
+
+async function flushSingleton(db, tableName, userId, value, updatedAtField = "updatedAt") {
+  await db.prepare(`DELETE FROM ${tableName} WHERE user_id = ?`).bind(userId).run();
+  if (!value) return;
+  const updatedAt = value[updatedAtField] || value.createdAt || new Date().toISOString();
+  await db.prepare(`INSERT INTO ${tableName} (user_id, updated_at, json_text) VALUES (?, ?, ?)`)
+    .bind(userId, updatedAt, JSON.stringify(value))
+    .run();
+}
+
+async function flushCollectionEntries(db, userId, tableConfig, upsertMap = new Map(), deletedIds = new Set()) {
+  const { table, idField, timeField, extraFields } = tableConfig;
+
+  for (const itemId of deletedIds) {
+    await db.prepare(`DELETE FROM ${table} WHERE user_id = ? AND ${idField} = ?`).bind(userId, itemId).run();
+  }
+
+  for (const item of upsertMap.values()) {
+    const columns = [idField, "user_id", ...extraFields, timeField, "json_text"];
+    const values = [
+      item[idField],
+      userId,
+      ...extraFields.map((field) => getExtraFieldValue(item, field)),
+      item.updatedAt || item.timestamp || item.createdAt || new Date().toISOString(),
+      JSON.stringify(item)
+    ];
+    const placeholders = columns.map(() => "?").join(", ");
+    const updateColumns = ["user_id", ...extraFields, timeField, "json_text"]
+      .map((column) => `${column} = excluded.${column}`)
+      .join(", ");
+    await db.prepare(
+      `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders}) ON CONFLICT(${idField}) DO UPDATE SET ${updateColumns}`
+    )
+      .bind(...values)
+      .run();
+  }
+}
+
+async function createWorkerOverrideStore({ env, request, resolvedUserId = null, workspaceScope = null }) {
   const db = getWorkerDbOrThrow(env);
   const users = await loadUsers(db);
   const userState = {
@@ -256,7 +370,7 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
   const sessionId = cookies[sessionCookieName] || null;
   const currentSession = await loadSessionById(db, sessionId);
   const currentUserId = resolvedUserId || currentSession?.userId || null;
-  const workspace = await loadWorkspaceState(db, currentUserId);
+  const workspace = await loadWorkspaceState(db, currentUserId, workspaceScope);
 
   const sessionState = {
     currentSession,
@@ -266,6 +380,11 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
   const workspaceState = {
     ...workspace,
     dirty: false
+  };
+  const dirtyState = {
+    singletons: new Set(),
+    collections: new Map(),
+    deletedCollections: new Map()
   };
 
   const jobsStore = createArrayStore(workspaceState.jobs);
@@ -373,6 +492,7 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     saveProfile(profile) {
       markDirty();
       workspaceState.profile = { ...profile, userId: currentUserId };
+      dirtyState.singletons.add("profile");
       return workspaceState.profile;
     },
     listResumeDocuments() {
@@ -394,6 +514,7 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
         workspaceState.resumeDocuments.unshift(next);
       }
       workspaceState.resumeDocuments.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      queueCollectionUpsert(dirtyState, "resumeDocuments", next);
       return next;
     },
     getStrategyProfile() {
@@ -402,6 +523,7 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     saveStrategyProfile(strategyProfile) {
       markDirty();
       workspaceState.strategyProfile = { ...strategyProfile, userId: currentUserId };
+      dirtyState.singletons.add("strategyProfile");
       return workspaceState.strategyProfile;
     },
     getGlobalStrategyPolicy() {
@@ -410,6 +532,7 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     saveGlobalStrategyPolicy(policy) {
       markDirty();
       workspaceState.globalStrategyPolicy = { ...policy, userId: currentUserId };
+      dirtyState.singletons.add("globalStrategyPolicy");
       return workspaceState.globalStrategyPolicy;
     },
     listPolicyHistory() {
@@ -417,7 +540,9 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     savePolicyHistoryEntry(entry) {
       markDirty();
-      workspaceState.policyHistory.unshift({ ...entry, userId: currentUserId });
+      const next = { ...entry, userId: currentUserId };
+      workspaceState.policyHistory.unshift(next);
+      queueCollectionUpsert(dirtyState, "policyHistory", next);
       return workspaceState.policyHistory[0];
     },
     listPolicyProposals() {
@@ -428,14 +553,18 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     savePolicyProposal(proposal) {
       markDirty();
-      return policyProposalStore.save({ ...proposal, userId: currentUserId });
+      const next = policyProposalStore.save({ ...proposal, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "policyProposals", next);
+      return next;
     },
     listPolicyAuditLogs() {
       return workspaceState.policyAuditLogs;
     },
     savePolicyAuditLog(entry) {
       markDirty();
-      workspaceState.policyAuditLogs.unshift({ ...entry, userId: currentUserId });
+      const next = { ...entry, userId: currentUserId };
+      workspaceState.policyAuditLogs.unshift(next);
+      queueCollectionUpsert(dirtyState, "policyAuditLogs", next);
       return workspaceState.policyAuditLogs[0];
     },
     listJobs() {
@@ -446,7 +575,9 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     saveJob(job) {
       markDirty();
-      return jobsStore.save({ ...job, userId: currentUserId });
+      const next = jobsStore.save({ ...job, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "jobs", next);
+      return next;
     },
     listFitAssessments() {
       return workspaceState.fitAssessments;
@@ -456,14 +587,18 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     saveFitAssessment(assessment) {
       markDirty();
-      return fitStore.save({ ...assessment, userId: currentUserId });
+      const next = fitStore.save({ ...assessment, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "fitAssessments", next);
+      return next;
     },
     getApplicationPrepByJobId(jobId) {
       return workspaceState.applicationPreps.find((item) => item.jobId === jobId) || null;
     },
     saveApplicationPrep(prep) {
       markDirty();
-      return prepStore.save({ ...prep, userId: currentUserId });
+      const next = prepStore.save({ ...prep, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "applicationPreps", next);
+      return next;
     },
     listTailoringOutputs() {
       return workspaceState.tailoringOutputs;
@@ -477,9 +612,11 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
       const next = { ...output, userId: currentUserId };
       if (existingIndex >= 0) {
         workspaceState.tailoringOutputs[existingIndex] = next;
+        queueCollectionUpsert(dirtyState, "tailoringOutputs", next);
         return next;
       }
       workspaceState.tailoringOutputs.unshift(next);
+      queueCollectionUpsert(dirtyState, "tailoringOutputs", next);
       return next;
     },
     listTasksByJobId(jobId) {
@@ -490,14 +627,18 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     saveTask(task) {
       markDirty();
-      return taskStore.save({ ...task, userId: currentUserId });
+      const next = taskStore.save({ ...task, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "applicationTasks", next);
+      return next;
     },
     getInterviewReflectionByJobId(jobId) {
       return workspaceState.interviewReflections.find((item) => item.jobId === jobId) || null;
     },
     saveInterviewReflection(reflection) {
       markDirty();
-      return reflectionStore.save({ ...reflection, userId: currentUserId });
+      const next = reflectionStore.save({ ...reflection, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "interviewReflections", next);
+      return next;
     },
     listActivityLogsByJobId(jobId) {
       return workspaceState.activityLogs.filter(
@@ -509,11 +650,13 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     saveActivityLog(log) {
       markDirty();
-      return activityStore.save({
+      const next = activityStore.save({
         ...log,
         userId: currentUserId,
         timestamp: log.timestamp || log.createdAt || new Date().toISOString()
       });
+      queueCollectionUpsert(dirtyState, "activityLogs", next);
+      return next;
     },
     listBadCases() {
       return workspaceState.badCases;
@@ -523,11 +666,17 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
     },
     saveBadCase(badCase) {
       markDirty();
-      return badCaseStore.save({ ...badCase, userId: currentUserId });
+      const next = badCaseStore.save({ ...badCase, userId: currentUserId });
+      queueCollectionUpsert(dirtyState, "badCases", next);
+      return next;
     },
     removeBadCase(jobId) {
       markDirty();
-      return badCaseStore.removeBy("jobId", jobId);
+      const removed = badCaseStore.removeBy("jobId", jobId);
+      if (removed?.id) {
+        queueCollectionDelete(dirtyState, "badCases", removed.id);
+      }
+      return removed;
     },
     async flush() {
       if (sessionState.deletedSessionIds.size > 0) {
@@ -560,7 +709,22 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null }
       }
 
       if (workspaceState.dirty && currentUserId) {
-        await persistWorkspaceState(db, currentUserId, workspaceState);
+        if (dirtyState.singletons.has("profile")) {
+          await flushSingleton(db, "profiles", currentUserId, workspaceState.profile);
+        }
+        if (dirtyState.singletons.has("strategyProfile")) {
+          await flushSingleton(db, "strategy_profiles", currentUserId, workspaceState.strategyProfile);
+        }
+        if (dirtyState.singletons.has("globalStrategyPolicy")) {
+          await flushSingleton(db, "global_policies", currentUserId, workspaceState.globalStrategyPolicy);
+        }
+
+        for (const tableConfig of WORKSPACE_TABLES) {
+          const upsertMap = dirtyState.collections.get(tableConfig.key) || new Map();
+          const deletedIds = dirtyState.deletedCollections.get(tableConfig.key) || new Set();
+          if (upsertMap.size === 0 && deletedIds.size === 0) continue;
+          await flushCollectionEntries(db, currentUserId, tableConfig, upsertMap, deletedIds);
+        }
       }
     }
   };

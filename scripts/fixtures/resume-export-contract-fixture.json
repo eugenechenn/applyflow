@@ -1,0 +1,206 @@
+{
+  "validContract": {
+    "exportId": "export_20260421_001",
+    "jobId": "job_001",
+    "masterResumeId": "resume_master_001",
+    "tailoredResumeId": "tailored_001",
+    "exportFormat": "docx",
+    "exportStatus": "ready",
+    "artifactName": "ApplyFlow-ProductManager.docx",
+    "artifactMeta": {
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "extension": "docx",
+      "storageKey": "",
+      "sizeBytes": 0
+    },
+    "trace": {
+      "source": "fixture.resume_export",
+      "runId": "run_fixture_001"
+    },
+    "warnings": [],
+    "errors": [],
+    "createdAt": "2026-04-21T10:00:00.000Z",
+    "updatedAt": "2026-04-21T10:00:00.000Z"
+  },
+  "validDto": {
+    "exportId": "export_20260421_001",
+    "jobId": "job_001",
+    "masterResumeId": "resume_master_001",
+    "tailoredResumeId": "tailored_001",
+    "exportFormat": "docx",
+    "profile": {
+      "candidateName": "Alex Candidate",
+      "targetRole": "AI Product Manager",
+      "targetCompany": "ApplyFlow Labs",
+      "targetLocation": "Shanghai"
+    },
+    "sections": {
+      "summary": "Built explainable hiring-agent pipelines with controlled execution gates.",
+      "whyFit": "Strong alignment on decision quality, control, and feedback loops.",
+      "workExperience": [
+        {
+          "id": "work_1",
+          "company": "ApplyFlow Labs",
+          "role": "PM Intern",
+          "timeRange": "2025-2026",
+          "bullets": [
+            "Implemented decision-control-feedback contracts."
+          ]
+        }
+      ],
+      "projectExperience": [
+        {
+          "id": "project_1",
+          "projectName": "ApplyFlow",
+          "role": "Owner",
+          "timeRange": "2026",
+          "bullets": [
+            "Built shortlist admission guard and execution DTO."
+          ]
+        }
+      ],
+      "skills": ["Node.js", "LLM Agent", "System Design"],
+      "keywords": ["decision", "control", "feedback"],
+      "talkingPoints": ["Explain recommendation with evidence and risk."],
+      "coverNote": "Looking forward to discussing measurable impact."
+    },
+    "changeReasons": ["Aligned summary to JD focus."],
+    "sectionDiffs": [
+      {
+        "diffId": "diff_1",
+        "sectionKey": "self_summary",
+        "before": "General PM profile",
+        "after": "Decision-focused AI Agent PM profile",
+        "reason": "Match role emphasis",
+        "status": "accepted"
+      }
+    ],
+    "sourceContracts": [
+      "canonical_resume_contract",
+      "tailored_resume_contract",
+      "prep_dto",
+      "export_options"
+    ],
+    "artifactMeta": {
+      "suggestedFileName": "ApplyFlow-ProductManager.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    },
+    "trace": {
+      "source": "fixture.export_dto",
+      "runId": "run_fixture_001"
+    }
+  },
+  "invalidContractCases": [
+    {
+      "name": "missing_export_id",
+      "contract": {
+        "jobId": "job_001",
+        "masterResumeId": "resume_master_001",
+        "tailoredResumeId": "tailored_001",
+        "exportFormat": "docx",
+        "exportStatus": "ready",
+        "artifactName": "ApplyFlow-ProductManager.docx",
+        "artifactMeta": {
+          "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "extension": "docx"
+        }
+      },
+      "expectedErrorContains": "exportId is required"
+    },
+    {
+      "name": "missing_artifact_mime_type",
+      "contract": {
+        "exportId": "export_bad",
+        "jobId": "job_001",
+        "masterResumeId": "resume_master_001",
+        "tailoredResumeId": "tailored_001",
+        "exportFormat": "docx",
+        "exportStatus": "ready",
+        "artifactName": "ApplyFlow-ProductManager.docx",
+        "artifactMeta": {
+          "mimeType": "",
+          "extension": "docx"
+        }
+      },
+      "expectedErrorContains": "artifactMeta.mimeType is required"
+    }
+  ],
+  "invalidDtoCases": [
+    {
+      "name": "missing_export_id",
+      "dto": {
+        "jobId": "job_001",
+        "masterResumeId": "resume_master_001",
+        "tailoredResumeId": "tailored_001",
+        "exportFormat": "docx",
+        "profile": {},
+        "sections": {
+          "workExperience": [],
+          "projectExperience": [],
+          "skills": [],
+          "keywords": [],
+          "talkingPoints": []
+        },
+        "changeReasons": [],
+        "sectionDiffs": [],
+        "sourceContracts": [
+          "canonical_resume_contract"
+        ],
+        "artifactMeta": {}
+      },
+      "expectedErrorContains": "exportId is required"
+    },
+    {
+      "name": "forbidden_raw_field",
+      "validateRaw": true,
+      "dto": {
+        "exportId": "export_001",
+        "jobId": "job_001",
+        "masterResumeId": "resume_master_001",
+        "tailoredResumeId": "tailored_001",
+        "exportFormat": "docx",
+        "profile": {},
+        "sections": {
+          "workExperience": [],
+          "projectExperience": [],
+          "skills": [],
+          "keywords": [],
+          "talkingPoints": []
+        },
+        "changeReasons": [],
+        "sectionDiffs": [],
+        "sourceContracts": [
+          "canonical_resume_contract"
+        ],
+        "artifactMeta": {},
+        "rawText": "should_not_be_here"
+      },
+      "expectedErrorContains": "forbidden raw/legacy fields"
+    },
+    {
+      "name": "unsupported_source_contract",
+      "dto": {
+        "exportId": "export_001",
+        "jobId": "job_001",
+        "masterResumeId": "resume_master_001",
+        "tailoredResumeId": "tailored_001",
+        "exportFormat": "docx",
+        "profile": {},
+        "sections": {
+          "workExperience": [],
+          "projectExperience": [],
+          "skills": [],
+          "keywords": [],
+          "talkingPoints": []
+        },
+        "changeReasons": [],
+        "sectionDiffs": [],
+        "sourceContracts": [
+          "tailoringOutput"
+        ],
+        "artifactMeta": {}
+      },
+      "expectedErrorContains": "unsupported source"
+    }
+  ]
+}

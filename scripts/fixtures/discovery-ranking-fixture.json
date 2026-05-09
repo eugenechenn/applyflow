@@ -1,0 +1,136 @@
+{
+  "batchDecisionResult": {
+    "batchId": "batch_fixture_rank_001",
+    "intentId": "intent_fixture_rank_001",
+    "items": [
+      {
+        "listingId": "listing_apply_high",
+        "clusterId": "cluster_apply_high",
+        "jobDecision": {
+          "decisionId": "decision_apply_high",
+          "jobId": "listing_apply_high",
+          "userId": "user_rank_fixture",
+          "fitScore": 88,
+          "recommendation": "apply",
+          "evidence": ["Matched intent keywords: ai agent, workflow", "Structured requirements captured: 4 items."],
+          "gaps": [],
+          "risks": [],
+          "nextAction": "apply",
+          "rationale": "High alignment and low risk.",
+          "confidence": 0.9,
+          "trace": {
+            "source": "fixture",
+            "model": "rule_based",
+            "version": "v1",
+            "runId": "batch_fixture_rank_001"
+          },
+          "decidedAt": "2026-04-20T12:00:00.000Z"
+        },
+        "decisionTrace": { "source": "fixture", "runId": "batch_fixture_rank_001", "version": "v1" },
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_apply_high",
+            "source": "linkedin",
+            "normalizedUrl": "https://linkedin.com/jobs/view/1",
+            "title": "AI Agent PM",
+            "company": "NovaAI",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ],
+        "notes": []
+      },
+      {
+        "listingId": "listing_cautious_risky",
+        "clusterId": "cluster_cautious_risky",
+        "jobDecision": {
+          "decisionId": "decision_cautious_risky",
+          "jobId": "listing_cautious_risky",
+          "userId": "user_rank_fixture",
+          "fitScore": 73,
+          "recommendation": "cautious",
+          "evidence": ["Matched intent keywords: ai"],
+          "gaps": ["Missing must-have signal: experimentation"],
+          "risks": ["JD summary is missing; decision confidence is reduced.", "Company is in blockedCompanies constraints."],
+          "nextAction": "collect_info",
+          "rationale": "Evidence exists but risk profile is high.",
+          "confidence": 0.55,
+          "trace": {
+            "source": "fixture",
+            "model": "rule_based",
+            "version": "v1",
+            "runId": "batch_fixture_rank_001"
+          },
+          "decidedAt": "2026-04-20T12:00:00.000Z"
+        },
+        "decisionTrace": { "source": "fixture", "runId": "batch_fixture_rank_001", "version": "v1" },
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_cautious_risky",
+            "source": "manual_link",
+            "normalizedUrl": "https://example.com/jobs/2",
+            "title": "AI PM",
+            "company": "Blocked Corp",
+            "location": "Shanghai",
+            "isPrimary": true
+          },
+          {
+            "listingId": "listing_cautious_risky_dup",
+            "source": "indeed",
+            "normalizedUrl": "https://indeed.com/viewjob?jk=2",
+            "title": "AI Product Manager",
+            "company": "Blocked Corp",
+            "location": "Shanghai",
+            "isPrimary": false
+          }
+        ],
+        "notes": []
+      },
+      {
+        "listingId": "listing_skip_tail",
+        "clusterId": "cluster_skip_tail",
+        "jobDecision": {
+          "decisionId": "decision_skip_tail",
+          "jobId": "listing_skip_tail",
+          "userId": "user_rank_fixture",
+          "fitScore": 32,
+          "recommendation": "skip",
+          "evidence": [],
+          "gaps": ["Missing must-have signal: llm"],
+          "risks": ["Company is in blockedCompanies constraints."],
+          "nextAction": "skip",
+          "rationale": "Low evidence and blocked risk.",
+          "confidence": 0.48,
+          "trace": {
+            "source": "fixture",
+            "model": "rule_based",
+            "version": "v1",
+            "runId": "batch_fixture_rank_001"
+          },
+          "decidedAt": "2026-04-20T12:00:00.000Z"
+        },
+        "decisionTrace": { "source": "fixture", "runId": "batch_fixture_rank_001", "version": "v1" },
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_skip_tail",
+            "source": "manual_link",
+            "normalizedUrl": "https://example.com/jobs/3",
+            "title": "General PM",
+            "company": "Blocked Corp",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ],
+        "notes": []
+      }
+    ],
+    "generatedAt": "2026-04-20T12:00:00.000Z"
+  },
+  "expected": {
+    "firstListingId": "listing_apply_high",
+    "lastListingId": "listing_skip_tail",
+    "mustContainFields": ["whyRanked", "riskAdjustments", "nextAction", "evidence", "risks"],
+    "cautiousShouldBeBelowApply": true,
+    "skipShouldBeTail": true
+  }
+}

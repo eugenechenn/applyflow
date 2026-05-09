@@ -1,0 +1,26 @@
+{
+  "requiredNavRoutes": [
+    "#/dashboard",
+    "#/jobs",
+    "#/profile"
+  ],
+  "requiredDashboardTokens": [
+    "输入偏好",
+    "自动排序岗位",
+    "查看岗位列表"
+  ],
+  "requiredJobsTokens": [
+    "公司",
+    "岗位名称",
+    "地点",
+    "优先级分数",
+    "评分解释",
+    "原始链接",
+    "一键网申"
+  ],
+  "requiredProfileTokens": [
+    "求职偏好",
+    "辅助材料（网申）",
+    "可选简历导入"
+  ]
+}

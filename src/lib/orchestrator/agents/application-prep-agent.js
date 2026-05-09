@@ -1,6 +1,7 @@
 ﻿const { createId, nowIso } = require("../../utils/id");
 const { generatePrepDraft, getLlmConfig } = require("../../llm/applyflow-llm-service");
 const { buildResumeSnapshot } = require("./resume-tailoring-agent-v2");
+const { createMasterResumeContract } = require("../../contracts/master-resume-contracts");
 
 function splitLines(value) {
   return String(value || "")
@@ -101,8 +102,25 @@ function buildChecklist(existingChecklist = [], hasAcceptedBullets = false) {
   ];
 }
 
-function buildPrepFromTailoring({ job, profile, fitAssessment, resumeDocument, tailoringOutput }) {
-  const resumeSnapshot = tailoringOutput?.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile);
+function buildMasterResumePromptText(masterResume = null) {
+  if (!masterResume) return "";
+  const contract = createMasterResumeContract(masterResume);
+  return [
+    contract.summary || "",
+    ...(contract.workExperience || []).map((entry) =>
+      [entry.company, entry.role, ...(entry.bullets || [])].filter(Boolean).join(" | ")
+    ),
+    ...(contract.projectExperience || []).map((entry) =>
+      [entry.projectName || entry.name || "", entry.role, ...(entry.bullets || [])].filter(Boolean).join(" | ")
+    ),
+    Array.isArray(contract.skills) && contract.skills.length ? `Skills: ${contract.skills.join(", ")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 2200);
+}
+function buildPrepFromTailoring({ job, profile, fitAssessment, resumeDocument, tailoringOutput, masterResume = null }) {
+  const resumeSnapshot = tailoringOutput?.resumeSnapshot || buildResumeSnapshot(resumeDocument, profile, masterResume);
   const targetKeywords = tailoringOutput?.targetingBrief?.targetKeywords || [];
   const acceptedBullets = (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted");
   const unusedBullets = (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status !== "accepted");
@@ -191,14 +209,23 @@ function buildPrepFromTailoring({ job, profile, fitAssessment, resumeDocument, t
   };
 }
 
-async function runApplicationPrepAgent({ job, profile, fitAssessment = null, resumeDocument = null, tailoringOutput = null }) {
-  const fallbackResult = buildPrepFromTailoring({ job, profile, fitAssessment, resumeDocument, tailoringOutput });
+async function runApplicationPrepAgent({
+  job,
+  profile,
+  fitAssessment = null,
+  resumeDocument = null,
+  tailoringOutput = null,
+  masterResume = null
+}) {
+  const fallbackResult = buildPrepFromTailoring({ job, profile, fitAssessment, resumeDocument, tailoringOutput, masterResume });
+  const canonicalMasterResumeText = buildMasterResumePromptText(masterResume);
   const acceptedBullets = (tailoringOutput?.rewrittenBullets || []).filter((item) => item.status === "accepted");
   const llmResult = await generatePrepDraft({
     job,
     profile: {
       ...profile,
       masterResume:
+        canonicalMasterResumeText ||
         resumeDocument?.cleanedText ||
         resumeDocument?.summary ||
         profile.masterResume ||

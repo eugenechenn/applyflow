@@ -1,0 +1,91 @@
+{
+  "valid": {
+    "resumeExportContract": {
+      "exportId": "export_pdf_001",
+      "jobId": "job_pdf_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "pdf",
+      "exportStatus": "ready",
+      "artifactName": "ApplyFlow-AI_PM.pdf",
+      "artifactMeta": {
+        "mimeType": "application/pdf",
+        "extension": "pdf"
+      },
+      "warnings": [],
+      "errors": []
+    },
+    "exportDto": {
+      "exportId": "export_pdf_001",
+      "jobId": "job_pdf_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "pdf",
+      "profile": {
+        "candidateName": "Alex Candidate",
+        "targetRole": "AI Product Manager",
+        "targetCompany": "ApplyFlow",
+        "targetLocation": "Shanghai"
+      },
+      "sections": {
+        "summary": "Built contract-first resume export with controlled execution boundaries.",
+        "whyFit": "Strong system ownership and production guardrail mindset.",
+        "workExperience": [
+          {
+            "id": "work_1",
+            "company": "ApplyFlow",
+            "role": "PM",
+            "timeRange": "2025-2026",
+            "bullets": [
+              "Shipped contractized discovery-to-execution architecture."
+            ]
+          }
+        ],
+        "projectExperience": [],
+        "skills": ["Node.js", "Contracts", "AI Agent"],
+        "keywords": ["decision", "control", "feedback"],
+        "talkingPoints": ["Explain controlled pipeline and validation strategy."],
+        "coverNote": "Would love to discuss production-grade AI PM delivery."
+      },
+      "changeReasons": ["Aligned narrative to role requirements."],
+      "sectionDiffs": [],
+      "sourceContracts": [
+        "canonical_resume_contract",
+        "tailored_resume_contract",
+        "prep_dto",
+        "export_options"
+      ],
+      "artifactMeta": {
+        "suggestedFileName": "ApplyFlow-AI_PM.pdf",
+        "mimeType": "application/pdf"
+      },
+      "trace": {
+        "source": "fixture.resume_pdf_export",
+        "runId": "run_pdf_001"
+      }
+    }
+  },
+  "invalid": {
+    "exportDto": {
+      "jobId": "job_pdf_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "pdf",
+      "profile": {},
+      "sections": {
+        "workExperience": [],
+        "projectExperience": [],
+        "skills": [],
+        "keywords": [],
+        "talkingPoints": []
+      },
+      "changeReasons": [],
+      "sectionDiffs": [],
+      "sourceContracts": [
+        "canonical_resume_contract"
+      ],
+      "artifactMeta": {}
+    },
+    "expectedErrorCode": "INVALID_EXPORT_DTO"
+  }
+}

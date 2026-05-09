@@ -1,0 +1,102 @@
+- 2026-04-28：新增 offline_json 分层 seed 脚本，补齐 Jobs 工作台金融/教育/游戏/AI 数据池覆盖。
+- 2026-04-28：修复行业偏好通用排序链路，改为全量评分排序后再 limit，并删除 Jobs 页前端覆盖排序。
+- 2026-04-28：收紧行业 classifier 并为 Jobs 工作台增加展示层去重，减少金融/教育弱词误判与 TopN 重复岗位。
+- 2026-04-28：引入 jobPreferenceProfile 多维偏好模型并接入 jobs 评分，skills 改为可选，新增多维评估计划文档。
+- 2026-04-28：调整 jobPreferenceProfile eval 口径，主指标切为 precision/duplicate/consistency，companyTypes 改为 known gap 跟踪。
+- 2026-04-28：增强 companyTypes classifier（外企别名、domain 信号、强弱置信度、创业误伤拦截、政企/事业单位规则补充）。
+- 2026-04-28：完成 mixed title/soft mustNot 收口并通过 focused review，阶段 baseline 固化为 p@5=89.1%、p@10=86.4%、hard fail=0。
+- 2026-04-28：将 jobs preference eval 扩展至 44 条并接入 baseline 对比与 regression gate，形成评估系统 v1。
+- 2026-04-28：修复 eval seed 扩展样本损坏标签并引入 core22/gate/full44 双轨评估，门禁仅基于 gate-basis 判定。
+- 2026-04-28：新增 validate:job-preference-eval-seed，收口 eval seed 数据质量门禁与 tier 合规校验。
+- 2026-04-28：扩展 Profile / Onboarding 多维偏好 UI，新增 jobPreferenceProfile 核心字段保存、回显与 lightweightProfile 兼容提交流程。
+- 2026-04-28：修复 Profile/Onboarding 回显优先级为 jobPreferenceProfile>lightweight，并升级 Onboarding 本地缓存为双层结构且兼容旧缓存。
+- 2026-04-28：Jobs 页面新增“当前偏好卡片”与“去 Profile 修改偏好”入口，完成 Phase 2 多维偏好 UI 可解释性收口。
+- 2026-04-28：完成 Phase 3 Step 1 Decision Verdict Layer（go/review/no_go、A-F、confidence、hardBlockers、weightedSummary、nextAction）并收窄 no_go 为仅硬阻断来源。
+- 2026-04-28：完成 Phase 3 Step 2 Profile-driven Skill Gap Layer 收口（derived-only、skills 空 unknown、conservative missingSkills 白名单、skill gap 诊断解封）。
+- 2026-04-28：完成 Phase 3 Step 3 Application Tracker Core（tracker 状态机/筛选/时间线/持久化）并修复非法 tracker state 后端 400 拒绝边界。
+- 2026-04-28：完成 Phase 3 Step 4 Human Feedback Loop（good_fit/bad_fit/misclassified 反馈持久化、时间线、同类岗位轻量 derived 影响与解释提示）。
+- 2026-04-28：完成 Phase 3 Step 4 收口，并在 eval 路径增加 feedback influence 隔离与环境卫生报告，恢复 Regression Gate 稳定 PASS。
+- 2026-04-28：完成 Phase 3 Step 5 Batch Compare + Shortlist Workflow（shortlist 状态机、过滤、compare panel、applyPriority 与后端非法状态 400 边界）。
+- 2026-04-28：完成 Phase 4 Step 1 Application Workflow Expansion，tracker 扩展至 prep/tailored 并打通写入、回显、过滤与 timeline。
+- 2026-04-28：完成 Phase 4 Step 2 Materials Prep Record，新增 materialsPrepView 与严格枚举校验，并收口 lastUpdatedAt 仅内容变化时刷新。
+- 2026-04-29：完成 Phase 4 Step 3 Submission Audit 最小版，新增 submissionAuditView 与后端枚举校验，并修复 no-op 保存不递增 attemptCount/lastAttemptAt。
+- 2026-04-29：完成 Phase 4 Step 4 Follow-up 最小版，新增 followUpView 与后端 dueAt/枚举校验，并收口 no-op 不刷新 lastUpdatedAt。
+- 2026-04-29：完成 Phase 4.5 Batch A 评估口径收敛，清理 phase45 diagnostic seeds 标签语义并固化“diagnostic-only 不进 gate”策略。
+- 2026-04-29：完成 Phase 4.5 Batch B-1 止损后评估层收口：将 phase45_game_pm_planning_045 标注为 Data Coverage + Alias Gap，并新增中文对照 diagnostic case phase45_game_pm_planning_zh_057。
+- 2026-04-29：在评分层新增显式行业偏好冲突软降权（industryConflictPenalty），抑制跨域高 roleFit 岗位前排并保持 Regression Gate PASS。
+- 2026-04-29：完成 Final Portfolio Polish 文案收口，统一主路径中文化并固化 phase45_game_pm_planning_045 为 diagnostic known gap 透明披露。
+- 2026-04-29：完成 Problem 1 Fix Batch 首轮收口：增强数据分析角色别名、混合 JD 低置信降权、移除 feedback 对 preferenceMatchScore 的排序污染并新增 finance-data-analyst 严格诊断样本。
+- 2026-04-29：完成 Problem 1 Polish Batch：收口 role-first tie-break 与 feedback 后置、收紧高误召回 alias、扩展交叉行业弱冲突保护并新增 4 条 diagnostic 交叉场景样本。
+- 2026-04-29：修复 Jobs 最终排序 comparator，调整为 role 优先、feedback 末位、recency 最后。
+- 2026-04-30：完成 Batch 4A 岗位质量特征层首批建设，在 enrichJobFeatures 新增 source/title/role/density/confidence 等 derived 字段并保持 Gate PASS。
+- 2026-04-30：完成 Batch 4B 质量弱信号灰度接入：新增 jobQualityFit/jobQualitySummary、comparator 接入 jobQuality tie-break，并补充 4 条 phase45 质量诊断样本（062~065）。
+- 2026-04-30：完成 Batch 4B 小修：收敛 bundled/mixed 判定并引入 highValueCompositeRole 保护，补充 3 条复合岗位 diagnostic 样本。
+- 2026-04-30：完成 Batch 5B 数据层首版：新增 curated_offline_v1 数据、导入/回滚脚本与质量校验脚本，并补充 6 条 curated 诊断样本（diagnostic-only）。
+- 2026-04-30：Batch 5B 导入实测触发 gate 退化后，已按 sourceVersion 回滚 105 条 curated 数据并恢复 Regression Gate PASS。
+- 2026-04-30：执行战略纠偏：停止 curated pool 产品化路线，确认 curated 仅保留为 diagnostic/benchmark 工具，并将 source 分层评估显式标注为 diagnostic-only。
+- 2026-04-30：完成 Batch 6A 首版：在 jobFeaturesView 增加 source reliability/freshness/completeness/risk 派生字段，并扩展 eval source 分层诊断报表（derived-only，不接入排序）。
+- 2026-04-30：完成 Batch 6A Fix：回滚 workflow comparator 中 `jobQualityFit` 排序接入，仅保留其诊断字段用途并恢复 Regression Gate PASS。
+- 2026-04-30：完成 Batch 6B 首轮收敛：深化 role ontology（primary/adjacent/transferable/structureType），修复 phase6b 诊断样本标签，并在低风险 alias 收敛后恢复 Gate PASS（p@5=90.9%，p@10=90.5%）。
+- 2026-04-30：完成 Batch 6C：新增 Semantic JD Parsing derived 字段（职责块/要求块/结构类型/语义置信），补充 10 条 semantic 诊断样本并保持 Regression Gate PASS。
+- 2026-04-30：完成 Batch 6D：新增生产级 source reliability maturity 派生字段与 10 条来源可信度诊断样本，保持 Regression Gate PASS 并将 Full Precision 提升至 p@5=68.2%、p@10=68.8%。
+- 2026-04-30：收口 Phase 6 边界，确认 production comparator 不含 jobQualityFit，并明确 sourceReliability/sourceQuality/confidenceTier 职责。
+- 2026-04-30：拆分 eval gate/full/source-report 模式，改为只读 profile override，并复用同轮 jobFeaturesView 以优化评估耗时。
+- 2026-04-30：完成 Phase 7A 首批 dedupe/freshness/source normalization 派生层，新增重复聚类与时效性 diagnostic cases，并保持 gate 快速门禁 PASS
+- 2026-04-30：完成 Phase 7B feedback 诊断层，新增偏好演化候选与 feedback 污染风险派生字段，并保持 gate-only PASS
+- 2026-04-30：完成 Phase 7C 偏好演化候选诊断聚合层，新增 repeated signal / drift risk / review needed 汇总，并保持 gate-only PASS
+- 2026-04-30：完成 Phase 7D diagnostic→gate 治理层，新增 caseMaturity / promotionGovernance / promotion report，并保持 gate-only PASS
+- 2026-04-30??? Phase 7E.5 explainability contract ???? gate consistency ????? explanation ???????????????? gate-only PASS?
+- 2026-04-30??? Phase 8A Source Governance contract????????/????/????????????????? gate-only PASS?
+
+- 2026-04-30：完成 Phase 8A.5 Governance Consolidation，jobFeaturesView 引入模块化特征容器与 deprecated alias 策略，冻结 eval governance 模板并保持 gate-only 排序边界不变。
+- 2026-04-30：完成 Phase 8B 前置收口，AGENTS/CONTEXT 强制接入 JOB_FEATURES_GOVERNANCE_PHASE8A5.md 并固化 Phase 8B 准入边界（不改 comparator/ranking/gate basis）。
+- 2026-04-30：完成 Phase 8B 运行时消费治理，UI/API/Eval 切换为模块容器优先并保留 legacy fallback，新增 legacy 下线路线图且保持 gate-only PASS。
+- 2026-04-30：完成 Phase 8C Legacy Consumer Tracking，新增 runtime warning 与 legacy consumer 追踪报表，发布 PHASE8C_LEGACY_CONSUMER_AUDIT.md 并保持 gate-only PASS。
+- 2026-04-30：完成 Phase 8D-Prep 文档化收口，新增 PHASE8D_LEGACY_REMOVAL_READINESS.md 并固化候选分级/证据标准/分批删除与回滚方案（本轮不删字段）。
+- 2026-04-30：完成 Phase 8D-1 准入证据轮，新增 legacy explainability old payload fixture 验证并确认 gate/full zero-consumer，但 diagnostic warning 仍存在，暂不进入删除执行。
+- 2026-04-30：完成 Phase 8D-1 第二轮修复，清理 attachScoringToJobWorkspaceViewModel 的 legacy warning 误触发并保持 old payload 兼容与 gate PASS。
+- 2026-04-30：完成 Phase 8D-1 第三轮证据采集，gate zero-consumer 达到 3/3，8D-1 字段状态更新为 Ready Candidate（待人工批准）。
+- 2026-04-30：完成 Phase 8D-1 执行，移除 explainability summary legacy 平铺输出字段并保留 old payload 输入兼容，验证链路通过。
+- 2026-04-30：完成 Phase 8D-2 准备轮首轮证据采集，扩展 feedback legacy fixture 并确认 gate/full zero-consumer 与 diagnostic no-warning（状态仍 Watch）。
+- 2026-04-30：完成 Phase 8D-2 gate 证据累积至 3/3，保持 legacy tracking 全零并将 8D-2 状态更新为 Ready Candidate（待人工批准）。
+- 2026-04-30：完成 Phase 8D-2 执行，移除 feedback governance legacy 平铺输出字段并保留 old payload 输入兼容，验证链路通过且 Gate PASS。
+- 2026-05-01：完成 Phase 8D-3 首轮准入证据采集，扩展 jobFeatures legacy fixture（5 场景）并确认 rolePurity/sourceFreshnessTier 在 gate/full/diagnostic 下 zero-consumer（状态仍 Blocked，gate 1/3）。
+- 2026-05-01：完成 Phase 8D-3 执行，移除 jobFeatures legacy 平铺输出字段 rolePurity/sourceFreshnessTier，切换容器主路径并保留 legacy 输入兼容，验证链路通过且 Gate PASS。
+- 2026-05-01：完成 Phase 8 Final Consolidation Review，总审计确认 legacy 输出字段退出、输入兼容保留、Gate-only PASS，并同步 Phase 8 收口文档。
+- 2026-05-01：正式关闭 Phase 8 Legacy Governance，完成 Phase 9A Source Quality 架构审计并发布 PHASE9A_SOURCE_QUALITY_MASTER_PLAN.md。
+- 2026-05-01：完成 Phase 9B UI blocker 修复，新增 Dashboard/Jobs 加载超时与重试保护、Jobs 首次进入过滤守卫、filtered_empty/no_jobs/load_failed 空态分流，并保持 Gate PASS 与排序边界不变。
+- 2026-05-01：完成 Role Evidence Confidence Correction（primary/explicit_subrole/adjacent/incidental/conflicting 分层与 bundled explainability 文案纠偏），保持 comparator 与 gate 边界不变。
+- 2026-05-01：完成 Phase 9X-A 边界纠偏，移除 roleSemanticPurity 对 roleFit 的直接降分触发并保持 Gate PASS。
+- 2026-05-01：完成 Phase 9X-B explainability 收口，bundled 三分类文案对齐并新增 6 条 diagnostic-only 守卫样本，Gate 维持 PASS。
+- 2026-05-01：完成 Phase 9X-C role evidence 稳定化校准（explicit/adjacent/incidental/conflicting 小幅阈值修正）并保持 Gate PASS。
+
+- 2026-05-01：Phase 9Y 新增 derived-only opportunityType，区分明确单岗、高价值方向入口、综合入口与低质量混杂，并接入解释/UI/eval 语义消费。
+
+- 2026-05-01：完成 Phase 9Y-B Acceptance Gate Reinforcement，新增 acceptanceGateTier、acceptance eval mode 与真实用户投递优先级指标。
+
+- 2026-05-01：Phase 9Y-B Acceptance Gate report 首轮为 REVIEW，暴露数据分析场景 low-quality/broad entry 前排泄漏，暂不关闭 Phase 9Y。
+- 2026-05-01??? Phase 9Y-D OpportunityType Boundary Fix??? bundled/mixed fallback ????? 7 ? diagnostic-only ?????Acceptance Gate ? REVIEW ?? PASS?Gate ???????
+- 2026-05-01??? Phase 9Y-F Role Evidence Wiring Fix??? classification.roleFit.evidenceType ??????? true_single_* case-level guard?Gate ?? PASS?Acceptance trueSinglePriorityRate ? 0.0% ??? 66.7%?
+- 2026-05-01：完成 Phase 9Y-G 最小收口，修复 opportunityType 残余边界并引入 true_single 数据池缺口诊断标记，Gate 与 Acceptance 均保持 PASS。
+- 2026-05-01：完成 Phase 9Y Final Closure Review，确认 Gate/Acceptance 双 PASS、边界未污染，并将 data_pool_quality_gap 与 UI 执行链路问题归档为后续独立任务。
+- 2026-05-01：完成排序真实性一次性收口实现，新增 userPriorityScore 五维排序合同并统一 score/Grade/Verdict/雷达图/Compare 主路径；Acceptance Gate PASS，历史 frozen gate 因旧标签口径仍需单独迁移。
+- 2026-05-01：完成 Phase 10X 评估合同迁移，新 gate/full eval 改以 userPriorityScore 五维用户价值合同判定，legacy-gate 保留旧标签 precision reference。
+- 2026-05-01：推进 Phase 10A UI 执行链路修复，补齐 Dashboard/Profile/Jobs 加载守卫与 filtered_empty/no_jobs/load_failed 分流，并将 Cloudflare metadata 保存持久化从整仓 flush 收口为 dirty entry 增量 flush（线上 materials-prep 仍待继续复验）。
+- 2026-05-01：新增 Phase 10X 评估合同迁移交接文档，记录 userPriorityScore gate/full eval 迁移逻辑、验证状态与后续边界。
+
+- 2026-05-06：完成 Phase 10A UI Execution Workflow Reliability Fix，修复 Dashboard loading 假死、Jobs 首次进入 filter guard、trackerFilter 假空恢复路径、metadata 保存与刷新回显，并在 staging 通过 Playwright 主流程验收；排序系统与 frozen gate 未触碰。
+- 2026-05-06：完成排序 Batch1 Role Evidence 透传修复，attachScoringToJobWorkspaceViewModel 新增 roleFitEvidenceType/roleFitDetails 透传，补充导出与校验脚本并生成 tmp/role_evidence_batch1.json。
+- 2026-05-06：完成排序 Batch2 Role Evidence 分层修复，收紧 bundled/broad/internship/composite 场景的 primary_role_match 判定并新增 batch2 导出，acceptance gate 与 evidence 双门禁通过。
+- 2026-05-06：完成 Batch2 OpportunityType 收口导出，新增 low_quality_mixed_posting 对抗样本并生成 tmp/opportunity_type_batch2_close.json，当前 acceptance 在 true_single_data_analyst 单例场景仍为 REVIEW（其余边界项通过）。
+- 2026-05-06：完成 Batch2 acceptance gate case 收口，调整 OpportunityType 高 roleFit 误抬守卫并输出 tmp/opportunity_type_batch2_final.json，acceptance gate case 级恢复 PASS。
+- 2026-05-06：完成 Batch5 最终排序真实性验收导出，新增冷启动与跨用户稳定性证据并输出 tmp/final_ranking_truth_batch5_close.json；真实性核心指标（trueSinglePriorityRate/poolVsSingleDisplacementRate）仍为 66.7%。
+- 2026-05-06：完成 Batch6 acceptance truth definition 重构，将验收口径从 single-first 升级为 true-user-value-first，acceptance gate PASS 且真实性指标恢复为 100.0% / 0.0%。
+- 2026-05-06：完成 OpportunityType derived-view 边界残余收口，修复高 roleFit internship 多角色样本误标 single_role_job，新增 synthetic 回归并输出 tmp/opportunity_type_boundary_final.json。
+- 2026-05-07：修复 production onboarding bootstrap 卡死，前端对 `/api/profile` bootstrap 增加 timeout/fallback 与 dashboard→onboarding 透传缓存，production Phase 10A smoke PASS，排序系统保持冻结。
+- 2026-05-08：优化岗位列表企业/岗位视觉层级、岗位详情活动记录折叠体验，并将外部投递链路文案收口为浏览器辅助投递与提交前检查。
+- 2026-05-09：恢复 5000 真实池后的 PM 排序共享评分口径，修复缺失维度 0 分污染、明确 PM 子岗位 mixed cap 压低、严格单岗锚点导入与企业/岗位展示区分，并通过 acceptance/gate/UI smoke。
+- 2026-05-09：新增真实池 Top100 多岗位画像矩阵门禁，补齐后端/前端 alias 与显式子岗位价值地板，PM/数据/算法/后端/前端/测试/运营/研究 Top100 验证通过。
+- 2026-05-09：扩大 Top100 巡检发现并修复金融研究员 alias 归并缺口，确认低供给岗位不硬抬无关岗位。
+- 2026-05-09：完成误删恢复后的全系统巡检收口，validate:all、acceptance/gate、Top100 多画像、UI key path 全部 PASS，清理主库验证残留并恢复 Jobs 解释锚点。
+- 2026-05-09：新增 VALIDATION_SPEED_POLICY 分层验证策略，并接入 AGENTS.md 作为默认执行约束。
+- 2026-05-09：新增 RECOVERY_GIT_WORKFLOW_SIMPLE 文档，统一分支/提交/恢复现场的最小安全流程。

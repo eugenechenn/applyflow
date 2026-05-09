@@ -1,4 +1,8 @@
+"use strict";
+
 const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require("docx");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+const { validateExportDto } = require("../contracts/resume-export-contracts");
 
 function toParagraphs(items = [], options = {}) {
   return items
@@ -24,9 +28,27 @@ function safeName(value, fallback) {
   return String(value || "").trim() || fallback;
 }
 
-async function exportTailoredResumeDocx({ job, tailoringOutput, resumeDocument }) {
-  const preview = tailoringOutput?.tailoredResumePreview || {};
-  const applicationPrep = tailoringOutput?.applicationPrepSnapshot || {};
+function extractBullets(entries = [], limit = 12) {
+  return (Array.isArray(entries) ? entries : [])
+    .flatMap((entry) => (Array.isArray(entry?.bullets) ? entry.bullets : []))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+async function exportTailoredResumeDocx(exportDto = {}) {
+  const validation = validateExportDto(exportDto);
+  if (!validation.ok) {
+    const error = new Error(`Invalid ExportDTO for DOCX export: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_EXPORT_DTO";
+    error.details = { errors: validation.errors };
+    throw error;
+  }
+
+  const profile = exportDto.profile || {};
+  const sections = exportDto.sections || {};
+  const workBullets = extractBullets(sections.workExperience, 12);
+  const projectBullets = extractBullets(sections.projectExperience, 8);
+
   const doc = new Document({
     sections: [
       {
@@ -35,7 +57,7 @@ async function exportTailoredResumeDocx({ job, tailoringOutput, resumeDocument }
           new Paragraph({
             children: [
               new TextRun({
-                text: safeName(job?.title, "岗位定制简历"),
+                text: safeName(profile.targetRole, "Tailored Resume"),
                 bold: true,
                 size: 34
               })
@@ -43,45 +65,41 @@ async function exportTailoredResumeDocx({ job, tailoringOutput, resumeDocument }
             spacing: { after: 160 }
           }),
           new Paragraph({
-            text: `${safeName(job?.company, "目标公司")} · ${safeName(job?.location, "地点待确认")}`,
+            text: `${safeName(profile.targetCompany, "Target Company")} | ${safeName(
+              profile.targetLocation,
+              "Location TBD"
+            )}`,
             spacing: { after: 240 }
           }),
-          createSectionHeading("定制摘要"),
+          createSectionHeading("Summary"),
           new Paragraph({
-            text: preview.summary || applicationPrep.tailoredSummary || "暂无定制摘要。",
+            text: sections.summary || "No summary available.",
             spacing: { after: 180 }
           }),
-          createSectionHeading("为什么适合这个岗位"),
+          createSectionHeading("Why Fit"),
           new Paragraph({
-            text: applicationPrep.whyMe || tailoringOutput.whyThisVersion || "暂无补充说明。",
+            text: sections.whyFit || "No fit rationale available.",
             spacing: { after: 180 }
           }),
-          createSectionHeading("核心关键词"),
+          createSectionHeading("Keywords"),
           new Paragraph({
-            text:
-              (preview.keywords || applicationPrep.resumeTailoring?.targetKeywords || []).join(" / ") ||
-              "暂无关键词。",
+            text: (sections.keywords || []).join(" / ") || "No keywords available.",
             spacing: { after: 180 }
           }),
-          createSectionHeading("定制简历要点"),
-          ...toParagraphs(
-            preview.experienceBullets ||
-              applicationPrep.resumeTailoring?.rewriteBullets?.map((item) => item.rewritten) ||
-              [],
-            { bullet: true }
-          ),
-          createSectionHeading("项目与亮点"),
-          ...toParagraphs(preview.projectHighlights || [], { bullet: true }),
-          createSectionHeading("技能"),
+          createSectionHeading("Experience Highlights"),
+          ...toParagraphs(workBullets, { bullet: true }),
+          createSectionHeading("Project Highlights"),
+          ...toParagraphs(projectBullets, { bullet: true }),
+          createSectionHeading("Skills"),
           new Paragraph({
-            text: (preview.skills || resumeDocument?.structured?.skills || []).join(" / ") || "暂无技能整理。",
+            text: (sections.skills || []).join(" / ") || "No skills available.",
             spacing: { after: 180 }
           }),
-          createSectionHeading("面试 / 沟通要点"),
-          ...toParagraphs(applicationPrep.talkingPoints || [], { bullet: true }),
-          createSectionHeading("投递附言"),
+          createSectionHeading("Talking Points"),
+          ...toParagraphs(sections.talkingPoints || [], { bullet: true }),
+          createSectionHeading("Cover Note"),
           new Paragraph({
-            text: applicationPrep.coverNote || "暂无投递附言。",
+            text: sections.coverNote || "No cover note available.",
             spacing: { after: 180 }
           })
         ]
@@ -90,18 +108,107 @@ async function exportTailoredResumeDocx({ job, tailoringOutput, resumeDocument }
   });
 
   const buffer = await Packer.toBuffer(doc);
-  const fileName = `${safeName(job?.company, "ApplyFlow")}-${safeName(job?.title, "定制简历")}.docx`
+  const fileName = `${safeName(profile.targetCompany, "ApplyFlow")}-${safeName(
+    profile.targetRole,
+    "TailoredResume"
+  )}.docx`
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, "_");
 
   return {
     fileName,
-    contentType:
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    buffer
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer,
+    warnings: []
+  };
+}
+
+async function exportTailoredResumePdf(exportDto = {}) {
+  const validation = validateExportDto(exportDto);
+  if (!validation.ok) {
+    const error = new Error(`Invalid ExportDTO for PDF export: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_EXPORT_DTO";
+    error.details = { errors: validation.errors };
+    throw error;
+  }
+
+  const profile = exportDto.profile || {};
+  const sections = exportDto.sections || {};
+
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]); // A4
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const marginX = 48;
+  const topY = 800;
+  let y = topY;
+  const lineHeight = 16;
+  const sectionGap = 10;
+
+  function drawLine(text = "", options = {}) {
+    const value = String(text || "").trim();
+    if (!value) return;
+    const size = options.size || 11;
+    const fontRef = options.bold ? boldFont : font;
+    page.drawText(value, {
+      x: marginX,
+      y,
+      size,
+      font: fontRef,
+      color: rgb(0.1, 0.1, 0.1)
+    });
+    y -= options.lineHeight || lineHeight;
+  }
+
+  function drawSection(title, lines = []) {
+    drawLine(title, { bold: true, size: 12, lineHeight: 18 });
+    lines.filter(Boolean).forEach((line) => drawLine(`- ${line}`));
+    y -= sectionGap;
+  }
+
+  const workBullets = extractBullets(sections.workExperience, 10);
+  const projectBullets = extractBullets(sections.projectExperience, 6);
+
+  drawLine(safeName(profile.targetRole, "Tailored Resume"), { bold: true, size: 16, lineHeight: 22 });
+  drawLine(
+    `${safeName(profile.targetCompany, "Target Company")} | ${safeName(profile.targetLocation, "Location TBD")}`,
+    { size: 11, lineHeight: 18 }
+  );
+  y -= 8;
+
+  drawSection("Summary", [sections.summary || "No summary available."]);
+  drawSection("Why Fit", [sections.whyFit || "No fit rationale available."]);
+  drawSection("Keywords", [(sections.keywords || []).join(" / ") || "No keywords available."]);
+  drawSection("Experience Highlights", workBullets.length ? workBullets : ["No experience highlights available."]);
+  drawSection("Project Highlights", projectBullets.length ? projectBullets : ["No project highlights available."]);
+  drawSection("Skills", [(sections.skills || []).join(" / ") || "No skills available."]);
+  drawSection(
+    "Talking Points",
+    Array.isArray(sections.talkingPoints) && sections.talkingPoints.length
+      ? sections.talkingPoints
+      : ["No talking points available."]
+  );
+  drawSection("Cover Note", [sections.coverNote || "No cover note available."]);
+
+  const bytes = await pdfDoc.save();
+  const buffer = Buffer.from(bytes);
+  const fileName = `${safeName(profile.targetCompany, "ApplyFlow")}-${safeName(
+    profile.targetRole,
+    "TailoredResume"
+  )}.pdf`
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "_");
+
+  return {
+    fileName,
+    contentType: "application/pdf",
+    buffer,
+    warnings: []
   };
 }
 
 module.exports = {
-  exportTailoredResumeDocx
+  exportTailoredResumeDocx,
+  exportTailoredResumePdf
 };

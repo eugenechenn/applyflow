@@ -1,0 +1,66 @@
+{
+  "intentInput": {
+    "userId": "user_fixture_001",
+    "keywords": ["ai product manager", "agent workflow"],
+    "city": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "mid",
+    "salaryRange": {
+      "min": 25000,
+      "max": 45000,
+      "currency": "CNY",
+      "period": "monthly"
+    },
+    "constraints": {
+      "mustHaveSkills": ["llm", "experimentation"]
+    },
+    "riskTolerance": "medium"
+  },
+  "candidates": [
+    "https://www.linkedin.com/jobs/view/123456?trk=abc&utm_source=test",
+    {
+      "url": "https://www.indeed.com/viewjob?jk=abc123&utm_medium=email",
+      "title": "AI Agent Product Manager",
+      "company": "Discovery Labs",
+      "city": "Shanghai",
+      "requirements": "5+ years PM; LLM product experience; analytics",
+      "jdSummary": "Own discovery-to-execution product loop.",
+      "jobType": "full_time",
+      "seniority": "senior"
+    },
+    {
+      "sourceUrl": "https://www.zhipin.com/job_detail/xyz998.html?ka=search_list",
+      "title": "AI 产品经理",
+      "company": "示例科技",
+      "location": "Shanghai",
+      "requirements": ["具备 AI Agent 产品经验", "跨团队协作能力"],
+      "jdSummary": "负责 AI Agent 决策系统产品化。",
+      "jobType": "full_time",
+      "seniority": "mid"
+    }
+  ],
+  "expected": {
+    "minListings": 3,
+    "requiresNormalizedUrl": true
+  },
+  "invalidCases": [
+    {
+      "name": "missing_title_company_object_candidate",
+      "candidate": {
+        "url": "https://example.com/jobs/1",
+        "requirements": ["x"]
+      },
+      "expectedErrorContains": "title is required"
+    },
+    {
+      "name": "invalid_url_candidate",
+      "candidate": {
+        "url": "not-a-url",
+        "title": "AI PM",
+        "company": "Example",
+        "location": "Shanghai"
+      },
+      "expectedErrorContains": "normalizedUrl is required"
+    }
+  ]
+}

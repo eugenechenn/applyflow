@@ -1,0 +1,24 @@
+{
+  "requiredAppTokens": [
+    "data-action=\"open-apply-modal\"",
+    "id=\"jobs-apply-modal\"",
+    "id=\"jobs-apply-manual-link\"",
+    "下载并安装插件",
+    "去完善资料",
+    "先手动申请",
+    "资料状态：",
+    "插件状态：未安装或未启用",
+    "buildScoringSummary"
+  ],
+  "requiredProfileHintTokens": [
+    "页面定位：",
+    "本页用于高级偏好设置、材料管理与历史记录查看；日常偏好填写建议从首页工作台进入。",
+    "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"
+  ],
+  "requiredStyleTokens": [
+    ".apply-modal",
+    ".apply-modal-card",
+    ".apply-modal-backdrop",
+    ".button.is-disabled"
+  ]
+}

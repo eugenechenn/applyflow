@@ -1,0 +1,20 @@
+{
+  "requiredNavRoutes": [
+    "#/dashboard",
+    "#/jobs",
+    "#/profile"
+  ],
+  "requiredRouteHandlers": [
+    "parts[0] === \"dashboard\"",
+    "await renderDashboard();",
+    "parts[0] === \"jobs\"",
+    "await renderJobs();",
+    "parts[0] === \"profile\"",
+    "await renderProfile();",
+    "parts[0] === \"discovery\"",
+    "await renderDiscovery(message, errorMessage, routeIntentId);"
+  ],
+  "requiredOnboardingLandingTokens": [
+    "window.location.hash = \"#/jobs\""
+  ]
+}

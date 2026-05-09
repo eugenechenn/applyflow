@@ -1,0 +1,26 @@
+{
+  "requiredDashboardTokens": [
+    "href=\"#/jobs\"",
+    "href=\"#/profile?section=autofill-materials-section\"",
+    "id=\"dashboard-preference-form\""
+  ],
+  "requiredJobsApplyTokens": [
+    "data-action=\"open-apply-modal\"",
+    "id=\"jobs-apply-modal\"",
+    "data-action=\"close-apply-modal\"",
+    "id=\"jobs-apply-manual-link\"",
+    "href=\"#/profile\">去完善资料</a>"
+  ],
+  "requiredProfileGuideTokens": [
+    "页面定位：",
+    "id=\"profile-preference-section\"",
+    "id=\"autofill-materials-section\"",
+    "href=\"#/profile?section=profile-preference-section\"",
+    "href=\"#/profile?section=autofill-materials-section\"",
+    "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"
+  ],
+  "requiredOnboardingFlowTokens": [
+    "保存并进入岗位推荐",
+    "window.location.hash = \"#/jobs\""
+  ]
+}

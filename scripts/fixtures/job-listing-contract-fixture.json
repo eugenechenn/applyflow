@@ -1,0 +1,83 @@
+{
+  "valid": {
+    "listingId": "listing_fixture_001",
+    "source": "linkedin",
+    "sourceJobId": "123456",
+    "sourceUrl": "https://www.linkedin.com/jobs/view/123456?tracking=abc",
+    "normalizedUrl": "https://www.linkedin.com/jobs/view/123456",
+    "title": "AI Product Manager",
+    "company": "Example AI",
+    "location": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "mid",
+    "compensation": {
+      "min": 25000,
+      "max": 45000,
+      "currency": "CNY",
+      "period": "monthly",
+      "note": ""
+    },
+    "jdSummary": "Lead the design of decision-first AI agent workflows.",
+    "requirements": ["3+ years PM experience", "LLM product experience"],
+    "metadata": {
+      "sourceLabel": "linkedin",
+      "importedBy": "user_fixture_001",
+      "extractionStrategy": "manual",
+      "importBatchId": "batch_fixture_001",
+      "rawPayloadDigest": "fixture_digest"
+    },
+    "ingestedAt": "2026-04-20T10:05:00.000Z"
+  },
+  "invalidCases": [
+    {
+      "name": "missing_source_url",
+      "listing": {
+        "listingId": "listing_bad_001",
+        "source": "manual_link",
+        "normalizedUrl": "https://example.com/jobs/1",
+        "title": "AI PM",
+        "company": "Example",
+        "location": "Shanghai",
+        "jobType": "full_time",
+        "seniority": "mid",
+        "requirements": [],
+        "compensation": { "min": 0, "max": 0 }
+      },
+      "expectedErrorContains": "sourceUrl is required"
+    },
+    {
+      "name": "missing_company",
+      "listing": {
+        "listingId": "listing_bad_002",
+        "source": "manual_link",
+        "sourceUrl": "https://example.com/jobs/2",
+        "normalizedUrl": "https://example.com/jobs/2",
+        "title": "AI PM",
+        "company": "",
+        "location": "Shanghai",
+        "jobType": "full_time",
+        "seniority": "mid",
+        "requirements": [],
+        "compensation": { "min": 0, "max": 0 }
+      },
+      "expectedErrorContains": "company is required"
+    },
+    {
+      "name": "missing_normalized_url",
+      "listing": {
+        "listingId": "listing_bad_003",
+        "source": "manual_link",
+        "sourceUrl": "https://example.com/jobs/3",
+        "normalizedUrl": "",
+        "title": "AI PM",
+        "company": "Example",
+        "location": "Shanghai",
+        "jobType": "full_time",
+        "seniority": "mid",
+        "requirements": [],
+        "compensation": { "min": 0, "max": 0 }
+      },
+      "expectedErrorContains": "normalizedUrl is required"
+    }
+  ]
+}

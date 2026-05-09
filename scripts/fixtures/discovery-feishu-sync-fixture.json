@@ -1,0 +1,187 @@
+{
+  "config": {
+    "appToken": "app_test_applyflow",
+    "tableId": "tbl_leads_main",
+    "tenantAccessToken": "tenant_token_demo",
+    "docName": "Feishu Recruiting Leads",
+    "pageSize": 50,
+    "maxPages": 5,
+    "fieldMap": {
+      "title": ["title"],
+      "company": ["company"],
+      "location": ["location"],
+      "contentText": ["contentText"],
+      "sourceUrl": ["sourceUrl"],
+      "links": ["links"],
+      "images": ["images"],
+      "attachments": ["attachments"]
+    }
+  },
+  "snapshots": {
+    "initial": {
+      "code": 0,
+      "data": {
+        "items": [
+          {
+            "record_id": "rec_direct_001",
+            "fields": {
+              "title": "AI Product Manager",
+              "company": "Lingxi AI",
+              "location": "Shanghai",
+              "contentText": "招聘公告：AI Product Manager，负责 Agent 产品规划与落地，提供直接投递入口。",
+              "sourceUrl": "https://jobs.example.com/lingxi-ai/pm-001",
+              "links": [
+                {
+                  "url": "https://jobs.example.com/lingxi-ai/pm-001",
+                  "label": "立即投递",
+                  "type": "direct_apply",
+                  "isPrimary": true
+                }
+              ]
+            }
+          },
+          {
+            "record_id": "rec_qr_002",
+            "fields": {
+              "title": "",
+              "company": "",
+              "location": "",
+              "contentText": "扫码投递，请使用小程序提交申请。",
+              "images": [
+                {
+                  "id": "img_qr_1",
+                  "name": "qr.png",
+                  "note": "校招二维码"
+                }
+              ]
+            }
+          }
+        ],
+        "has_more": false,
+        "page_token": ""
+      }
+    },
+    "incremental": {
+      "code": 0,
+      "data": {
+        "items": [
+          {
+            "record_id": "rec_direct_001",
+            "fields": {
+              "title": "AI Product Manager",
+              "company": "Lingxi AI",
+              "location": "Shanghai",
+              "contentText": "招聘公告：AI Product Manager，负责 Agent 产品规划与落地，提供直接投递入口。",
+              "sourceUrl": "https://jobs.example.com/lingxi-ai/pm-001",
+              "links": [
+                {
+                  "url": "https://jobs.example.com/lingxi-ai/pm-001",
+                  "label": "立即投递",
+                  "type": "direct_apply",
+                  "isPrimary": true
+                }
+              ]
+            }
+          },
+          {
+            "record_id": "rec_qr_002",
+            "fields": {
+              "title": "",
+              "company": "",
+              "location": "",
+              "contentText": "扫码投递，请使用小程序提交申请。",
+              "images": [
+                {
+                  "id": "img_qr_1",
+                  "name": "qr.png",
+                  "note": "校招二维码"
+                }
+              ]
+            }
+          },
+          {
+            "record_id": "rec_announce_003",
+            "fields": {
+              "title": "AI Strategy PM",
+              "company": "Nova Agent",
+              "location": "Shanghai",
+              "contentText": "招聘公告：AI Strategy PM，负责 Agent 产品策略、商业化推进与项目协同，需要 3 年以上产品经验，公告正文已包含主要职责、要求和申请入口，文本充足可进入排序。",
+              "sourceUrl": "https://apply.nova-agent.cn/position/pm-strategy",
+              "links": [
+                {
+                  "url": "https://apply.nova-agent.cn/position/pm-strategy",
+                  "label": "公告详情",
+                  "type": "announcement",
+                  "isPrimary": true
+                }
+              ]
+            }
+          }
+        ],
+        "has_more": false,
+        "page_token": ""
+      }
+    },
+    "updated": {
+      "code": 0,
+      "data": {
+        "items": [
+          {
+            "record_id": "rec_direct_001",
+            "fields": {
+              "title": "AI Product Manager",
+              "company": "Lingxi AI",
+              "location": "Shanghai",
+              "contentText": "招聘公告：AI Product Manager，负责 Agent 产品规划、模型能力落地和增长闭环，提供直接投递入口，岗位说明已更新。",
+              "sourceUrl": "https://jobs.example.com/lingxi-ai/pm-001",
+              "links": [
+                {
+                  "url": "https://jobs.example.com/lingxi-ai/pm-001",
+                  "label": "立即投递",
+                  "type": "direct_apply",
+                  "isPrimary": true
+                }
+              ]
+            }
+          },
+          {
+            "record_id": "rec_qr_002",
+            "fields": {
+              "title": "",
+              "company": "",
+              "location": "",
+              "contentText": "扫码投递，请使用小程序提交申请。",
+              "images": [
+                {
+                  "id": "img_qr_1",
+                  "name": "qr.png",
+                  "note": "校招二维码"
+                }
+              ]
+            }
+          },
+          {
+            "record_id": "rec_announce_003",
+            "fields": {
+              "title": "AI Strategy PM",
+              "company": "Nova Agent",
+              "location": "Shanghai",
+              "contentText": "招聘公告：AI Strategy PM，负责 Agent 产品策略、商业化推进与项目协同，需要 3 年以上产品经验，公告正文已包含主要职责、要求和申请入口，文本充足可进入排序。",
+              "sourceUrl": "https://apply.nova-agent.cn/position/pm-strategy",
+              "links": [
+                {
+                  "url": "https://apply.nova-agent.cn/position/pm-strategy",
+                  "label": "公告详情",
+                  "type": "announcement",
+                  "isPrimary": true
+                }
+              ]
+            }
+          }
+        ],
+        "has_more": false,
+        "page_token": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "executionDto": {
+    "runId": "run_fixture_001",
+    "jobId": "job_fixture_001",
+    "tailoredResumeId": "tailored_fixture_001",
+    "prepDtoId": "prep_fixture_001",
+    "prepVersion": 2,
+    "gateSnapshot": {
+      "controlId": "control_fixture_001",
+      "status": "needs_human_review",
+      "reasons": ["High-risk signals were detected from decision risks."],
+      "blockingIssues": ["Risk level exceeds automatic execution threshold."],
+      "requiredActions": ["Human confirmation required due to high risk."],
+      "checkedAt": "2026-04-20T08:00:00.000Z"
+    },
+    "executionMode": "dry-run",
+    "confirmState": {
+      "state": "pending",
+      "required": true,
+      "confirmToken": "confirm_fixture_001",
+      "confirmedBy": "",
+      "confirmedAt": null
+    },
+    "targetUrl": "https://example.com/jobs/fixture",
+    "prefillPayload": {
+      "targetKeywords": ["agent", "workflow"],
+      "tailoredSummary": "Focuses on agent workflow execution.",
+      "rewriteBullets": ["Built execution workflow for job application."]
+    },
+    "formPayload": {},
+    "auditContext": {
+      "actor": "system",
+      "source": "fixture",
+      "note": "Fixture for contract validation."
+    },
+    "trace": {
+      "runId": "run_fixture_001",
+      "source": "fixture",
+      "createdBy": "system"
+    },
+    "createdAt": "2026-04-20T08:00:00.000Z",
+    "updatedAt": "2026-04-20T08:00:00.000Z"
+  },
+  "submitContract": {
+    "submitId": "submit_fixture_001",
+    "runId": "run_fixture_001",
+    "jobId": "job_fixture_001",
+    "tailoredResumeId": "tailored_fixture_001",
+    "prepVersion": 2,
+    "gateSnapshot": {
+      "controlId": "control_fixture_001",
+      "status": "needs_human_review",
+      "blockingIssues": [],
+      "requiredActions": ["Human confirmation required due to high risk."],
+      "checkedAt": "2026-04-20T08:05:00.000Z"
+    },
+    "confirmToken": "confirm_fixture_001",
+    "confirmState": "confirmed",
+    "submitMode": "manual_confirmed",
+    "outcome": "submitted",
+    "failureReason": "",
+    "submittedAt": "2026-04-20T08:10:00.000Z",
+    "trace": {
+      "runId": "run_fixture_001",
+      "source": "fixture"
+    }
+  }
+}
+

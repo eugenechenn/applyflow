@@ -1,4 +1,16 @@
-﻿# ApplyFlow 下一阶段路线分析
+﻿# 历史文档说明
+
+> 本文档为历史记录，不再作为 ApplyFlow partial_rebuild 的当前基线。
+> 当前重构基线请使用：
+> - README.md
+> - PROJECT_CONTEXT.md
+> - docs/APPLYFLOW_REBUILD_PLAN.md
+> - docs/APPLYFLOW_ARCHITECTURE.md
+> - docs/DEPRECATION_AND_REMOVAL_PLAN.md
+
+---
+
+# ApplyFlow 下一阶段路线分析
 
 更新时间：2026-04-18
 
@@ -331,3 +343,4 @@ ApplyFlow 当前已经优于不少“单页分析器”，因为它已经有：
 - 它的用户价值强于继续纯堆 parser
 - 它的面试展示价值非常高
 - 它是“从需求出发”的 AI 功能，而不是为了炫技加 agent
+

@@ -1,0 +1,24 @@
+{
+  "requiredTokens": [
+    "function normalizeLightweightProfileSafe(",
+    "function isOnboardingCompleteSafe(",
+    "normalizeLightweightProfileSafe({",
+    "const onboardingSource = profileData?.profile || readOnboardingProfileLocal() || {}",
+    "isOnboardingCompleteSafe(onboardingSource)",
+    "function renderRankingSection(",
+    "function renderShortlistSection(",
+    "function renderLeadResolutionSection(",
+    "function attachDiscoveryActionHandlers("
+  ],
+  "requiredRoutes": [
+    "#/dashboard",
+    "#/jobs",
+    "#/profile"
+  ],
+  "requiredRouteHandlers": [
+    "if (parts[0] === \"dashboard\" || parts[0] === \"\")",
+    "if (parts[0] === \"jobs\")",
+    "if (parts[0] === \"profile\")",
+    "if (parts[0] === \"discovery\")"
+  ]
+}

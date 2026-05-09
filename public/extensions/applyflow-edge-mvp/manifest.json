@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyFlow Edge Assistant (MVP)",
+  "version": "0.1.10",
+  "description": "ApplyFlow local browser assistant MVP for one-click prefill.",
+  "permissions": ["storage", "activeTab", "tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "ApplyFlow Assistant",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ]
+}

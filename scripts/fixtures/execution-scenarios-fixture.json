@@ -1,0 +1,199 @@
+{
+  "successCase": {
+    "executionDryRun": {
+      "runId": "run_success_001",
+      "jobId": "job_success_001",
+      "tailoredResumeId": "tailored_success_001",
+      "prepDtoId": "prep_success_001",
+      "prepVersion": 1,
+      "gateSnapshot": {
+        "controlId": "control_success_001",
+        "status": "allowed",
+        "reasons": ["Decision is apply and no blockers found."],
+        "blockingIssues": [],
+        "requiredActions": [],
+        "checkedAt": "2026-04-20T09:00:00.000Z"
+      },
+      "executionMode": "dry-run",
+      "confirmState": {
+        "state": "confirmed",
+        "required": false,
+        "confirmToken": "",
+        "confirmedBy": "system",
+        "confirmedAt": "2026-04-20T09:00:00.000Z"
+      },
+      "targetUrl": "https://example.com/jobs/success",
+      "prefillPayload": {
+        "targetKeywords": ["agent", "workflow"],
+        "tailoredSummary": "Tailored summary for execution success flow.",
+        "rewriteBullets": ["Built contract-driven execution gates."]
+      },
+      "formPayload": {},
+      "auditContext": {
+        "actor": "system",
+        "source": "execution_scenarios_fixture"
+      },
+      "trace": {
+        "runId": "run_success_001",
+        "source": "execution_scenarios_fixture",
+        "createdBy": "system"
+      },
+      "createdAt": "2026-04-20T09:00:00.000Z",
+      "updatedAt": "2026-04-20T09:00:00.000Z"
+    },
+    "submit": {
+      "submitId": "submit_success_001",
+      "runId": "run_success_001",
+      "jobId": "job_success_001",
+      "tailoredResumeId": "tailored_success_001",
+      "prepVersion": 1,
+      "gateSnapshot": {
+        "controlId": "control_success_001",
+        "status": "allowed",
+        "blockingIssues": [],
+        "requiredActions": [],
+        "checkedAt": "2026-04-20T09:01:00.000Z"
+      },
+      "confirmToken": "",
+      "confirmState": "confirmed",
+      "submitMode": "manual_confirmed",
+      "outcome": "submitted",
+      "failureReason": "",
+      "submittedAt": "2026-04-20T09:02:00.000Z",
+      "trace": {
+        "runId": "run_success_001",
+        "source": "execution_scenarios_fixture"
+      }
+    }
+  },
+  "runtimeGuardScenarios": {
+    "blockedSubmit": {
+      "jobId": "job_exec_blocked",
+      "status": "ready_to_apply",
+      "gateStatus": "blocked",
+      "confirmState": "confirmed",
+      "expectedErrorCode": "CONTROL_GATE_BLOCKED"
+    },
+    "reviewRequiredSubmit": {
+      "jobId": "job_exec_review",
+      "status": "ready_to_apply",
+      "gateStatus": "needs_human_review",
+      "confirmState": "pending",
+      "expectedErrorCode": "HUMAN_CONFIRM_REQUIRED"
+    },
+    "submitPreconditionError": {
+      "jobId": "job_exec_precondition",
+      "status": "to_prepare",
+      "gateStatus": "allowed",
+      "confirmState": "confirmed",
+      "expectedErrorCode": "SUBMIT_PRECONDITION_NOT_READY"
+    },
+    "missingGateSnapshot": {
+      "jobId": "job_exec_no_gate",
+      "status": "ready_to_apply",
+      "gateStatus": "",
+      "confirmState": "confirmed",
+      "expectedErrorCode": "CONTROL_GATE_REQUIRED"
+    },
+    "invalidConfirmToken": {
+      "jobId": "job_exec_bad_token",
+      "status": "ready_to_apply",
+      "expectedErrorCode": "INVALID_CONFIRM_TOKEN"
+    },
+    "missingSubmitContract": {
+      "jobId": "job_exec_missing_contract",
+      "status": "ready_to_apply",
+      "expectedErrorCode": "SUBMIT_CONTRACT_MISSING"
+    }
+  },
+  "invalidContractCases": {
+    "executionModeInvalid": {
+      "dto": {
+        "runId": "run_invalid_mode",
+        "jobId": "job_invalid_mode",
+        "tailoredResumeId": "tailored_invalid_mode",
+        "prepDtoId": "prep_invalid_mode",
+        "executionMode": "auto-pilot",
+        "gateSnapshot": {
+          "controlId": "control_invalid_mode",
+          "status": "allowed",
+          "reasons": [],
+          "blockingIssues": [],
+          "requiredActions": []
+        },
+        "confirmState": {
+          "state": "confirmed",
+          "required": false
+        },
+        "auditContext": {
+          "actor": "system",
+          "source": "fixture"
+        }
+      },
+      "expectedErrorContains": "executionMode is invalid"
+    },
+    "missingGateSnapshot": {
+      "dto": {
+        "runId": "run_invalid_gate",
+        "jobId": "job_invalid_gate",
+        "tailoredResumeId": "tailored_invalid_gate",
+        "prepDtoId": "prep_invalid_gate",
+        "executionMode": "dry-run",
+        "confirmState": {
+          "state": "pending",
+          "required": true
+        },
+        "auditContext": {
+          "actor": "system",
+          "source": "fixture"
+        }
+      },
+      "expectedErrorContains": "gateSnapshot must be an object"
+    },
+    "submitUnconfirmed": {
+      "contract": {
+        "submitId": "submit_unconfirmed",
+        "runId": "run_unconfirmed",
+        "jobId": "job_unconfirmed",
+        "tailoredResumeId": "tailored_unconfirmed",
+        "prepVersion": 1,
+        "gateSnapshot": {
+          "controlId": "control_unconfirmed",
+          "status": "needs_human_review",
+          "blockingIssues": [],
+          "requiredActions": ["Human confirmation required due to high risk."]
+        },
+        "confirmToken": "confirm_unconfirmed",
+        "confirmState": "pending",
+        "submitMode": "manual_confirmed",
+        "outcome": "submitted"
+      },
+      "expectedErrorContains": "confirmState must be confirmed when outcome is submitted"
+    },
+    "dtoTypeError": {
+      "dto": {
+        "runId": "run_type_error",
+        "jobId": "job_type_error",
+        "tailoredResumeId": "tailored_type_error",
+        "prepDtoId": "prep_type_error",
+        "executionMode": "dry-run",
+        "gateSnapshot": {
+          "controlId": "control_type_error",
+          "status": "allowed",
+          "reasons": "not-array",
+          "blockingIssues": [],
+          "requiredActions": []
+        },
+        "confirmState": {
+          "state": "confirmed",
+          "required": false
+        },
+        "auditContext": {
+          "actor": "system",
+          "source": "fixture"
+        }
+      },
+      "expectedErrorContains": "gateSnapshot.reasons must be an array"
+    }
+  }
+}

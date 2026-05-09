@@ -1,0 +1,92 @@
+{
+  "sessionBase": {
+    "sessionId": "browser_session_001",
+    "jobId": "job_browser_001",
+    "listingId": "listing_browser_001",
+    "targetUrl": "https://example.com/apply/123",
+    "supportedAdapter": "generic_html_form",
+    "fieldFillResults": [
+      {
+        "fieldKey": "name",
+        "outcome": "filled",
+        "source": "prefill_payload",
+        "reason": "Matched input name field"
+      },
+      {
+        "fieldKey": "email",
+        "outcome": "filled",
+        "source": "prefill_payload",
+        "reason": "Matched input email field"
+      },
+      {
+        "fieldKey": "phone",
+        "outcome": "missing",
+        "source": "prefill_payload",
+        "reason": "No compatible input was detected"
+      }
+    ],
+    "artifacts": {
+      "currentUrl": "https://example.com/apply/123",
+      "pageTitle": "Apply - Example",
+      "screenshotRefs": ["browser://shots/001.png"],
+      "evidenceRefs": ["browser://evidence/dom-summary-001.json"],
+      "notes": ["phone field requires manual input"]
+    },
+    "trace": {
+      "runId": "run_browser_001",
+      "source": "validate-browser-apply-skeleton",
+      "adapterVersion": "v1",
+      "actor": "system"
+    }
+  },
+  "transitionCases": {
+    "validPath": ["created", "page_loaded", "form_detected", "prefilled", "ready_for_confirm", "confirmed", "submitted"],
+    "invalidFromCreatedToSubmitted": ["created", "submitted"]
+  },
+  "bridgeFixture": {
+    "executionDto": {
+      "runId": "run_browser_001",
+      "jobId": "job_browser_001",
+      "tailoredResumeId": "tailored_job_browser_001",
+      "prepDtoId": "prep_job_browser_001",
+      "prepVersion": 1,
+      "gateSnapshot": {
+        "controlId": "control_browser_001",
+        "status": "allowed",
+        "reasons": ["allowed by policy"],
+        "blockingIssues": [],
+        "requiredActions": [],
+        "checkedAt": "2026-04-22T10:00:00.000Z"
+      },
+      "executionMode": "live",
+      "confirmState": {
+        "state": "confirmed",
+        "required": true,
+        "confirmToken": "token_browser_001",
+        "confirmedBy": "user",
+        "confirmedAt": "2026-04-22T10:01:00.000Z"
+      },
+      "targetUrl": "https://example.com/apply/123",
+      "prefillPayload": {
+        "name": "Chen Ming",
+        "email": "chen@example.com"
+      },
+      "formPayload": {},
+      "admissionContext": {
+        "listingId": "listing_browser_001"
+      },
+      "auditContext": {
+        "actor": "system",
+        "source": "validate-browser-apply-skeleton"
+      },
+      "trace": {
+        "runId": "run_browser_001",
+        "source": "validate-browser-apply-skeleton",
+        "createdBy": "system"
+      },
+      "createdAt": "2026-04-22T10:00:00.000Z",
+      "updatedAt": "2026-04-22T10:00:00.000Z"
+    }
+  }
+}
+
