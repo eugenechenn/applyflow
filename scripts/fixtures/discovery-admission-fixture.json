@@ -1,0 +1,53 @@
+{
+  "intentInput": {
+    "keywords": ["ai", "agent", "workflow", "llm"],
+    "city": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "mid",
+    "riskTolerance": "medium",
+    "constraints": {
+      "mustHaveSkills": [],
+      "blockedCompanies": ["Blocked Corp"]
+    }
+  },
+  "candidates": [
+    {
+      "sourceUrl": "https://linkedin.com/jobs/view/9001",
+      "title": "AI Agent Product Manager",
+      "company": "NovaAI",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "Lead AI agent workflow and LLM product strategy.",
+      "requirements": [
+        "workflow design",
+        "llm product delivery",
+        "cross-functional collaboration"
+      ]
+    },
+    {
+      "sourceUrl": "https://example.com/jobs/9002",
+      "title": "AI Product Manager",
+      "company": "Signal Labs",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "Build AI agent workflow products with partial ownership.",
+      "requirements": [
+        "ai feature planning"
+      ]
+    },
+    {
+      "sourceUrl": "https://example.com/jobs/9003",
+      "title": "General PM",
+      "company": "Blocked Corp",
+      "location": "Shanghai",
+      "jobType": "full_time",
+      "seniority": "mid",
+      "jdSummary": "General product management role.",
+      "requirements": [
+        "coordination"
+      ]
+    }
+  ]
+}

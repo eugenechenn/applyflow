@@ -1,27 +1,35 @@
+﻿# 历史文档说明
+
+> 本文档为历史记录，不再作为 ApplyFlow partial_rebuild 的当前基线。
+> 当前重构基线请使用：
+> - README.md
+> - PROJECT_CONTEXT.md
+> - docs/APPLYFLOW_REBUILD_PLAN.md
+> - docs/APPLYFLOW_ARCHITECTURE.md
+> - docs/DEPRECATION_AND_REMOVAL_PLAN.md
+
+---
+
 # ApplyFlow Technical Design v1
 
-日期：2026-04-14
+鏃ユ湡锛?026-04-14
 
-## 1. 目标
+## 1. 鐩爣
 
-本设计文档定义 ApplyFlow MVP 的工程落地方案，目标是用最轻量的方式搭建一个可 demo、可继续开发、能体现共享状态和 Agent 编排的 MVP 骨架。
-
-本版本优先实现：
-- 统一共享对象模型
-- Job 生命周期状态机
+鏈璁℃枃妗ｅ畾涔?ApplyFlow MVP 鐨勫伐绋嬭惤鍦版柟妗堬紝鐩爣鏄敤鏈€杞婚噺鐨勬柟寮忔惌寤轰竴涓彲 demo銆佸彲缁х画寮€鍙戙€佽兘浣撶幇鍏变韩鐘舵€佸拰 Agent 缂栨帓鐨?MVP 楠ㄦ灦銆?
+鏈増鏈紭鍏堝疄鐜帮細
+- 缁熶竴鍏变韩瀵硅薄妯″瀷
+- Job 鐢熷懡鍛ㄦ湡鐘舵€佹満
 - Orchestrator + Agent stub
 - Mock API
-- 可展示前端工作台
-- Demo 数据流
+- 鍙睍绀哄墠绔伐浣滃彴
+- Demo 鏁版嵁娴?
+鏈増鏈殏涓嶅疄鐜帮細
+- 鐪熷疄鏁版嵁搴?- 鐪熷疄 LLM 鎺ㄧ悊
+- 鑷姩鎶曢€?- 娴忚鍣ㄨ嚜鍔ㄥ寲
+- 閲嶅瀷鐭ヨ瘑搴?/ RAG
 
-本版本暂不实现：
-- 真实数据库
-- 真实 LLM 推理
-- 自动投递
-- 浏览器自动化
-- 重型知识库 / RAG
-
-## 2. 总体架构
+## 2. 鎬讳綋鏋舵瀯
 
 ```mermaid
 flowchart TD
@@ -36,81 +44,75 @@ flowchart TD
     STORE --> LOG["ActivityLog"]
 ```
 
-## 3. 前端模块划分
+## 3. 鍓嶇妯″潡鍒掑垎
 
-| 模块 | 责任 |
+| 妯″潡 | 璐ｄ换 |
 |---|---|
-| `Dashboard` | 展示关键指标、待办、近期岗位 |
-| `Jobs` | 岗位列表、状态、匹配分 |
-| `Job Detail` | 单岗位中枢页，串联评估、准备、状态更新、日志 |
-| `Prep` | 展示申请材料准备结果 |
-| `Interviews` | 面试复盘录入和回放 |
-| `Profile` | 用户画像查看与编辑 |
-| `Client Router` | 根据 hash 渲染页面 |
-| `API Client` | 请求后端 mock API |
+| `Dashboard` | 灞曠ず鍏抽敭鎸囨爣銆佸緟鍔炪€佽繎鏈熷矖浣?|
+| `Jobs` | 宀椾綅鍒楄〃銆佺姸鎬併€佸尮閰嶅垎 |
+| `Job Detail` | 鍗曞矖浣嶄腑鏋㈤〉锛屼覆鑱旇瘎浼般€佸噯澶囥€佺姸鎬佹洿鏂般€佹棩蹇?|
+| `Prep` | 灞曠ず鐢宠鏉愭枡鍑嗗缁撴灉 |
+| `Interviews` | 闈㈣瘯澶嶇洏褰曞叆鍜屽洖鏀?|
+| `Profile` | 鐢ㄦ埛鐢诲儚鏌ョ湅涓庣紪杈?|
+| `Client Router` | 鏍规嵁 hash 娓叉煋椤甸潰 |
+| `API Client` | 璇锋眰鍚庣 mock API |
 
-## 4. 后端模块划分
+## 4. 鍚庣妯″潡鍒掑垎
 
-| 模块 | 文件建议 | 责任 |
+| 妯″潡 | 鏂囦欢寤鸿 | 璐ｄ换 |
 |---|---|---|
-| HTTP 入口 | `server.js` | 启动 server |
-| Request Router | `src/server/app.js` | 静态资源与 API 分发 |
-| In-memory Store | `src/server/store.js` | 统一共享状态读写 |
-| API Handlers | `src/server/routes/api.js` | 定义 REST 风格接口 |
-| Orchestrator | `src/lib/orchestrator/workflow-controller.js` | 编排 Agent 与状态更新 |
-| Agent Registry | `src/lib/orchestrator/agent-registry.js` | 维护 Agent 实现映射 |
-| Per-agent Stubs | `src/lib/orchestrator/agents/*` | 各功能 Agent 的结构化输出 |
-| State Machine | `src/lib/state/job-status.js` | 状态枚举与流转校验 |
-| Mock Data | `src/mock/applyflow-demo-data.js` | 初始 demo 数据 |
+| HTTP 鍏ュ彛 | `server.js` | 鍚姩 server |
+| Request Router | `src/server/app.js` | 闈欐€佽祫婧愪笌 API 鍒嗗彂 |
+| In-memory Store | `src/server/store.js` | 缁熶竴鍏变韩鐘舵€佽鍐?|
+| API Handlers | `src/server/routes/api.js` | 瀹氫箟 REST 椋庢牸鎺ュ彛 |
+| Orchestrator | `src/lib/orchestrator/workflow-controller.js` | 缂栨帓 Agent 涓庣姸鎬佹洿鏂?|
+| Agent Registry | `src/lib/orchestrator/agent-registry.js` | 缁存姢 Agent 瀹炵幇鏄犲皠 |
+| Per-agent Stubs | `src/lib/orchestrator/agents/*` | 鍚勫姛鑳?Agent 鐨勭粨鏋勫寲杈撳嚭 |
+| State Machine | `src/lib/state/job-status.js` | 鐘舵€佹灇涓句笌娴佽浆鏍￠獙 |
+| Mock Data | `src/mock/applyflow-demo-data.js` | 鍒濆 demo 鏁版嵁 |
 
-## 5. Agent 调用链路
+## 5. Agent 璋冪敤閾捐矾
 
-### 5.1 新岗位导入
-
+### 5.1 鏂板矖浣嶅鍏?
 1. `POST /api/jobs/ingest`
-2. API handler 调用 `orchestrator.ingestJob`
-3. `Job Ingestion Agent` 返回结构化 Job
-4. Store 保存 Job
-5. 自动写入 `ActivityLog`
+2. API handler 璋冪敤 `orchestrator.ingestJob`
+3. `Job Ingestion Agent` 杩斿洖缁撴瀯鍖?Job
+4. Store 淇濆瓨 Job
+5. 鑷姩鍐欏叆 `ActivityLog`
 
-### 5.2 匹配评估
+### 5.2 鍖归厤璇勪及
 
 1. `POST /api/jobs/:id/evaluate`
-2. API handler 调用 `orchestrator.evaluateJob`
-3. `Fit Evaluation Agent` 返回 `FitAssessment`
-4. 更新 Job 的 `fitAssessmentId`
-5. 根据结果建议状态流转到 `to_prepare` 或 `archived`
-6. 写入 `ActivityLog`
+2. API handler 璋冪敤 `orchestrator.evaluateJob`
+3. `Fit Evaluation Agent` 杩斿洖 `FitAssessment`
+4. 鏇存柊 Job 鐨?`fitAssessmentId`
+5. 鏍规嵁缁撴灉寤鸿鐘舵€佹祦杞埌 `to_prepare` 鎴?`archived`
+6. 鍐欏叆 `ActivityLog`
 
-### 5.3 申请材料准备
+### 5.3 鐢宠鏉愭枡鍑嗗
 
 1. `POST /api/jobs/:id/prepare`
-2. Orchestrator 读取 Job + Profile + FitAssessment
-3. `Application Prep Agent` 返回 `ApplicationPrep`
-4. 更新 Job 的 `applicationPrepId`
-5. 若 checklist 达到最低要求，允许状态进入 `ready_to_apply`
-6. 写入 `ActivityLog`
+2. Orchestrator 璇诲彇 Job + Profile + FitAssessment
+3. `Application Prep Agent` 杩斿洖 `ApplicationPrep`
+4. 鏇存柊 Job 鐨?`applicationPrepId`
+5. 鑻?checklist 杈惧埌鏈€浣庤姹傦紝鍏佽鐘舵€佽繘鍏?`ready_to_apply`
+6. 鍐欏叆 `ActivityLog`
 
-### 5.4 状态更新
-
+### 5.4 鐘舵€佹洿鏂?
 1. `POST /api/jobs/:id/status`
-2. Orchestrator 调用状态机校验
-3. 若合法，更新 Job 状态
-4. `Pipeline Manager Agent` 补充下一步建议和任务
-5. 写入 `ActivityLog`
+2. Orchestrator 璋冪敤鐘舵€佹満鏍￠獙
+3. 鑻ュ悎娉曪紝鏇存柊 Job 鐘舵€?4. `Pipeline Manager Agent` 琛ュ厖涓嬩竴姝ュ缓璁拰浠诲姟
+5. 鍐欏叆 `ActivityLog`
 
-### 5.5 面试复盘
+### 5.5 闈㈣瘯澶嶇洏
 
 1. `POST /api/interviews/reflect`
-2. `Interview Reflection Agent` 返回结构化复盘
-3. 保存 `InterviewReflection`
-4. 关联到 Job
-5. 写入 `ActivityLog`
+2. `Interview Reflection Agent` 杩斿洖缁撴瀯鍖栧鐩?3. 淇濆瓨 `InterviewReflection`
+4. 鍏宠仈鍒?Job
+5. 鍐欏叆 `ActivityLog`
 
-## 6. 共享状态对象设计
-
-核心对象：
-- `UserProfile`
+## 6. 鍏变韩鐘舵€佸璞¤璁?
+鏍稿績瀵硅薄锛?- `UserProfile`
 - `Job`
 - `FitAssessment`
 - `ApplicationPrep`
@@ -118,8 +120,7 @@ flowchart TD
 - `InterviewReflection`
 - `ActivityLog`
 
-### 6.1 共享状态结构
-
+### 6.1 鍏变韩鐘舵€佺粨鏋?
 ```json
 {
   "profile": {},
@@ -132,10 +133,9 @@ flowchart TD
 }
 ```
 
-## 7. 数据模型 Schema
+## 7. 鏁版嵁妯″瀷 Schema
 
-字段定义以 `src/types/applyflow.ts` 为准。下面给出简化版 JSON Schema 说明。
-
+瀛楁瀹氫箟浠?`src/types/applyflow.ts` 涓哄噯銆備笅闈㈢粰鍑虹畝鍖栫増 JSON Schema 璇存槑銆?
 ### 7.1 UserProfile
 
 ```json
@@ -204,10 +204,9 @@ flowchart TD
 }
 ```
 
-## 8. API 设计
+## 8. API 璁捐
 
-统一成功格式：
-
+缁熶竴鎴愬姛鏍煎紡锛?
 ```json
 {
   "success": true,
@@ -215,8 +214,7 @@ flowchart TD
 }
 ```
 
-统一错误格式：
-
+缁熶竴閿欒鏍煎紡锛?
 ```json
 {
   "success": false,
@@ -247,8 +245,7 @@ Request:
 
 ### 8.2 `GET /api/profile`
 
-返回当前用户画像。
-
+杩斿洖褰撳墠鐢ㄦ埛鐢诲儚銆?
 ### 8.3 `POST /api/jobs/ingest`
 
 Request:
@@ -267,12 +264,10 @@ Request:
 
 ### 8.4 `GET /api/jobs`
 
-返回岗位列表。
-
+杩斿洖宀椾綅鍒楄〃銆?
 ### 8.5 `GET /api/jobs/:id`
 
-返回岗位聚合详情：
-
+杩斿洖宀椾綅鑱氬悎璇︽儏锛?
 ```json
 {
   "success": true,
@@ -289,12 +284,10 @@ Request:
 
 ### 8.6 `POST /api/jobs/:id/evaluate`
 
-触发岗位评估，返回 `fitAssessment` 和更新后的 `job`。
-
+瑙﹀彂宀椾綅璇勪及锛岃繑鍥?`fitAssessment` 鍜屾洿鏂板悗鐨?`job`銆?
 ### 8.7 `POST /api/jobs/:id/prepare`
 
-生成申请材料，返回 `applicationPrep` 和更新后的 `job`。
-
+鐢熸垚鐢宠鏉愭枡锛岃繑鍥?`applicationPrep` 鍜屾洿鏂板悗鐨?`job`銆?
 ### 8.8 `POST /api/jobs/:id/status`
 
 Request:
@@ -322,44 +315,36 @@ Request:
 
 ### 8.10 `GET /api/dashboard/summary`
 
-返回：
-- 状态数量
-- 待办任务
-- 最近岗位
-- 需要跟进的岗位
+杩斿洖锛?- 鐘舵€佹暟閲?- 寰呭姙浠诲姟
+- 鏈€杩戝矖浣?- 闇€瑕佽窡杩涚殑宀椾綅
 
-## 9. 状态机实现方案
+## 9. 鐘舵€佹満瀹炵幇鏂规
 
-### 9.1 状态枚举
-
-以 `src/lib/state/job-status.ts` 和 `src/lib/state/job-status.js` 为准。
-
-### 9.2 流转校验
+### 9.1 鐘舵€佹灇涓?
+浠?`src/lib/state/job-status.ts` 鍜?`src/lib/state/job-status.js` 涓哄噯銆?
+### 9.2 娴佽浆鏍￠獙
 
 ```ts
 canTransitionJobStatus(currentStatus, nextStatus): boolean
 ```
 
-### 9.3 校验落点
+### 9.3 鏍￠獙钀界偣
 
-| 层 | 是否校验 |
+| 灞?| 鏄惁鏍￠獙 |
 |---|---|
-| API handler | 是 |
-| Orchestrator | 是 |
-| 前端按钮可见性 | 是，弱校验 |
+| API handler | 鏄?|
+| Orchestrator | 鏄?|
+| 鍓嶇鎸夐挳鍙鎬?| 鏄紝寮辨牎楠?|
 
-## 10. 日志 / ActivityLog 设计
+## 10. 鏃ュ織 / ActivityLog 璁捐
 
-记录范围：
-- Profile 保存
-- Job 导入
-- FitAssessment 生成
-- ApplicationPrep 生成
-- Job 状态更新
-- InterviewReflection 生成
+璁板綍鑼冨洿锛?- Profile 淇濆瓨
+- Job 瀵煎叆
+- FitAssessment 鐢熸垚
+- ApplicationPrep 鐢熸垚
+- Job 鐘舵€佹洿鏂?- InterviewReflection 鐢熸垚
 
-核心字段：
-- `entityType`
+鏍稿績瀛楁锛?- `entityType`
 - `entityId`
 - `action`
 - `actor`
@@ -367,63 +352,53 @@ canTransitionJobStatus(currentStatus, nextStatus): boolean
 - `metadata`
 - `createdAt`
 
-## 11. 错误处理与回退策略
+## 11. 閿欒澶勭悊涓庡洖閫€绛栫暐
 
-| 场景 | 处理 |
+| 鍦烘櫙 | 澶勭悊 |
 |---|---|
-| 缺少必填字段 | `VALIDATION_ERROR` |
-| Job 不存在 | `NOT_FOUND` |
-| 非法状态流转 | `INVALID_STATUS_TRANSITION` |
-| 缺少 Profile | `PROFILE_REQUIRED` |
-| Agent 执行异常 | `AGENT_EXECUTION_FAILED` |
+| 缂哄皯蹇呭～瀛楁 | `VALIDATION_ERROR` |
+| Job 涓嶅瓨鍦?| `NOT_FOUND` |
+| 闈炴硶鐘舵€佹祦杞?| `INVALID_STATUS_TRANSITION` |
+| 缂哄皯 Profile | `PROFILE_REQUIRED` |
+| Agent 鎵ц寮傚父 | `AGENT_EXECUTION_FAILED` |
 
-回退原则：
-- JD 解析不完整时保留原始文本
-- 没有评估结果也允许打开岗位详情
-- 没有申请准备结果时 Prep 展示引导态
-- 没有复盘时 Interviews 展示空状态
-
-## 12. P0 / P1 开发优先级
+鍥為€€鍘熷垯锛?- JD 瑙ｆ瀽涓嶅畬鏁存椂淇濈暀鍘熷鏂囨湰
+- 娌℃湁璇勪及缁撴灉涔熷厑璁告墦寮€宀椾綅璇︽儏
+- 娌℃湁鐢宠鍑嗗缁撴灉鏃?Prep 灞曠ず寮曞鎬?- 娌℃湁澶嶇洏鏃?Interviews 灞曠ず绌虹姸鎬?
+## 12. P0 / P1 寮€鍙戜紭鍏堢骇
 
 ### P0
 
-- 统一对象模型
-- 状态机与非法流转防护
-- Demo 数据
+- 缁熶竴瀵硅薄妯″瀷
+- 鐘舵€佹満涓庨潪娉曟祦杞槻鎶?- Demo 鏁版嵁
 - In-memory store
 - Orchestrator
-- 10 个核心 API
-- Dashboard / Jobs / Job Detail / Prep / Profile 页面骨架
-- README 与技术设计文档
-
+- 10 涓牳蹇?API
+- Dashboard / Jobs / Job Detail / Prep / Profile 椤甸潰楠ㄦ灦
+- README 涓庢妧鏈璁℃枃妗?
 ### P1
 
-- Interviews 页面增强
-- 编辑和保存 ApplicationPrep
-- Task 自动生成策略
-- Dashboard 指标细化
-- 真实持久化层
-- 真实 LLM 接入
+- Interviews 椤甸潰澧炲己
+- 缂栬緫鍜屼繚瀛?ApplicationPrep
+- Task 鑷姩鐢熸垚绛栫暐
+- Dashboard 鎸囨爣缁嗗寲
+- 鐪熷疄鎸佷箙鍖栧眰
+- 鐪熷疄 LLM 鎺ュ叆
 
-## 13. Demo 数据流说明
+## 13. Demo 鏁版嵁娴佽鏄?
+### Case A: 寮烘帹鑽愭姇閫?
+1. 鎵撳紑 Dashboard
+2. 杩涘叆 `NovaMind AI / AI Product Manager`
+3. 鏌ョ湅 `strong_yes` 璇勪及
+4. 杩涘叆 Prep 鏌ョ湅绠€鍘嗘敼鍐欏拰鑷垜浠嬬粛
+5. 鍦?Job Detail 閲屾洿鏂颁负 `applied`
 
-### Case A: 强推荐投递
+### Case B: 璋ㄦ厧鎶曢€?
+1. 鎵撳紑 Jobs
+2. 鏌ョ湅 `Northstar Commerce / Senior Product Strategy Manager`
+3. 瑙傚療 `cautious_yes` 涓庨闄╂彁绀?4. 鍐冲畾鏄惁缁х画鍑嗗
 
-1. 打开 Dashboard
-2. 进入 `NovaMind AI / AI Product Manager`
-3. 查看 `strong_yes` 评估
-4. 进入 Prep 查看简历改写和自我介绍
-5. 在 Job Detail 里更新为 `applied`
+### Case C: 涓嶅缓璁姇閫?
+1. 鏌ョ湅 `BluePeak Media / Director of Advertising Operations`
+2. 瑙傚療 `no` 缁撹涓?`archived` 鐘舵€?3. 浣滀负鈥滅郴缁熻竟鐣屾竻鏅扳€濈殑绀轰緥灞曠ず
 
-### Case B: 谨慎投递
-
-1. 打开 Jobs
-2. 查看 `Northstar Commerce / Senior Product Strategy Manager`
-3. 观察 `cautious_yes` 与风险提示
-4. 决定是否继续准备
-
-### Case C: 不建议投递
-
-1. 查看 `BluePeak Media / Director of Advertising Operations`
-2. 观察 `no` 结论与 `archived` 状态
-3. 作为“系统边界清晰”的示例展示

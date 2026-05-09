@@ -6,22 +6,130 @@ const { logActivity } = require("./activity-logger");
 const { agentRegistry } = require("./agent-registry");
 const { runAgentStage } = require("./stage-runner");
 const logger = require("../../server/platform/logger");
-const { exportTailoredResumeDocx } = require("../resume/resume-exporter");
+const { exportTailoredResumeDocx, exportTailoredResumePdf } = require("../resume/resume-exporter");
+const { buildExportDtoFromContracts } = require("../resume/export-dto-mapper");
 const { parseResumeWithBestEffort, getResumeParserUrl } = require("../resume/resume-parser-client");
 const { runRuleBasedResumeTailoringAgent, refineResumeBullet } = require("./agents/resume-tailoring-agent-v2");
+const { buildJobDecisionFromFitAssessment } = require("../decision/job-decision-mapper");
+const { buildControlGateResultFromJobDecision } = require("../control/control-gate-evaluator");
+const { recordFeedbackTrace } = require("../feedback/feedback-trace-recorder");
+const {
+  createTailoredResumeContract,
+  validateTailoredResumeContract
+} = require("../contracts/tailored-resume-contracts");
+const { createPrepDto, validatePrepDto } = require("../contracts/prep-dto-contracts");
+const {
+  createExecutionDto,
+  validateExecutionDto,
+  createSubmitContract,
+  validateSubmitContract
+} = require("../contracts/execution-contracts");
+const {
+  createResumeExportContract,
+  validateResumeExportContract,
+  validateExportDto,
+  completeResumeExportContractSuccess,
+  completeResumeExportContractFailure
+} = require("../contracts/resume-export-contracts");
+const {
+  buildCanonicalResumeFromResumeDocument
+} = require("../workspace/legacy-resume-adapter");
 const {
   buildJobSummaryModel,
   normalizeResumeWorkspaceAsset: normalizeResumeWorkspaceAssetModel,
+  normalizeResumeWorkspaceAssetFromMasterResume,
   buildTailoredWorkspaceResume: buildTailoredWorkspaceResumeModel,
   buildWorkspaceInsights,
   buildWorkspaceReviewModules
 } = require("../workspace/tailoring-workspace-model");
+const {
+  buildJobWorkspaceViewModel,
+  extractFeedbackTraces,
+  buildResumeViewModel,
+  buildFeedbackTimelineView,
+  buildExecutionSessionView,
+  buildTailoringWorkspaceViewModel,
+  buildTailoringWorkspaceEditDto
+} = require("../workspace/job-workspace-view-model");
+const {
+  buildJobScoringViewModel,
+  attachScoringToJobWorkspaceViewModel,
+  buildJobDeduplicationContext
+} = require("../jobs/job-scoring-view-model");
+const { applyLlmScoringToTopJobs } = require("../jobs/job-llm-scoring-view");
+const {
+  hasExplicitJobPreferenceProfile,
+  normalizeLightweightProfile,
+  normalizeJobPreferenceProfile,
+  buildLightweightProfileFromJobPreferenceProfile
+} = require("../jobs/job-preference-profile");
+const {
+  buildMasterResumeSeedFromResumeDocument,
+  buildEmptyMasterResume,
+  buildMasterResumeViewModel,
+  buildMasterResumeEditDto
+} = require("../workspace/master-resume-view-model");
+const {
+  createBrowserExecutionBridgeInput,
+  validateBrowserExecutionBridgeInput,
+  createBrowserExecutionBridgeResult,
+  validateBrowserExecutionBridgeResult
+} = require("../browser/browser-apply-bridge");
+const { buildBrowserApplyViewModel } = require("../browser/browser-apply-view-model");
+const { runGenericHtmlFormSession } = require("../browser/browser-apply-session-runner");
+const {
+  createMasterResumeContract,
+  validateMasterResumeContract
+} = require("../contracts/master-resume-contracts");
+const {
+  createDiscoveryIntent,
+  importCandidatesToCanonicalListings,
+  saveLeadProcessingResult,
+  getLeadProcessingResultByIntent,
+  getDiscoveryIntent,
+  listCanonicalListingsByIntent,
+  getDedupCandidatePoolByIntent,
+  getBatchDecisionResultByIntent,
+  getRankingResultByIntent,
+  getShortlistResultByIntent,
+  getCanonicalListingByIntentAndListingId,
+  createShortlistAdmission
+} = require("../discovery/job-discovery-pipeline");
+const { ingestFeishuRawLeads } = require("../discovery/feishu-lead-adapter");
+const { syncFeishuBitableLeads } = require("../discovery/feishu-sync-layer");
+const {
+  loadOfflineJsonBatch,
+  buildLeadProcessingResultFromOfflineJson
+} = require("../discovery/offline-json-source-adapter");
+const { buildLeadResolutionViewModel } = require("../discovery/lead-resolution-view-model");
+const {
+  validateShortlistAdmissionContract
+} = require("../contracts/job-shortlist-admission-contracts");
 
 const assertJobStatusTransition =
   jobStatusModule?.assertJobStatusTransition ||
   function assertJobStatusTransitionFallback() {
     throw new Error("assertJobStatusTransition is not available.");
   };
+const TRACKER_STATES = new Set([
+  "none",
+  "saved",
+  "prep",
+  "tailored",
+  "applied",
+  "interview",
+  "rejected",
+  "offer"
+]);
+const FEEDBACK_STATES = new Set(["none", "good_fit", "bad_fit", "misclassified"]);
+const SHORTLIST_STATES = new Set(["none", "shortlisted"]);
+const MATERIAL_RESUME_STATES = new Set(["none", "draft", "tailored", "finalized"]);
+const MATERIAL_COVER_LETTER_STATES = new Set(["none", "draft", "tailored", "finalized"]);
+const MATERIAL_INTERVIEW_PREP_STATES = new Set(["none", "draft", "ready"]);
+const SUBMISSION_AUDIT_STATUS_STATES = new Set(["none", "ready", "submitted", "failed", "needs_review"]);
+const SUBMISSION_AUDIT_SOURCE_STATES = new Set(["manual", "plugin", "system"]);
+const FOLLOW_UP_STATUS_STATES = new Set(["none", "planned", "done", "skipped"]);
+const FOLLOW_UP_CHANNEL_STATES = new Set(["email", "phone", "linkedin", "other"]);
 
 function safeGetAllowedNextStatuses(currentStatus) {
   const resolver = jobStatusModule?.getAllowedNextStatuses;
@@ -129,8 +237,47 @@ function normalizeResumeWorkspaceAsset(resumeDocument = null, profile = {}) {
   return normalizeResumeWorkspaceAssetModel(resumeDocument, profile);
 }
 
-function buildTailoredWorkspaceResume(tailoringOutput = null, baseResumeAsset = {}) {
-  return buildTailoredWorkspaceResumeModel(tailoringOutput, baseResumeAsset);
+function resolveTailoringMasterResumeSource(profile = {}, resumeDocument = null) {
+  const savedCanonicalMasterResume = store.getMasterResume();
+  if (savedCanonicalMasterResume) {
+    const masterResume = createMasterResumeContract(savedCanonicalMasterResume);
+    const validation = validateMasterResumeContract(masterResume);
+    if (validation.valid) {
+      return {
+        masterResume,
+        source: "canonical_saved",
+        sourceResumeId: masterResume.trace?.sourceResumeId || resumeDocument?.id || ""
+      };
+    }
+  }
+
+  if (resumeDocument) {
+    const masterResume = buildMasterResumeSeedFromResumeDocument(resumeDocument, profile);
+    return {
+      masterResume,
+      source: "resume_document_seed",
+      sourceResumeId: resumeDocument.id || ""
+    };
+  }
+
+  return {
+    masterResume: buildEmptyMasterResume(profile),
+    source: "empty_seed",
+    sourceResumeId: ""
+  };
+}
+
+function buildTailoringBaseResumeAsset({ profile = {}, resumeDocument = null, masterResume = null } = {}) {
+  if (masterResume) {
+    return sanitizeCanonicalResumeAsset(
+      normalizeResumeWorkspaceAssetFromMasterResume(masterResume, profile, resumeDocument)
+    );
+  }
+  return sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, profile));
+}
+
+function buildTailoredWorkspaceResume(tailoringOutput = null, baseResumeAsset = {}, jobSummary = {}) {
+  return buildTailoredWorkspaceResumeModel(tailoringOutput, baseResumeAsset, jobSummary);
 }
 
 function deriveRoleBucket(job) {
@@ -763,6 +910,11 @@ async function evaluateJob(jobId) {
   fitAssessment.overrideApplied = Boolean(override);
   fitAssessment.overrideSummary = override ? `${override.action}${override.reason ? `: ${override.reason}` : ""}` : null;
   store.saveFitAssessment(fitAssessment);
+  const jobDecision = buildJobDecisionFromFitAssessment({
+    job,
+    fitAssessment,
+    userId: profile.id
+  });
 
   const updatedJob = updateJob(jobId, () => ({
     fitAssessmentId: fitAssessment.id,
@@ -792,24 +944,181 @@ async function evaluateJob(jobId) {
     summary: `已为 ${job.company} 生成匹配评估。`,
     agentName: "匹配评估阶段",
     inputSummary: `已根据用户画像做岗位对比：目标岗位=${summarizeList(profile.targetRoles)}，目标行业=${summarizeList(profile.targetIndustries)}。`,
-    outputSummary: `匹配度=${fitAssessment.fitScore}，推荐结论=${humanizeRecommendationCode(fitAssessment.recommendation)}，策略判断=${resolvedDecision}，下一状态=${humanizeLifecycleStatus(resolvedStatus)}${fitAssessment.llmMeta?.fallbackUsed ? "，使用规则回退评估。" : "，使用模型辅助评估。"}`,
-    decisionReason: fitAssessment.strategyReasoning,
-    policyInfluenceSummary: fitAssessment.policyInfluenceSummary,
-    decisionBreakdown: fitAssessment.decisionBreakdown,
-    activePolicyVersion: fitAssessment.activePolicyVersion,
-    policyProposalId: fitAssessment.policyProposalId,
-    overrideApplied: fitAssessment.overrideApplied,
-    overrideSummary: fitAssessment.overrideSummary,
+      outputSummary: `匹配度=${fitAssessment.fitScore}，推荐结论=${humanizeRecommendationCode(fitAssessment.recommendation)}，策略判断=${resolvedDecision}，下一状态=${humanizeLifecycleStatus(resolvedStatus)}${fitAssessment.llmMeta?.fallbackUsed ? "，使用规则回退评估。" : "，使用模型辅助评估。"}`,
+      decisionReason: fitAssessment.strategyReasoning,
+      activePolicyVersion: fitAssessment.activePolicyVersion,
+      policyProposalId: fitAssessment.policyProposalId,
+      overrideApplied: fitAssessment.overrideApplied,
+      overrideSummary: fitAssessment.overrideSummary,
     metadata: {
       jobId,
       fitScore: fitAssessment.fitScore,
       recommendation: fitAssessment.recommendation,
       strategyDecision: fitAssessment.strategyDecision,
+      jobDecision,
       llm: fitAssessment.llmMeta || null
     }
   });
 
-  return { job: updatedJob, fitAssessment, nextTask, globalPolicy };
+  recordFeedbackTrace({
+    jobId,
+    decisionId: jobDecision.decisionId || fitAssessment.id || "",
+    eventType: "decision_generated",
+    outcome: "succeeded",
+    actor: "system",
+    jobDecision,
+    executionSnapshot: {
+      stage: "evaluate",
+      status: "completed",
+      details: "Job decision generated from fit assessment."
+    },
+    runId: jobDecision.trace?.runId || fitAssessment.id || "",
+    source: "workflow_controller.evaluate"
+  });
+
+  return { job: updatedJob, fitAssessment, jobDecision, nextTask, globalPolicy };
+}
+
+function buildJobDecisionSnapshotForJob(job, fitAssessment = null) {
+  if (!fitAssessment) return null;
+  return buildJobDecisionFromFitAssessment({
+    job,
+    fitAssessment,
+    userId: fitAssessment.profileId || store.getProfile()?.id || ""
+  });
+}
+
+function buildControlGateResultForJob({
+  job,
+  fitAssessment,
+  jobDecision = null,
+  traceSource = "execution_gate"
+}) {
+  const decision = jobDecision || buildJobDecisionSnapshotForJob(job, fitAssessment);
+  if (!decision) {
+    const error = new Error("JobDecision is required before execution gate.");
+    error.code = "DECISION_REQUIRED";
+    throw error;
+  }
+  const globalPolicy = store.getGlobalStrategyPolicy() || {};
+  return buildControlGateResultFromJobDecision({
+    jobDecision: decision,
+    job,
+    policyVersion: createPolicyVersion(globalPolicy),
+    trace: {
+      source: traceSource,
+      version: "workflow-controller.control-gate.v1",
+      runId: decision.trace?.runId || decision.decisionId || ""
+    }
+  });
+}
+
+function assertExecutionAllowed(controlGateResult, context = "execution", feedbackContext = {}) {
+  if (controlGateResult.status === "allowed") return;
+
+  recordFeedbackTrace({
+    jobId: feedbackContext.jobId || "",
+    decisionId: feedbackContext.jobDecision?.decisionId || feedbackContext.decisionId || "",
+    controlId: controlGateResult.controlId || "",
+    eventType: "execution_blocked",
+    outcome: "blocked",
+    actor: feedbackContext.actor || "system",
+    jobDecision: feedbackContext.jobDecision || null,
+    controlGateResult,
+    executionSnapshot: {
+      stage: feedbackContext.stage || "execution",
+      status: "blocked",
+      details: `Blocked before ${context}.`
+    },
+    failureReason: controlGateResult.blockingIssues?.join("; ") || "Blocked by control gate.",
+    runId: controlGateResult.trace?.runId || "",
+    source: "workflow_controller.control_gate"
+  });
+
+  const error =
+    controlGateResult.status === "blocked"
+      ? new Error("Execution blocked by control gate.")
+      : new Error("Execution requires human review before proceeding.");
+  error.code =
+    controlGateResult.status === "blocked"
+      ? "CONTROL_GATE_BLOCKED"
+      : "CONTROL_GATE_REVIEW_REQUIRED";
+  error.details = {
+    context,
+    controlGateResult
+  };
+  throw error;
+}
+
+function normalizeAdmissionContext(admission = null) {
+  if (!admission || typeof admission !== "object") {
+    return {
+      admissionId: "",
+      intentId: "",
+      shortlistId: "",
+      listingId: "",
+      admissionStatus: "",
+      admissionBucket: "",
+      selectionReason: ""
+    };
+  }
+  return {
+    admissionId: String(admission.admissionId || "").trim(),
+    intentId: String(admission.intentId || "").trim(),
+    shortlistId: String(admission.shortlistId || "").trim(),
+    listingId: String(admission.listingId || "").trim(),
+    admissionStatus: String(admission.admissionStatus || "").trim(),
+    admissionBucket: String(admission.admissionBucket || "").trim(),
+    selectionReason: String(admission.selectionReason || "").trim()
+  };
+}
+
+function assertShortlistAdmissionForPrepare(job = {}, options = {}) {
+  const admission = job?.shortlistAdmission || null;
+  const discoveryContext = job?.discoveryContext || null;
+  if (!discoveryContext?.intentId && !discoveryContext?.listingId && !admission) {
+    return null;
+  }
+
+  if (!admission || typeof admission !== "object") {
+    const error = new Error("Discovery-sourced job requires shortlist admission before prepare.");
+    error.code = "SHORTLIST_ADMISSION_REQUIRED";
+    error.details = {
+      jobId: job.id,
+      discoveryContext
+    };
+    throw error;
+  }
+
+  const validation = validateShortlistAdmissionContract(admission);
+  if (!validation.ok) {
+    const error = new Error(`Invalid shortlist admission on job: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_SHORTLIST_ADMISSION_CONTRACT";
+    error.details = { errors: validation.errors, admission, jobId: job.id };
+    throw error;
+  }
+
+  if (admission.admissionStatus === "admitted" || admission.admissionStatus === "overridden") {
+    return admission;
+  }
+
+  if (admission.admissionStatus === "override_required") {
+    const error = new Error("Listing requires explicit override before prepare.");
+    error.code = "SHORTLIST_OVERRIDE_REQUIRED";
+    error.details = {
+      jobId: job.id,
+      admission
+    };
+    throw error;
+  }
+
+  const error = new Error("Listing is blocked by shortlist admission policy.");
+  error.code = "SHORTLIST_ADMISSION_BLOCKED";
+  error.details = {
+    jobId: job.id,
+    admission
+  };
+  throw error;
 }
 
 function containsPersonalInfoContamination(value = "") {
@@ -984,6 +1293,8 @@ function buildTailoringOutputRecord({
   job = null,
   fitAssessment = null,
   resumeDocument = null,
+  masterResume = null,
+  masterResumeSource = "",
   workspaceDraft = {},
   workspaceName = "",
   refinePrompt = "",
@@ -1002,6 +1313,8 @@ function buildTailoringOutputRecord({
     jobId: job?.id || existingTailoringOutput?.jobId || null,
     fitAssessmentId: fitAssessment?.id || existingTailoringOutput?.fitAssessmentId || null,
     resumeDocumentId: resumeDocument?.id || existingTailoringOutput?.resumeDocumentId || null,
+    masterResumeId: masterResume?.masterResumeId || existingTailoringOutput?.masterResumeId || null,
+    masterResumeSource: masterResumeSource || existingTailoringOutput?.masterResumeSource || "unknown",
     tailoredSummary: workspaceDraft.selfEvaluation || "",
     whyMe: "",
     workspaceDraft,
@@ -1015,7 +1328,7 @@ function buildTailoringOutputRecord({
       id: existingTailoringOutput?.workspace?.id || `workspace_${job?.id || createId("workspace")}`,
       name: resolvedName,
       activeVersion,
-      baseResumeAssetId: resumeDocument?.id || existingTailoringOutput?.workspace?.baseResumeAssetId || null,
+      baseResumeAssetId: masterResume?.masterResumeId || resumeDocument?.id || existingTailoringOutput?.workspace?.baseResumeAssetId || null,
       lastRefinePrompt: refinePrompt || existingTailoringOutput?.workspace?.lastRefinePrompt || "",
       updatedAt: nowIso(),
       lastSavedAt: nowIso()
@@ -1048,19 +1361,25 @@ async function generateResumeTailoringOutput(jobId, options = {}) {
     error.code = "PROFILE_REQUIRED";
     throw error;
   }
-  if (!resumeDocument) {
+  const masterResumeSource = resolveTailoringMasterResumeSource(profile, resumeDocument);
+  if (!resumeDocument && masterResumeSource.source !== "canonical_saved") {
     const error = new Error("请先上传原始简历，再生成岗位定制简历。");
     error.code = "RESUME_REQUIRED";
     throw error;
   }
 
-  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, profile));
+  const baseResumeAsset = buildTailoringBaseResumeAsset({
+    profile,
+    resumeDocument,
+    masterResume: masterResumeSource.masterResume
+  });
   const jobSummary = buildJobSummaryModel(job, fitAssessment, existingTailoringOutput);
   const fallbackAgentResult = runRuleBasedResumeTailoringAgent({
     job,
     profile,
     fitAssessment,
     resumeDocument,
+    masterResume: masterResumeSource.masterResume,
     refinePrompt
   });
   const workspaceDraft = buildCanonicalWorkspaceDraft(baseResumeAsset, jobSummary, fitAssessment, {
@@ -1068,14 +1387,16 @@ async function generateResumeTailoringOutput(jobId, options = {}) {
     selfEvaluation: fallbackAgentResult?.tailoredSummary || ""
   });
   const draftForModel = { workspaceDraft, tailoredSummary: workspaceDraft.selfEvaluation };
-  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset);
-  const reviewModules = buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
+  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset, jobSummary);
+  const reviewModules = buildWorkspaceReviewModules(baseResumeAsset, tailoredResume);
   const insights = buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume);
   const tailoringOutput = buildTailoringOutputRecord({
     existingTailoringOutput,
     job,
     fitAssessment,
     resumeDocument,
+    masterResume: masterResumeSource.masterResume,
+    masterResumeSource: masterResumeSource.source,
     workspaceDraft,
     workspaceName,
     refinePrompt,
@@ -1094,9 +1415,9 @@ async function generateResumeTailoringOutput(jobId, options = {}) {
     summary: `已为 ${job.company} 生成岗位定制版简历。`,
     jobId,
     agentName: "简历定制阶段",
-    inputSummary: `已基于岗位 ${job.title}、当前简历 ${resumeDocument.fileName} 与匹配评估结果生成定制版。`,
+    inputSummary: `已基于岗位 ${job.title}、canonical MasterResume（${masterResumeSource.source}）与匹配评估结果生成定制版。`,
     outputSummary: `生成 ${workspaceDraft.workExperience.length} 段定制工作经历、${workspaceDraft.projectExperience.length} 段定制项目经历。`,
-    decisionReason: "系统已切换到结构化简历实体建模路径，只保留公司、岗位、时间和要点进入工作区。"
+    decisionReason: "系统优先读取 canonical MasterResume 作为岗位定制主源，只保留结构化经历进入工作区。"
   });
 
   return {
@@ -1119,7 +1440,12 @@ function saveResumeTailoringOutput(jobId, payload = {}) {
     throw error;
   }
 
-  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, profile || {}));
+  const masterResumeSource = resolveTailoringMasterResumeSource(profile || {}, resumeDocument);
+  const baseResumeAsset = buildTailoringBaseResumeAsset({
+    profile: profile || {},
+    resumeDocument,
+    masterResume: masterResumeSource.masterResume
+  });
   const jobSummary = buildJobSummaryModel(job, fitAssessment, existingTailoringOutput);
   const suppliedDraft = payload.workspaceDraft || existingTailoringOutput?.workspaceDraft || {};
   const sanitizedDraftSource = sanitizeCanonicalResumeAsset({
@@ -1134,14 +1460,16 @@ function saveResumeTailoringOutput(jobId, payload = {}) {
     education: []
   };
   const draftForModel = { workspaceDraft, tailoredSummary: workspaceDraft.selfEvaluation };
-  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset);
-  const reviewModules = buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
+  const tailoredResume = buildTailoredWorkspaceResumeModel(draftForModel, baseResumeAsset, jobSummary);
+  const reviewModules = buildWorkspaceReviewModules(baseResumeAsset, tailoredResume);
   const insights = buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume);
   const tailoringOutput = buildTailoringOutputRecord({
     existingTailoringOutput,
     job,
     fitAssessment,
     resumeDocument,
+    masterResume: masterResumeSource.masterResume,
+    masterResumeSource: masterResumeSource.source,
     workspaceDraft,
     workspaceName: truncateText(payload.workspaceName || existingTailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(job), 120),
     refinePrompt: truncateText(payload.refinePrompt || existingTailoringOutput?.workspace?.lastRefinePrompt || "", 500),
@@ -1166,7 +1494,7 @@ function saveResumeTailoringOutput(jobId, payload = {}) {
   return tailoringOutput;
 }
 
-async function prepareJobApplication(jobId) {
+async function prepareJobApplication(jobId, payload = {}) {
   const job = store.getJob(jobId);
   const profile = store.getProfile();
   const fitAssessment = store.getFitAssessmentByJobId(jobId);
@@ -1177,55 +1505,238 @@ async function prepareJobApplication(jobId) {
     error.code = "NOT_FOUND";
     throw error;
   }
+  try {
+    const admission = assertShortlistAdmissionForPrepare(job, payload);
+    if (admission?.admissionStatus === "overridden") {
+      recordFeedbackTrace({
+        jobId,
+        decisionId: "",
+        eventType: "user_override",
+        outcome: "overridden",
+        actor: admission.override?.actor || admission.actor || "user",
+        executionSnapshot: {
+          stage: "prepare",
+          status: "override_applied",
+          details: `Shortlist admission override accepted from ${admission.admissionBucket}.`
+        },
+        userOverride: {
+          applied: true,
+          action: "shortlist_admission_override",
+          reason: admission.override?.overrideReason || ""
+        },
+        runId: admission.admissionId || "",
+        source: "workflow_controller.shortlist_admission"
+      });
+    }
+  } catch (error) {
+    if (["SHORTLIST_ADMISSION_REQUIRED", "SHORTLIST_OVERRIDE_REQUIRED", "SHORTLIST_ADMISSION_BLOCKED"].includes(error.code)) {
+      const admission = job?.shortlistAdmission || null;
+      recordFeedbackTrace({
+        jobId,
+        decisionId: "",
+        eventType: "execution_blocked",
+        outcome: "blocked",
+        actor: "system",
+        executionSnapshot: {
+          stage: "prepare",
+          status: "blocked",
+          details: error.message
+        },
+        failureReason: error.message,
+        userOverride: admission?.override?.applied
+          ? {
+              applied: true,
+              action: "shortlist_admission_override",
+              reason: admission.override?.overrideReason || ""
+            }
+          : { applied: false, action: "", reason: "" },
+        runId: admission?.admissionId || "",
+        source: "workflow_controller.shortlist_admission"
+      });
+    }
+    throw error;
+  }
+
   if (!profile) {
     const error = new Error("Profile is required before preparation.");
     error.code = "PROFILE_REQUIRED";
     throw error;
   }
-  if (!resumeDocument) {
+  const masterResumeSource = resolveTailoringMasterResumeSource(profile, resumeDocument);
+  if (!resumeDocument && masterResumeSource.source !== "canonical_saved") {
     const error = new Error("请先上传原始简历，再生成申请准备包。");
     error.code = "RESUME_REQUIRED";
     throw error;
   }
 
-  const tailoringOutput =
-    store.getTailoringOutputByJobId(jobId) ||
-    (await generateResumeTailoringOutput(jobId)).tailoringOutput;
-
-  const prepStage = await runAgentStage(
-    {
-      stageKey: "prep_generation",
-      stageLabel: "申请准备阶段",
-      agentName: "Application Prep Agent",
-      entityType: "application_prep",
-      entityId: job.applicationPrepId || job.id,
-      jobId,
-      inputSummary: `系统会复用岗位定制简历结果，继续生成自我介绍、问答草稿与投递附言。`
-    },
-    () => agentRegistry.applicationPrep({ job, profile, fitAssessment, resumeDocument, tailoringOutput })
-  );
-
-  const applicationPrep = prepStage.result;
-  store.saveApplicationPrep(applicationPrep);
-  const updatedJob = updateJob(jobId, () => ({
-    applicationPrepId: applicationPrep.id,
-    resumeDocumentId: resumeDocument.id
-  }));
-
-  logActivity({
-    type: "prep_saved",
-    entityType: "application_prep",
-    entityId: applicationPrep.id,
-    action: "prep_saved",
-    summary: `已为 ${job.company} 生成申请准备包。`,
+  const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+  const controlGateResult = buildControlGateResultForJob({
+    job,
+    fitAssessment,
+    jobDecision,
+    traceSource: "prepare_job_application"
+  });
+  recordFeedbackTrace({
     jobId,
-    agentName: "Application Prep Agent",
-    inputSummary: "系统已基于岗位定制简历结果继续生成申请准备材料。",
-    outputSummary: `问答草稿 ${applicationPrep.qaDraft?.length || 0} 条，沟通重点 ${(applicationPrep.talkingPoints || []).length || 0} 条。`,
-    decisionReason: "申请准备阶段只消费当前定制版与用户确认过的内容，不再直接读取脏文本。"
+    decisionId: jobDecision?.decisionId || "",
+    controlId: controlGateResult.controlId || "",
+    eventType: "control_evaluated",
+    outcome:
+      controlGateResult.status === "allowed"
+        ? "succeeded"
+        : controlGateResult.status === "blocked"
+          ? "blocked"
+          : "observed",
+    actor: "system",
+    jobDecision,
+    controlGateResult,
+    executionSnapshot: {
+      stage: "prepare",
+      status: "gate_checked",
+      details: `Control gate status: ${controlGateResult.status}`
+    },
+    runId: controlGateResult.trace?.runId || "",
+    source: "workflow_controller.prepare"
+  });
+  updateJob(jobId, () => ({
+    latestControlGateResult: controlGateResult
+  }));
+  assertExecutionAllowed(controlGateResult, "prepare_job_application", {
+    jobId,
+    jobDecision,
+    stage: "prepare",
+    actor: "system"
   });
 
-  return { job: updatedJob, applicationPrep, tailoringOutput, resumeDocument };
+  try {
+    const tailoringOutput =
+      store.getTailoringOutputByJobId(jobId) ||
+      (await generateResumeTailoringOutput(jobId)).tailoringOutput;
+    const tailoredResumeContract = buildTailoredResumeContractForJob({
+      job,
+      fitAssessment,
+      resumeDocument,
+      masterResume: masterResumeSource.masterResume,
+      tailoringOutput,
+      applicationPrep: store.getApplicationPrepByJobId(jobId) || null
+    });
+    const prepDto = buildPrepDtoFromContracts({
+      job,
+      resumeDocument,
+      tailoredResumeContract,
+      applicationPrep: store.getApplicationPrepByJobId(jobId) || null,
+      targetingBrief: tailoringOutput?.targetingBrief || null,
+      shortlistAdmission: job.shortlistAdmission || null
+    });
+    const executionDto = buildExecutionDtoFromContracts({
+      job,
+      controlGateResult,
+      tailoredResumeContract,
+      prepDto,
+      executionMode: "dry-run",
+      targetUrl: job.jobUrl || "",
+      actor: "system",
+      note: "Prepared execution context from tailored resume and prep dto.",
+      shortlistAdmission: job.shortlistAdmission || null
+    });
+    updateJob(jobId, () => ({
+      latestExecutionDto: executionDto
+    }));
+
+    const prepStage = await runAgentStage(
+      {
+        stageKey: "prep_generation",
+        stageLabel: "申请准备阶段",
+        agentName: "Application Prep Agent",
+        entityType: "application_prep",
+        entityId: job.applicationPrepId || job.id,
+        jobId,
+        inputSummary: `系统会复用岗位定制简历结果，继续生成自我介绍、问答草稿与投递附言。`
+      },
+      () =>
+        agentRegistry.applicationPrep({
+          job,
+          profile,
+          fitAssessment,
+          resumeDocument,
+          masterResume: masterResumeSource.masterResume,
+          tailoredResumeContract,
+          prepDto,
+          tailoringOutput
+        })
+    );
+
+    const applicationPrep = prepStage.result;
+    store.saveApplicationPrep(applicationPrep);
+    const updatedJob = updateJob(jobId, () => ({
+      applicationPrepId: applicationPrep.id,
+      resumeDocumentId: resumeDocument?.id || job.resumeDocumentId || null
+    }));
+
+    logActivity({
+      type: "prep_saved",
+      entityType: "application_prep",
+      entityId: applicationPrep.id,
+      action: "prep_saved",
+      summary: `已为 ${job.company} 生成申请准备包。`,
+      jobId,
+      agentName: "Application Prep Agent",
+      inputSummary: "系统已基于岗位定制简历结果继续生成申请准备材料。",
+      outputSummary: `问答草稿 ${applicationPrep.qaDraft?.length || 0} 条，沟通重点 ${(applicationPrep.talkingPoints || []).length || 0} 条。`,
+      decisionReason: "申请准备阶段只消费当前定制版与用户确认过的内容，不再直接读取脏文本。"
+    });
+
+    recordFeedbackTrace({
+      jobId,
+      decisionId: jobDecision?.decisionId || "",
+      controlId: controlGateResult.controlId || "",
+      eventType: "execution_prepared",
+      outcome: "succeeded",
+      actor: "system",
+      jobDecision,
+      controlGateResult,
+      executionSnapshot: {
+        stage: "prepare",
+        status: "completed",
+        details: "Application prep package generated."
+      },
+      runId: executionDto.runId || controlGateResult.trace?.runId || "",
+      source: "workflow_controller.prepare"
+    });
+
+    return {
+      job: updatedJob,
+      jobDecision,
+      controlGateResult,
+      applicationPrep,
+      tailoredResumeContract,
+      prepDto,
+      executionDto,
+      resumeDocument
+    };
+  } catch (error) {
+    if (!["CONTROL_GATE_BLOCKED", "CONTROL_GATE_REVIEW_REQUIRED"].includes(error.code)) {
+      recordFeedbackTrace({
+        jobId,
+        decisionId: jobDecision?.decisionId || "",
+        controlId: controlGateResult.controlId || "",
+        eventType: "execution_failed",
+        outcome: "failed",
+        actor: "system",
+        jobDecision,
+        controlGateResult,
+        executionSnapshot: {
+          stage: "prepare",
+          status: "failed",
+          details: "Failed while generating preparation output."
+        },
+        failureReason: error.message || "Unknown preparation failure.",
+        runId: controlGateResult.trace?.runId || "",
+        source: "workflow_controller.prepare"
+      });
+    }
+    throw error;
+  }
 }
 
 function saveApplicationPrep(jobId, payload = {}) {
@@ -1330,6 +1841,455 @@ function saveApplicationPrep(jobId, payload = {}) {
   };
 }
 
+function runExecutionDryRun(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const resumeDocument = store.getLatestResumeDocument();
+  const applicationPrep = store.getApplicationPrepByJobId(jobId);
+  const tailoringOutput = store.getTailoringOutputByJobId(jobId);
+
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (!applicationPrep || !tailoringOutput) {
+    const error = new Error("Dry-run requires prepared tailoring and prep data.");
+    error.code = "PREP_REQUIRED";
+    throw error;
+  }
+
+  const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+  const controlGateResult = buildControlGateResultForJob({
+    job,
+    fitAssessment,
+    jobDecision,
+    traceSource: "execution_dry_run"
+  });
+
+  if (controlGateResult.status === "blocked") {
+    assertExecutionAllowed(controlGateResult, "execution_dry_run", {
+      jobId,
+      jobDecision,
+      stage: "dry_run",
+      actor: "system"
+    });
+  }
+
+  const tailoredResumeContract = buildTailoredResumeContractForJob({
+    job,
+    fitAssessment,
+    resumeDocument,
+    tailoringOutput,
+    applicationPrep
+  });
+  const prepDto = buildPrepDtoFromContracts({
+    job,
+    resumeDocument,
+    tailoredResumeContract,
+    applicationPrep,
+    targetingBrief: tailoringOutput?.targetingBrief || null,
+    shortlistAdmission: job.shortlistAdmission || null
+  });
+  const executionDto = buildExecutionDtoFromContracts({
+    job,
+    controlGateResult,
+    tailoredResumeContract,
+    prepDto,
+    executionMode: "dry-run",
+    targetUrl: payload.targetUrl || job.jobUrl || "",
+    actor: "system",
+    note: "Dry-run execution prepared.",
+    shortlistAdmission: job.shortlistAdmission || null
+  });
+
+  const updatedJob = updateJob(jobId, () => ({
+    latestControlGateResult: controlGateResult,
+    latestExecutionDto: executionDto
+  }));
+
+  recordFeedbackTrace({
+    jobId,
+    decisionId: jobDecision?.decisionId || "",
+    controlId: controlGateResult.controlId || "",
+    eventType: "execution_dry_run",
+    outcome: controlGateResult.status === "blocked" ? "blocked" : "observed",
+    actor: "system",
+    jobDecision,
+    controlGateResult,
+    executionSnapshot: {
+      stage: "dry_run",
+      status: "completed",
+      details: "Execution dry-run finished with contract snapshot."
+    },
+    runId: executionDto.runId,
+    source: "workflow_controller.execution"
+  });
+
+  return { job: updatedJob, executionDto, controlGateResult, prepDto, tailoredResumeContract };
+}
+
+function buildDefaultBrowserFormSnapshot(mode = "standard", targetUrl = "") {
+  const normalizedMode = String(mode || "standard").trim();
+  if (normalizedMode === "no_form") {
+    return {
+      hasForm: false,
+      sourceUrl: targetUrl || "",
+      pageTitle: "ApplyFlow Browser Session",
+      features: {
+        hasCaptcha: false,
+        requiresLogin: false,
+        hasDeepIframe: false,
+        multiStepHeavy: false,
+        dynamicQuestionnaire: false
+      },
+      fields: []
+    };
+  }
+  if (normalizedMode === "blocked") {
+    return {
+      hasForm: true,
+      sourceUrl: targetUrl || "",
+      pageTitle: "ApplyFlow Browser Session",
+      features: {
+        hasCaptcha: true,
+        requiresLogin: true,
+        hasDeepIframe: true,
+        multiStepHeavy: true,
+        dynamicQuestionnaire: true
+      },
+      fields: [{ selector: "input[name='email']", name: "email", label: "Email", type: "email", required: true }]
+    };
+  }
+  return {
+    hasForm: true,
+    sourceUrl: targetUrl || "",
+    pageTitle: "ApplyFlow Browser Session",
+    features: {
+      hasCaptcha: false,
+      requiresLogin: false,
+      hasDeepIframe: false,
+      multiStepHeavy: false,
+      dynamicQuestionnaire: false
+    },
+    fields: [
+      { selector: "input[name='full_name']", name: "full_name", label: "Full Name", type: "text", required: true },
+      { selector: "input[name='email']", name: "email", label: "Email", type: "email", required: true },
+      { selector: "input[name='phone']", name: "phone", label: "Phone", type: "tel", required: false },
+      { selector: "input[name='resume']", name: "resume", label: "Resume Upload", type: "file", required: true },
+      {
+        selector: "textarea[name='cover_letter']",
+        name: "cover_letter",
+        label: "Cover Letter",
+        type: "textarea",
+        required: false
+      }
+    ]
+  };
+}
+
+function buildMockBrowserPage(formSnapshot = {}, targetUrl = "") {
+  return {
+    async getFormSnapshot() {
+      return formSnapshot;
+    },
+    async fillField() {
+      return true;
+    },
+    async uploadFile() {
+      return true;
+    },
+    async collectEvidence() {
+      return {
+        currentUrl: formSnapshot.sourceUrl || targetUrl || "",
+        pageTitle: formSnapshot.pageTitle || "ApplyFlow Browser Session",
+        screenshotRefs: ["browser://shots/session-latest.png"],
+        evidenceRefs: ["browser://evidence/session-latest.json"],
+        notes: ["Browser apply session executed in controlled simulation mode."]
+      };
+    }
+  };
+}
+
+async function runBrowserApplySession(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (!job.latestExecutionDto) {
+    const error = new Error("Browser apply session requires an execution run. Please run dry-run first.");
+    error.code = "EXECUTION_RUN_REQUIRED";
+    throw error;
+  }
+
+  const bridgeInput = createBrowserExecutionBridgeInput({
+    executionDto: job.latestExecutionDto,
+    controlGateResult: job.latestControlGateResult || null,
+    listingId: job.shortlistAdmission?.listingId || job.id || "",
+    trace: {
+      source: "workflow_controller.browser_apply",
+      actor: String(payload.actor || "user")
+    }
+  });
+  const bridgeInputValidation = validateBrowserExecutionBridgeInput(bridgeInput);
+  if (!bridgeInputValidation.ok) {
+    const error = new Error(`Invalid browser bridge input: ${bridgeInputValidation.errors.join("; ")}`);
+    error.code = "INVALID_BROWSER_BRIDGE_INPUT";
+    error.details = { errors: bridgeInputValidation.errors, bridgeInput };
+    throw error;
+  }
+
+  const formSnapshot =
+    payload.formSnapshot && typeof payload.formSnapshot === "object"
+      ? payload.formSnapshot
+      : buildDefaultBrowserFormSnapshot(payload.simulationMode || "standard", bridgeInput.targetUrl);
+
+  const runResult = await runGenericHtmlFormSession({
+    bridgeInput,
+    page: buildMockBrowserPage(formSnapshot, bridgeInput.targetUrl),
+    listingId: bridgeInput.listingId,
+    trace: {
+      source: "workflow_controller.browser_apply",
+      actor: String(payload.actor || "user")
+    }
+  });
+
+  const bridgeResult = createBrowserExecutionBridgeResult({
+    bridgeInput,
+    session: runResult.session,
+    trace: {
+      source: "workflow_controller.browser_apply"
+    }
+  });
+  const bridgeResultValidation = validateBrowserExecutionBridgeResult(bridgeResult);
+  if (!bridgeResultValidation.ok) {
+    const error = new Error(`Invalid browser bridge result: ${bridgeResultValidation.errors.join("; ")}`);
+    error.code = "INVALID_BROWSER_BRIDGE_RESULT";
+    error.details = { errors: bridgeResultValidation.errors, bridgeResult };
+    throw error;
+  }
+
+  const browserApplyViewModel = buildBrowserApplyViewModel({
+    session: runResult.session,
+    bridgeResult
+  });
+
+  const updatedJob = updateJob(jobId, () => ({
+    latestBrowserApplySession: runResult.session,
+    latestBrowserApplyBridgeResult: bridgeResult,
+    latestBrowserApplyViewModel: browserApplyViewModel
+  }));
+
+  logActivity({
+    type: "browser_apply_session_updated",
+    entityType: "browser_apply_session",
+    entityId: runResult.session.sessionId,
+    action: "browser_apply_session_updated",
+    summary: `Browser-assisted session status: ${runResult.session.status}`,
+    jobId
+  });
+
+  return {
+    job: updatedJob,
+    browserApplyViewModel,
+    nextAction: browserApplyViewModel.nextAction,
+    submitEligible: browserApplyViewModel.submitEligible
+  };
+}
+
+function confirmExecutionRun(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const latestExecutionDto = job?.latestExecutionDto || null;
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (!latestExecutionDto) {
+    const error = new Error("No execution run exists. Please start dry-run first.");
+    error.code = "EXECUTION_RUN_REQUIRED";
+    throw error;
+  }
+
+  const confirmToken = String(payload.confirmToken || "").trim();
+  if (latestExecutionDto.confirmState.required && confirmToken !== latestExecutionDto.confirmState.confirmToken) {
+    const error = new Error("Invalid confirm token.");
+    error.code = "INVALID_CONFIRM_TOKEN";
+    throw error;
+  }
+
+  const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+  const controlGateResult = buildControlGateResultForJob({
+    job,
+    fitAssessment,
+    jobDecision,
+    traceSource: "execution_confirm"
+  });
+  const confirmedExecutionDto = createExecutionDto({
+    ...latestExecutionDto,
+    gateSnapshot: {
+      controlId: controlGateResult.controlId || latestExecutionDto.gateSnapshot?.controlId || "",
+      status: controlGateResult.status || latestExecutionDto.gateSnapshot?.status || "",
+      reasons: controlGateResult.reasons || latestExecutionDto.gateSnapshot?.reasons || [],
+      blockingIssues: controlGateResult.blockingIssues || latestExecutionDto.gateSnapshot?.blockingIssues || [],
+      requiredActions: controlGateResult.requiredActions || latestExecutionDto.gateSnapshot?.requiredActions || [],
+      checkedAt: controlGateResult.checkedAt || nowIso()
+    },
+    confirmState: {
+      ...latestExecutionDto.confirmState,
+      state: "confirmed",
+      required: Boolean(latestExecutionDto.confirmState?.required),
+      confirmToken: latestExecutionDto.confirmState?.confirmToken || "",
+      confirmedBy: String(payload.actor || "user"),
+      confirmedAt: nowIso()
+    },
+    executionMode: "live",
+    updatedAt: nowIso()
+  });
+  const executionValidation = validateExecutionDto(confirmedExecutionDto);
+  if (!executionValidation.ok) {
+    const error = new Error(`Invalid confirmed Execution DTO: ${executionValidation.errors.join("; ")}`);
+    error.code = "INVALID_EXECUTION_DTO";
+    error.details = { errors: executionValidation.errors, executionDto: confirmedExecutionDto };
+    throw error;
+  }
+
+  const updatedJob = updateJob(jobId, () => ({
+    latestControlGateResult: controlGateResult,
+    latestExecutionDto: confirmedExecutionDto
+  }));
+
+  recordFeedbackTrace({
+    jobId,
+    decisionId: jobDecision?.decisionId || "",
+    controlId: controlGateResult.controlId || "",
+    eventType: "execution_confirmed",
+    outcome: "observed",
+    actor: String(payload.actor || "user"),
+    jobDecision,
+    controlGateResult,
+    executionSnapshot: {
+      stage: "human_confirm",
+      status: "completed",
+      details: "Human confirmation recorded."
+    },
+    runId: confirmedExecutionDto.runId || "",
+    source: "workflow_controller.execution"
+  });
+
+  return { job: updatedJob, executionDto: confirmedExecutionDto, controlGateResult };
+}
+
+function submitJobApplication(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
+  const latestExecutionDto = job?.latestExecutionDto || null;
+  const latestControlGateResult = job?.latestControlGateResult || null;
+
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  if (!latestExecutionDto) {
+    const error = new Error("Submit requires an execution run.");
+    error.code = "EXECUTION_RUN_REQUIRED";
+    throw error;
+  }
+  if (job.status !== "ready_to_apply") {
+    const error = new Error("Submit requires job status ready_to_apply.");
+    error.code = "SUBMIT_PRECONDITION_NOT_READY";
+    error.details = {
+      jobId,
+      currentStatus: job.status,
+      requiredStatus: "ready_to_apply"
+    };
+    throw error;
+  }
+
+  const controlGateResult =
+    latestControlGateResult || null;
+  if (!controlGateResult) {
+    const error = new Error("Submit requires an evaluated ControlGateResult.");
+    error.code = "CONTROL_GATE_REQUIRED";
+    throw error;
+  }
+  assertSubmitAllowed(controlGateResult, latestExecutionDto);
+
+  const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+  const submitContract = createSubmitContract({
+    submitId: createId("submit"),
+    runId: latestExecutionDto.runId,
+    jobId: job.id,
+    tailoredResumeId: latestExecutionDto.tailoredResumeId,
+    prepVersion: latestExecutionDto.prepVersion || 1,
+    gateSnapshot: {
+      controlId: controlGateResult.controlId || "",
+      status: controlGateResult.status || "",
+      blockingIssues: controlGateResult.blockingIssues || [],
+      requiredActions: controlGateResult.requiredActions || [],
+      checkedAt: controlGateResult.checkedAt || nowIso()
+    },
+    confirmToken: latestExecutionDto.confirmState?.confirmToken || "",
+    confirmState: latestExecutionDto.confirmState?.state || "pending",
+    submitMode: latestExecutionDto.executionMode === "live" ? "live_submit" : "manual_confirmed",
+    outcome: "submitted",
+    submittedAt: nowIso(),
+    trace: {
+      runId: latestExecutionDto.runId,
+      source: "workflow_controller.submit"
+    }
+  });
+  const submitValidation = validateSubmitContract(submitContract);
+  if (!submitValidation.ok) {
+    const error = new Error(`Invalid Submit contract: ${submitValidation.errors.join("; ")}`);
+    error.code = "INVALID_SUBMIT_CONTRACT";
+    error.details = { errors: submitValidation.errors, submitContract };
+    throw error;
+  }
+
+  updateJob(jobId, () => ({
+    latestSubmitContract: submitContract
+  }));
+
+  const transitioned = transitionJobStatus(jobId, "applied", {
+    actor: String(payload.actor || "user"),
+    source: "submit_contract",
+    submitContract,
+    executionDto: latestExecutionDto,
+    controlGateResult
+  });
+
+  recordFeedbackTrace({
+    jobId,
+    decisionId: jobDecision?.decisionId || "",
+    controlId: controlGateResult.controlId || "",
+    eventType: "execution_submitted",
+    outcome: "succeeded",
+    actor: String(payload.actor || "user"),
+    jobDecision,
+    controlGateResult,
+    executionSnapshot: {
+      stage: "submit",
+      status: "completed",
+      details: "Submit contract completed and status transitioned to applied."
+    },
+    runId: latestExecutionDto.runId || "",
+    source: "workflow_controller.submit"
+  });
+
+  return {
+    job: transitioned.job,
+    controlGateResult,
+    executionDto: latestExecutionDto,
+    submitContract,
+    nextTask: transitioned.nextTask || null
+  };
+}
+
 function isPrepReady(applicationPrep) {
   const requiredKeys = ["resume_reviewed", "intro_ready", "qa_ready"];
   const doneKeys = new Set(
@@ -1342,9 +2302,21 @@ function isPrepReady(applicationPrep) {
 
 function transitionJobStatus(jobId, nextStatus, options = {}) {
   const job = store.getJob(jobId);
+  const fitAssessment = store.getFitAssessmentByJobId(jobId);
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
     error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  if (nextStatus === "applied" && options.source !== "submit_contract") {
+    const error = new Error("Transition to applied must be driven by Submit Contract.");
+    error.code = "SUBMIT_CONTRACT_REQUIRED";
+    throw error;
+  }
+  if (nextStatus === "applied" && options.source === "submit_contract" && !options.submitContract) {
+    const error = new Error("Submit contract payload is required for transition to applied.");
+    error.code = "SUBMIT_CONTRACT_MISSING";
     throw error;
   }
 
@@ -1353,10 +2325,73 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
   if (nextStatus === "ready_to_apply") {
     const prep = store.getApplicationPrepByJobId(jobId);
     if (!prep || !isPrepReady(prep)) {
+      const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+      recordFeedbackTrace({
+        jobId,
+        decisionId: jobDecision?.decisionId || "",
+        eventType: "execution_failed",
+        outcome: "failed",
+        actor: options.actor || "user",
+        jobDecision,
+        executionSnapshot: {
+          stage: "status_transition",
+          status: "failed",
+          details: "Transition to ready_to_apply failed because prep checklist is incomplete."
+        },
+        failureReason: "Preparation checklist not ready.",
+        source: "workflow_controller.transition"
+      });
       const error = new Error("在核心申请准备清单完成之前，不能推进到可投递状态。");
       error.code = "PREP_NOT_READY";
       error.details = { jobId, requiredChecklist: ["resume_reviewed", "intro_ready", "qa_ready"] };
       throw error;
+    }
+  }
+
+  if (["ready_to_apply", "applied"].includes(nextStatus)) {
+    const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+    const controlGateResult =
+      options.controlGateResult ||
+      buildControlGateResultForJob({
+        job,
+        fitAssessment,
+        jobDecision,
+        traceSource: "transition_job_status"
+      });
+    recordFeedbackTrace({
+      jobId,
+      decisionId: jobDecision?.decisionId || "",
+      controlId: controlGateResult.controlId || "",
+      eventType: "control_evaluated",
+      outcome:
+        controlGateResult.status === "allowed"
+          ? "succeeded"
+          : controlGateResult.status === "blocked"
+            ? "blocked"
+            : "observed",
+      actor: options.actor || "user",
+      jobDecision,
+      controlGateResult,
+      executionSnapshot: {
+        stage: "status_transition",
+        status: "gate_checked",
+        details: `Transition gate checked before moving to ${nextStatus}.`
+      },
+      runId: controlGateResult.trace?.runId || "",
+      source: "workflow_controller.transition"
+    });
+    updateJob(jobId, () => ({
+      latestControlGateResult: controlGateResult
+    }));
+    if (nextStatus === "applied" && options.source === "submit_contract") {
+      assertSubmitAllowed(controlGateResult, options.executionDto || job.latestExecutionDto || null);
+    } else {
+      assertExecutionAllowed(controlGateResult, `transition_to_${nextStatus}`, {
+        jobId,
+        jobDecision,
+        stage: "status_transition",
+        actor: options.actor || "user"
+      });
     }
   }
 
@@ -1372,7 +2407,7 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     job: updatedJob,
     nextStatus,
     strategyDecision: updatedJob.strategyDecision,
-    fitAssessment: store.getFitAssessmentByJobId(jobId),
+    fitAssessment,
     globalPolicy
   });
 
@@ -1394,11 +2429,469 @@ function transitionJobStatus(jobId, nextStatus, options = {}) {
     triggerSource: "pipeline_manager"
   });
 
-  return { job: updatedJob, nextTask };
+  const latestControlGateResult = updatedJob.latestControlGateResult || null;
+  return { job: updatedJob, controlGateResult: latestControlGateResult, nextTask };
+}
+
+function updateJobTrackerState(jobId, nextState) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  const rawNextState = String(nextState || "").trim().toLowerCase();
+  if (!TRACKER_STATES.has(rawNextState)) {
+    const error = new Error(`Invalid tracker state: ${String(nextState || "")}.`);
+    error.code = "VALIDATION_ERROR";
+    error.details = {
+      field: "nextState",
+      allowedValues: [...TRACKER_STATES]
+    };
+    throw error;
+  }
+  const normalizedNextState = rawNextState;
+  const updatedJob = updateJob(jobId, (job) => {
+    const previousState = normalizeTrackerState(job?.trackerState || "");
+    const timeline = normalizeTrackerTimeline(job?.trackerTimeline || []);
+    if (normalizedNextState !== "none" && normalizedNextState !== previousState) {
+      timeline.unshift({
+        state: normalizedNextState,
+        timestamp: nowIso()
+      });
+    }
+    return {
+      trackerState: normalizedNextState,
+      trackerTimeline: timeline.slice(0, 20)
+    };
+  });
+
+  logActivity({
+    type: "job_tracker_state_changed",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_tracker_state_changed",
+    actor: "user",
+    jobId,
+    summary: `已更新跟进状态为 ${normalizedNextState}。`
+  });
+
+  return {
+    jobId,
+    trackerView: buildJobTrackerView(updatedJob)
+  };
+}
+
+function updateJobFeedbackState(jobId, nextState) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  const rawNextState = String(nextState || "").trim().toLowerCase();
+  if (!FEEDBACK_STATES.has(rawNextState)) {
+    const error = new Error(`Invalid feedback state: ${String(nextState || "")}.`);
+    error.code = "VALIDATION_ERROR";
+    error.details = {
+      field: "nextState",
+      allowedValues: [...FEEDBACK_STATES]
+    };
+    throw error;
+  }
+
+  const normalizedNextState = rawNextState;
+  const updatedJob = updateJob(jobId, (job) => {
+    const previousState = normalizeFeedbackState(job?.feedbackState || "");
+    const timeline = normalizeFeedbackTimeline(job?.feedbackTimeline || []);
+    if (normalizedNextState !== "none" && normalizedNextState !== previousState) {
+      timeline.unshift({
+        state: normalizedNextState,
+        timestamp: nowIso()
+      });
+    }
+    return {
+      feedbackState: normalizedNextState,
+      feedbackTimeline: timeline.slice(0, 20)
+    };
+  });
+
+  logActivity({
+    type: "job_feedback_state_changed",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_feedback_state_changed",
+    actor: "user",
+    jobId,
+    summary: `已更新反馈状态为 ${normalizedNextState}。`
+  });
+
+  return {
+    jobId,
+    feedbackView: buildJobFeedbackView(updatedJob)
+  };
+}
+
+function updateJobShortlistState(jobId, nextState) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+  const rawNextState = String(nextState || "").trim().toLowerCase();
+  if (!SHORTLIST_STATES.has(rawNextState)) {
+    const error = new Error(`Invalid shortlist state: ${String(nextState || "")}.`);
+    error.code = "VALIDATION_ERROR";
+    error.details = {
+      field: "nextState",
+      allowedValues: [...SHORTLIST_STATES]
+    };
+    throw error;
+  }
+
+  const normalizedNextState = rawNextState;
+  const updatedJob = updateJob(jobId, (job) => {
+    const previousState = normalizeShortlistState(job?.shortlistState || "");
+    const timeline = normalizeShortlistTimeline(job?.shortlistTimeline || []);
+    if (normalizedNextState !== "none" && normalizedNextState !== previousState) {
+      timeline.unshift({
+        state: normalizedNextState,
+        timestamp: nowIso()
+      });
+    }
+    return {
+      shortlistState: normalizedNextState,
+      shortlistTimeline: timeline.slice(0, 20)
+    };
+  });
+
+  logActivity({
+    type: "job_shortlist_state_changed",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_shortlist_state_changed",
+    actor: "user",
+    jobId,
+    details: {
+      fromState: normalizeShortlistState(currentJob?.shortlistState || ""),
+      toState: normalizedNextState
+    }
+  });
+
+  return {
+    jobId,
+    shortlistView: buildJobShortlistView(updatedJob)
+  };
+}
+
+function updateJobMaterialsPrep(jobId, payload = {}) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const normalizeEnum = (value, allowedStates, field) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!allowedStates.has(normalized)) {
+      const error = new Error(`Invalid ${field}: ${String(value || "")}.`);
+      error.code = "VALIDATION_ERROR";
+      error.details = {
+        field,
+        allowedValues: [...allowedStates]
+      };
+      throw error;
+    }
+    return normalized;
+  };
+
+  const nextResumeStatus = normalizeEnum(
+    payload.resumeStatus ?? currentJob?.materialsPrep?.resumeStatus ?? "none",
+    MATERIAL_RESUME_STATES,
+    "resumeStatus"
+  );
+  const nextCoverLetterStatus = normalizeEnum(
+    payload.coverLetterStatus ?? currentJob?.materialsPrep?.coverLetterStatus ?? "none",
+    MATERIAL_COVER_LETTER_STATES,
+    "coverLetterStatus"
+  );
+  const nextInterviewPrepStatus = normalizeEnum(
+    payload.interviewPrepStatus ?? currentJob?.materialsPrep?.interviewPrepStatus ?? "none",
+    MATERIAL_INTERVIEW_PREP_STATES,
+    "interviewPrepStatus"
+  );
+  const nextNotes = String(payload.notes ?? currentJob?.materialsPrep?.notes ?? "").trim().slice(0, 2000);
+  const currentMaterialsPrep = normalizeMaterialsPrepView(currentJob?.materialsPrep || {});
+  const hasChanged =
+    currentMaterialsPrep.resumeStatus !== nextResumeStatus ||
+    currentMaterialsPrep.coverLetterStatus !== nextCoverLetterStatus ||
+    currentMaterialsPrep.interviewPrepStatus !== nextInterviewPrepStatus ||
+    currentMaterialsPrep.notes !== nextNotes;
+
+  const updatedJob = updateJob(jobId, (job) => {
+    const existing = normalizeMaterialsPrepView(job?.materialsPrep || {});
+    if (!hasChanged) {
+      return {
+        materialsPrep: {
+          ...existing
+        }
+      };
+    }
+    return {
+      materialsPrep: {
+        resumeStatus: nextResumeStatus,
+        coverLetterStatus: nextCoverLetterStatus,
+        interviewPrepStatus: nextInterviewPrepStatus,
+        notes: nextNotes,
+        lastUpdatedAt: nowIso()
+      }
+    };
+  });
+
+  logActivity({
+    type: "job_materials_prep_updated",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_materials_prep_updated",
+    actor: "user",
+    jobId,
+    summary: "已更新材料准备记录。"
+  });
+
+  return {
+    jobId,
+    materialsPrepView: buildJobMaterialsPrepView(updatedJob)
+  };
+}
+
+function updateJobSubmissionAudit(jobId, payload = {}) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const normalizeEnum = (value, allowedStates, field) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!allowedStates.has(normalized)) {
+      const error = new Error(`Invalid ${field}: ${String(value || "")}.`);
+      error.code = "VALIDATION_ERROR";
+      error.details = {
+        field,
+        allowedValues: [...allowedStates]
+      };
+      throw error;
+    }
+    return normalized;
+  };
+
+  const currentAudit = normalizeSubmissionAuditView(currentJob?.submissionAudit || {});
+  const nextStatus = normalizeEnum(
+    payload.status ?? currentAudit.status ?? "none",
+    SUBMISSION_AUDIT_STATUS_STATES,
+    "status"
+  );
+  const nextSource = normalizeEnum(
+    payload.source ?? currentAudit.source ?? "manual",
+    SUBMISSION_AUDIT_SOURCE_STATES,
+    "source"
+  );
+  const nextLastError = String(payload.lastError ?? currentAudit.lastError ?? "").trim().slice(0, 2000);
+  const nextNotes = String(payload.notes ?? currentAudit.notes ?? "").trim().slice(0, 2000);
+  const hasContentChanged =
+    currentAudit.status !== nextStatus ||
+    currentAudit.source !== nextSource ||
+    currentAudit.lastError !== nextLastError ||
+    currentAudit.notes !== nextNotes;
+  const shouldRecordAttempt = hasContentChanged && nextStatus !== "none";
+
+  const updatedJob = updateJob(jobId, (job) => {
+    const existing = normalizeSubmissionAuditView(job?.submissionAudit || {});
+    if (!hasContentChanged) {
+      return {
+        submissionAudit: {
+          ...existing
+        }
+      };
+    }
+
+    const now = nowIso();
+    const isSubmittedNow = nextStatus === "submitted";
+    const submittedAt = isSubmittedNow ? existing.submittedAt || now : existing.submittedAt;
+    const attemptCount = shouldRecordAttempt ? Number(existing.attemptCount || 0) + 1 : Number(existing.attemptCount || 0);
+    const lastAttemptAt = shouldRecordAttempt ? now : existing.lastAttemptAt;
+
+    return {
+      submissionAudit: {
+        status: nextStatus,
+        source: nextSource,
+        submittedAt,
+        lastAttemptAt,
+        attemptCount,
+        lastError: nextLastError,
+        notes: nextNotes
+      }
+    };
+  });
+
+  logActivity({
+    type: "job_submission_audit_updated",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_submission_audit_updated",
+    actor: "user",
+    jobId,
+    summary: "已更新投递提交审计记录。"
+  });
+
+  return {
+    jobId,
+    submissionAuditView: buildJobSubmissionAuditView(updatedJob)
+  };
+}
+
+function updateJobFollowUp(jobId, payload = {}) {
+  const currentJob = store.getJob(jobId);
+  if (!currentJob) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const normalizeEnum = (value, allowedStates, field) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!allowedStates.has(normalized)) {
+      const error = new Error(`Invalid ${field}: ${String(value || "")}.`);
+      error.code = "VALIDATION_ERROR";
+      error.details = {
+        field,
+        allowedValues: [...allowedStates]
+      };
+      throw error;
+    }
+    return normalized;
+  };
+  const normalizeDueAt = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      const error = new Error(`Invalid dueAt: ${raw}.`);
+      error.code = "VALIDATION_ERROR";
+      error.details = { field: "dueAt", message: "dueAt must be a valid ISO datetime or empty." };
+      throw error;
+    }
+    return parsed.toISOString();
+  };
+
+  const currentFollowUp = normalizeFollowUpView(currentJob?.followUp || {});
+  const nextStatus = normalizeEnum(
+    payload.status ?? currentFollowUp.status ?? "none",
+    FOLLOW_UP_STATUS_STATES,
+    "status"
+  );
+  const nextChannel = normalizeEnum(
+    payload.channel ?? currentFollowUp.channel ?? "other",
+    FOLLOW_UP_CHANNEL_STATES,
+    "channel"
+  );
+  const nextDueAt = normalizeDueAt(payload.dueAt ?? currentFollowUp.dueAt ?? null);
+  const nextNotes = String(payload.notes ?? currentFollowUp.notes ?? "").trim().slice(0, 2000);
+  const hasChanged =
+    currentFollowUp.status !== nextStatus ||
+    currentFollowUp.channel !== nextChannel ||
+    currentFollowUp.dueAt !== nextDueAt ||
+    currentFollowUp.notes !== nextNotes;
+
+  const updatedJob = updateJob(jobId, (job) => {
+    const existing = normalizeFollowUpView(job?.followUp || {});
+    if (!hasChanged) {
+      return {
+        followUp: {
+          ...existing
+        }
+      };
+    }
+    return {
+      followUp: {
+        status: nextStatus,
+        dueAt: nextDueAt,
+        channel: nextChannel,
+        notes: nextNotes,
+        lastUpdatedAt: nowIso()
+      }
+    };
+  });
+
+  logActivity({
+    type: "job_follow_up_updated",
+    entityType: "job",
+    entityId: jobId,
+    action: "job_follow_up_updated",
+    actor: "user",
+    jobId,
+    summary: "已更新跟进提醒记录。"
+  });
+
+  return {
+    jobId,
+    followUpView: buildJobFollowUpView(updatedJob)
+  };
 }
 
 function saveProfile(payload) {
   const current = store.getProfile();
+  const cleanText = (value, max = 500) => String(value || "").trim().slice(0, max);
+  const cleanEnumText = (value, allowed = []) => {
+    const normalized = cleanText(value, 40).toLowerCase();
+    if (!normalized) return "";
+    return allowed.includes(normalized) ? normalized : "";
+  };
+  const toObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
+  const toArray = (value) => (Array.isArray(value) ? value : []);
+  const normalizeDateInput = (value, fallback = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const digits = raw.replace(/[./年月]/g, "-").replace(/日/g, "").replace(/\s+/g, "");
+    if (/^\d{8}$/.test(digits)) {
+      return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+    }
+    const match = digits.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      const year = match[1];
+      const month = String(Number(match[2])).padStart(2, "0");
+      const day = String(Number(match[3])).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    const fallbackText = cleanText(raw || fallback || "", 40);
+    return fallbackText;
+  };
+  const normalizeMonthInput = (value, fallback = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+    const compact = raw.replace(/[./年月]/g, "-").replace(/日/g, "").replace(/\s+/g, "");
+    const monthMatch = compact.match(/^(\d{4})-(\d{1,2})$/);
+    if (monthMatch) {
+      const year = monthMatch[1];
+      const month = String(Number(monthMatch[2])).padStart(2, "0");
+      return `${year}-${month}`;
+    }
+    const dayMatch = compact.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (dayMatch) {
+      const year = dayMatch[1];
+      const month = String(Number(dayMatch[2])).padStart(2, "0");
+      return `${year}-${month}`;
+    }
+    if (/^\d{6}$/.test(compact)) {
+      return `${compact.slice(0, 4)}-${compact.slice(4, 6)}`;
+    }
+    const fallbackText = cleanText(raw || fallback || "", 20);
+    return fallbackText;
+  };
   const csvToArray = (value) =>
     Array.isArray(value)
       ? value
@@ -1406,6 +2899,350 @@ function saveProfile(payload) {
           .split(",")
           .map((item) => item.trim())
           .filter(Boolean);
+
+  const nextName = payload.name || payload.fullName || current?.fullName || current?.name || "";
+  const currentAutofillProfile = toObject(current?.autofillProfile);
+  const currentAutofillBasic = toObject(currentAutofillProfile.basic);
+  const incomingAutofillProfile = toObject(payload.autofillProfile);
+  const incomingAutofillBasic = toObject(incomingAutofillProfile.basic);
+
+  const pickFirstNonEmpty = (...values) => {
+    for (const value of values) {
+      const normalized = cleanText(value, 500);
+      if (normalized) return normalized;
+    }
+    return "";
+  };
+  const hasAnyText = (obj = {}, keys = []) =>
+    keys.some((key) => Boolean(cleanText(obj?.[key] || "", 500)));
+  const normalizeEducationLevel = (value = "") => {
+    const raw = cleanText(value, 40).toLowerCase();
+    if (!raw) return "";
+    if (/^(bachelor|undergraduate|\u672c\u79d1|\u5b66\u58eb)/i.test(raw)) return "bachelor";
+    if (/^(master|graduate|\u7855\u58eb|\u7814\u7a76\u751f)/i.test(raw)) return "master";
+    return "";
+  };
+  const sanitizeEducationItem = (item = {}, fallbackLevel = "") => {
+    const normalized = toObject(item);
+    return {
+      level: normalizeEducationLevel(normalized.level || fallbackLevel),
+      school_name: cleanText(normalized.school_name || normalized.schoolName || "", 200),
+      major: cleanText(normalized.major || "", 160),
+      degree: cleanText(normalized.degree || "", 120),
+      start_date: normalizeMonthInput(normalized.start_date || normalized.startDate || ""),
+      end_date: normalizeMonthInput(normalized.end_date || normalized.endDate || "")
+    };
+  };
+  const sanitizeWorkItem = (item = {}) => {
+    const normalized = toObject(item);
+    return {
+      company_name: cleanText(normalized.company_name || normalized.companyName || "", 200),
+      department: cleanText(normalized.department || "", 160),
+      job_title: cleanText(normalized.job_title || normalized.jobTitle || "", 160),
+      start_date: normalizeMonthInput(normalized.start_date || normalized.startDate || ""),
+      end_date: normalizeMonthInput(normalized.end_date || normalized.endDate || ""),
+      description: cleanText(normalized.description || "", 2000)
+    };
+  };
+  const sanitizeProjectItem = (item = {}) => {
+    const normalized = toObject(item);
+    return {
+      project_name: cleanText(normalized.project_name || normalized.projectName || "", 200),
+      role: cleanText(normalized.role || "", 160),
+      description: cleanText(normalized.description || "", 2000),
+      start_date: normalizeMonthInput(normalized.start_date || normalized.startDate || ""),
+      end_date: normalizeMonthInput(normalized.end_date || normalized.endDate || "")
+    };
+  };
+  const sanitizeFamilyItem = (item = {}) => {
+    const normalized = toObject(item);
+    return {
+      name: cleanText(normalized.name || "", 120),
+      relation: cleanText(normalized.relation || "", 80),
+      employer: cleanText(normalized.employer || "", 200),
+      position: cleanText(normalized.position || "", 160)
+    };
+  };
+
+  const nextBasic = {
+    full_name: pickFirstNonEmpty(
+      incomingAutofillBasic.full_name,
+      payload.full_name,
+      incomingAutofillProfile.full_name,
+      nextName,
+      currentAutofillBasic.full_name,
+      currentAutofillProfile.full_name
+    ).slice(0, 120),
+    gender: cleanEnumText(
+      pickFirstNonEmpty(
+        incomingAutofillBasic.gender,
+        payload.gender,
+        incomingAutofillProfile.gender,
+        currentAutofillBasic.gender,
+        currentAutofillProfile.gender
+      ),
+      ["male", "female", "\u7537", "\u5973"]
+    ),
+    birth_date: normalizeDateInput(
+      pickFirstNonEmpty(
+        incomingAutofillBasic.birth_date,
+        payload.birth_date,
+        incomingAutofillProfile.birth_date,
+        currentAutofillBasic.birth_date,
+        currentAutofillProfile.birth_date
+      )
+    ),
+    email: pickFirstNonEmpty(
+      incomingAutofillBasic.email,
+      payload.email,
+      incomingAutofillProfile.email,
+      currentAutofillBasic.email,
+      currentAutofillProfile.email
+    ).slice(0, 160),
+    phone: pickFirstNonEmpty(
+      incomingAutofillBasic.phone,
+      payload.phone,
+      incomingAutofillProfile.phone,
+      currentAutofillBasic.phone,
+      currentAutofillProfile.phone
+    ).slice(0, 80)
+  };
+
+  const incomingEducation = toArray(incomingAutofillProfile.education).map((item) => sanitizeEducationItem(item));
+  const currentEducation = toArray(currentAutofillProfile.education).map((item) => sanitizeEducationItem(item));
+
+  const legacyHighest = sanitizeEducationItem(
+    {
+      school_name: pickFirstNonEmpty(
+        incomingAutofillProfile.school_name,
+        payload.school_name,
+        currentAutofillProfile.school_name
+      ),
+      major: pickFirstNonEmpty(incomingAutofillProfile.major, payload.major, currentAutofillProfile.major),
+      degree: pickFirstNonEmpty(incomingAutofillProfile.degree, payload.degree, currentAutofillProfile.degree),
+      start_date: pickFirstNonEmpty(
+        incomingAutofillProfile.master_start_date,
+        payload.master_start_date,
+        currentAutofillProfile.master_start_date,
+        incomingAutofillProfile.bachelor_start_date,
+        payload.bachelor_start_date,
+        currentAutofillProfile.bachelor_start_date
+      ),
+      end_date: pickFirstNonEmpty(
+        incomingAutofillProfile.master_end_date,
+        payload.master_end_date,
+        currentAutofillProfile.master_end_date,
+        incomingAutofillProfile.bachelor_end_date,
+        payload.bachelor_end_date,
+        currentAutofillProfile.bachelor_end_date
+      )
+    },
+    "master"
+  );
+  const legacyFirst = sanitizeEducationItem(
+    {
+      school_name: pickFirstNonEmpty(
+        incomingAutofillProfile.first_school_name,
+        payload.first_school_name,
+        currentAutofillProfile.first_school_name
+      ),
+      major: pickFirstNonEmpty(
+        incomingAutofillProfile.first_major,
+        payload.first_major,
+        currentAutofillProfile.first_major
+      ),
+      degree: pickFirstNonEmpty(
+        incomingAutofillProfile.degree,
+        payload.degree,
+        currentAutofillProfile.degree
+      ),
+      start_date: pickFirstNonEmpty(
+        incomingAutofillProfile.bachelor_start_date,
+        payload.bachelor_start_date,
+        currentAutofillProfile.bachelor_start_date
+      ),
+      end_date: pickFirstNonEmpty(
+        incomingAutofillProfile.bachelor_end_date,
+        payload.bachelor_end_date,
+        currentAutofillProfile.bachelor_end_date
+      )
+    },
+    "bachelor"
+  );
+
+  const seededEducation = incomingEducation.length ? incomingEducation : currentEducation;
+  let nextEducation = seededEducation.filter((item) =>
+    hasAnyText(item, ["school_name", "major", "degree", "start_date", "end_date"])
+  );
+  if (!nextEducation.length) {
+    nextEducation = [legacyFirst, legacyHighest].filter((item) =>
+      hasAnyText(item, ["school_name", "major", "degree", "start_date", "end_date"])
+    );
+  }
+
+  const findEducationByLevel = (level) =>
+    nextEducation.find((item) => item.level === level && hasAnyText(item, ["school_name", "major", "degree"]));
+  const highestEducationCandidate =
+    findEducationByLevel("master") ||
+    findEducationByLevel("bachelor") ||
+    nextEducation.find((item) => hasAnyText(item, ["school_name", "major", "degree"])) ||
+    legacyHighest;
+  const firstEducationCandidate =
+    findEducationByLevel("bachelor") ||
+    nextEducation.find((item) => item.level && item.level !== "master" && hasAnyText(item, ["school_name", "major"])) ||
+    nextEducation.find((item) => hasAnyText(item, ["school_name", "major"])) ||
+    legacyFirst;
+
+  const nextWorkExperience = (
+    toArray(incomingAutofillProfile.work_experience).length
+      ? toArray(incomingAutofillProfile.work_experience)
+      : toArray(currentAutofillProfile.work_experience)
+  )
+    .map((item) => sanitizeWorkItem(item))
+    .filter((item) => hasAnyText(item, ["company_name", "department", "job_title", "description", "start_date", "end_date"]));
+  const nextProjectExperience = (
+    toArray(incomingAutofillProfile.project_experience).length
+      ? toArray(incomingAutofillProfile.project_experience)
+      : toArray(currentAutofillProfile.project_experience)
+  )
+    .map((item) => sanitizeProjectItem(item))
+    .filter((item) => hasAnyText(item, ["project_name", "role", "description", "start_date", "end_date"]));
+  const nextFamily = (
+    toArray(incomingAutofillProfile.family).length
+      ? toArray(incomingAutofillProfile.family)
+      : toArray(currentAutofillProfile.family)
+  )
+    .map((item) => sanitizeFamilyItem(item))
+    .filter((item) => hasAnyText(item, ["name", "relation", "employer", "position"]));
+
+  const nextAutofillProfile = {
+    ...currentAutofillProfile,
+    basic: {
+      ...currentAutofillBasic,
+      ...nextBasic
+    },
+    education: nextEducation,
+    work_experience: nextWorkExperience,
+    project_experience: nextProjectExperience,
+    family: nextFamily,
+    full_name: nextBasic.full_name,
+    email: nextBasic.email,
+    phone: nextBasic.phone,
+    gender: nextBasic.gender,
+    birth_date: nextBasic.birth_date,
+    school_name: cleanText(
+      pickFirstNonEmpty(
+        payload.school_name,
+        incomingAutofillProfile.school_name,
+        highestEducationCandidate?.school_name,
+        currentAutofillProfile.school_name
+      ),
+      200
+    ),
+    first_school_name: cleanText(
+      pickFirstNonEmpty(
+        payload.first_school_name,
+        incomingAutofillProfile.first_school_name,
+        firstEducationCandidate?.school_name,
+        currentAutofillProfile.first_school_name
+      ),
+      200
+    ),
+    degree: cleanText(
+      pickFirstNonEmpty(
+        payload.degree,
+        incomingAutofillProfile.degree,
+        highestEducationCandidate?.degree,
+        currentAutofillProfile.degree
+      ),
+      120
+    ),
+    major: cleanText(
+      pickFirstNonEmpty(
+        payload.major,
+        incomingAutofillProfile.major,
+        highestEducationCandidate?.major,
+        currentAutofillProfile.major
+      ),
+      160
+    ),
+    first_major: cleanText(
+      pickFirstNonEmpty(
+        payload.first_major,
+        incomingAutofillProfile.first_major,
+        firstEducationCandidate?.major,
+        currentAutofillProfile.first_major
+      ),
+      160
+    ),
+    bachelor_start_date: normalizeMonthInput(
+      pickFirstNonEmpty(
+        findEducationByLevel("bachelor")?.start_date,
+        firstEducationCandidate?.start_date,
+        payload.bachelor_start_date,
+        currentAutofillProfile.bachelor_start_date
+      )
+    ),
+    bachelor_end_date: normalizeMonthInput(
+      pickFirstNonEmpty(
+        findEducationByLevel("bachelor")?.end_date,
+        firstEducationCandidate?.end_date,
+        payload.bachelor_end_date,
+        currentAutofillProfile.bachelor_end_date
+      )
+    ),
+    master_start_date: normalizeMonthInput(
+      pickFirstNonEmpty(
+        findEducationByLevel("master")?.start_date,
+        payload.master_start_date,
+        currentAutofillProfile.master_start_date
+      )
+    ),
+    master_end_date: normalizeMonthInput(
+      pickFirstNonEmpty(
+        findEducationByLevel("master")?.end_date,
+        payload.master_end_date,
+        currentAutofillProfile.master_end_date
+      )
+    ),
+    language_exam_language: cleanText(
+      payload.language_exam_language || currentAutofillProfile.language_exam_language || "",
+      80
+    ),
+    language_exam_level: cleanText(payload.language_exam_level || currentAutofillProfile.language_exam_level || "", 120),
+    language_name: cleanText(payload.language_name || currentAutofillProfile.language_name || "", 80),
+    english_proficiency: cleanText(payload.english_proficiency || currentAutofillProfile.english_proficiency || "", 120),
+    english_score: cleanText(payload.english_score || currentAutofillProfile.english_score || "", 120),
+    certificate_name: cleanText(payload.certificate_name || currentAutofillProfile.certificate_name || "", 120),
+    achievement_score: cleanText(payload.achievement_score || currentAutofillProfile.achievement_score || "", 120),
+    summary: cleanText(
+      payload.autofill_summary ||
+        incomingAutofillProfile.summary ||
+        currentAutofillProfile.summary ||
+        current?.summary ||
+        "",
+      2000
+    ),
+    updatedAt: nowIso()
+  };
+
+  const mergedLightweightProfile = normalizeLightweightProfile({
+    ...current,
+    ...payload,
+    lightweightProfile:
+      payload?.lightweightProfile && typeof payload.lightweightProfile === "object"
+        ? payload.lightweightProfile
+        : current?.lightweightProfile || {}
+  });
+  const normalizedJobPreferenceProfile = normalizeJobPreferenceProfile({
+    ...current,
+    ...payload,
+    lightweightProfile: mergedLightweightProfile,
+    jobPreferenceProfile:
+      payload?.jobPreferenceProfile && typeof payload.jobPreferenceProfile === "object"
+        ? payload.jobPreferenceProfile
+        : current?.jobPreferenceProfile || {}
+  });
 
   const profile = {
     ...(current || {}),
@@ -1416,19 +3253,36 @@ function saveProfile(payload) {
     headline: payload.background || payload.headline || current?.headline || "",
     background: payload.background || payload.headline || current?.background || "",
     yearsOfExperience: Number(payload.yearsOfExperience ?? current?.yearsOfExperience ?? 0),
-    targetRoles: csvToArray(payload.targetRoles ?? current?.targetRoles ?? []),
-    targetIndustries: csvToArray(payload.targetIndustries ?? current?.targetIndustries ?? []),
-    preferredLocations: csvToArray(payload.targetLocations ?? payload.preferredLocations ?? current?.preferredLocations ?? []),
-    targetLocations: csvToArray(payload.targetLocations ?? payload.preferredLocations ?? current?.targetLocations ?? []),
-    strengths: csvToArray(payload.strengths ?? current?.strengths ?? []),
+    targetRoles: csvToArray(payload.targetRoles ?? normalizedJobPreferenceProfile.targetRoles ?? current?.targetRoles ?? []),
+    targetIndustries: csvToArray(
+      payload.targetIndustries ?? normalizedJobPreferenceProfile.preferredIndustries ?? current?.targetIndustries ?? []
+    ),
+    preferredLocations: csvToArray(
+      payload.targetLocations ??
+        payload.preferredLocations ??
+        normalizedJobPreferenceProfile.preferredLocations ??
+        current?.preferredLocations ??
+        []
+    ),
+    targetLocations: csvToArray(
+      payload.targetLocations ??
+        payload.preferredLocations ??
+        normalizedJobPreferenceProfile.preferredLocations ??
+        current?.targetLocations ??
+        []
+    ),
+    strengths: csvToArray(payload.strengths ?? normalizedJobPreferenceProfile.skills ?? current?.strengths ?? []),
     constraints: csvToArray(payload.constraints ?? current?.constraints ?? []),
-    baseResume: payload.masterResume || payload.baseResume || current?.baseResume || "",
-    masterResume: payload.masterResume || payload.baseResume || current?.masterResume || "",
+    baseResume: payload.baseResume ?? payload.masterResume ?? current?.baseResume ?? "",
+    masterResume: payload.masterResume ?? payload.baseResume ?? current?.masterResume ?? "",
     policyPreferences: {
       manualPreferredRoles: csvToArray(payload.manualPreferredRoles ?? current?.policyPreferences?.manualPreferredRoles ?? []),
       ignoredRiskyRoles: csvToArray(payload.ignoredRiskyRoles ?? current?.policyPreferences?.ignoredRiskyRoles ?? []),
       riskToleranceOverride: payload.riskToleranceOverride || current?.policyPreferences?.riskToleranceOverride || ""
     },
+    autofillProfile: nextAutofillProfile,
+    lightweightProfile: mergedLightweightProfile,
+    jobPreferenceProfile: normalizedJobPreferenceProfile,
     summary: payload.background || payload.summary || current?.summary || payload.headline || "",
     createdAt: current?.createdAt || nowIso(),
     updatedAt: nowIso()
@@ -1451,6 +3305,143 @@ function saveProfile(payload) {
     summary: `已保存 ${profile.fullName || "候选人"} 的个人画像。`
   });
   return profile;
+}
+
+function saveOnboardingProfile(payload = {}) {
+  const current = store.getProfile() || {};
+  const toArray = (value) =>
+    Array.isArray(value)
+      ? value.map((item) => String(item || "").trim()).filter(Boolean)
+      : String(value || "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+  const lightweightProfile = {
+    targetRoles: toArray(payload.targetRoles),
+    skills: toArray(payload.skills),
+    preferredLocations: toArray(payload.preferredLocations),
+    degree: payload.degree ? String(payload.degree).trim() : "",
+    acceptsNonTech: Boolean(payload.acceptsNonTech)
+  };
+  const jobPreferenceProfile = normalizeJobPreferenceProfile({
+    lightweightProfile,
+    jobPreferenceProfile: {
+      preferredIndustries: toArray(payload.preferredIndustries),
+      excludedIndustries: toArray(payload.excludedIndustries),
+      targetRoles: lightweightProfile.targetRoles,
+      excludedRoles: toArray(payload.excludedRoles),
+      skills: lightweightProfile.skills,
+      preferredLocations: lightweightProfile.preferredLocations,
+      companyTypes: toArray(payload.companyTypes),
+      avoidCompanyTypes: toArray(payload.avoidCompanyTypes),
+      jobType: payload.jobType || "不限",
+      priorityWeights:
+        payload.priorityWeights && typeof payload.priorityWeights === "object"
+          ? payload.priorityWeights
+          : undefined
+    }
+  });
+
+  const profile = {
+    ...current,
+    id: current?.id || createId("profile"),
+    name: current?.name || current?.fullName || "候选人",
+    fullName: current?.fullName || current?.name || "候选人",
+    background: current?.background || current?.headline || "正在完善求职偏好",
+    headline: current?.headline || current?.background || "正在完善求职偏好",
+    targetRoles: lightweightProfile.targetRoles,
+    targetIndustries: jobPreferenceProfile.preferredIndustries,
+    strengths: lightweightProfile.skills,
+    preferredLocations: lightweightProfile.preferredLocations,
+    targetLocations: lightweightProfile.preferredLocations,
+    lightweightProfile,
+    jobPreferenceProfile,
+    createdAt: current?.createdAt || nowIso(),
+    updatedAt: nowIso()
+  };
+
+  store.saveProfile(profile);
+  refreshGlobalStrategyPolicy(refreshStrategyProfile(), {
+    reason: "profile_updated",
+    triggerType: "profile_update",
+    triggerSource: "user_onboarding",
+    autoApprove: true
+  });
+  logActivity({
+    type: "onboarding_profile_saved",
+    entityType: "profile",
+    entityId: profile.id,
+    action: "onboarding_profile_saved",
+    actor: "user",
+    summary: "已保存轻量用户画像（onboarding）。"
+  });
+
+  return profile;
+}
+
+function saveMasterResume(payload = {}) {
+  const currentProfile = store.getProfile() || {};
+  const existingCanonical = store.getMasterResume();
+  const latestResumeDocument = store.getLatestResumeDocument() || null;
+  const arrayFields = ["workExperience", "projectExperience", "education", "skills"];
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    const error = new Error("MasterResumeEditDto must be an object.");
+    error.code = "INVALID_MASTER_RESUME_DTO";
+    throw error;
+  }
+  if (!payload.basicInfo || typeof payload.basicInfo !== "object" || Array.isArray(payload.basicInfo)) {
+    const error = new Error("basicInfo must be an object.");
+    error.code = "INVALID_MASTER_RESUME_DTO";
+    throw error;
+  }
+  const invalidArrayField = arrayFields.find((field) => payload[field] !== undefined && !Array.isArray(payload[field]));
+  if (invalidArrayField) {
+    const error = new Error(`${invalidArrayField} must be an array.`);
+    error.code = "INVALID_MASTER_RESUME_DTO";
+    throw error;
+  }
+  const seed =
+    existingCanonical ||
+    (latestResumeDocument ? buildMasterResumeSeedFromResumeDocument(latestResumeDocument, currentProfile) : buildEmptyMasterResume(currentProfile));
+
+  const nextMasterResume = createMasterResumeContract({
+    ...seed,
+    ...payload,
+    masterResumeId: payload.masterResumeId || seed.masterResumeId,
+    createdAt: seed.createdAt,
+    updatedAt: nowIso(),
+    trace: {
+      ...(seed.trace || {}),
+      source: "canonical_saved",
+      sourceResumeId: seed.trace?.sourceResumeId || latestResumeDocument?.id || "",
+      sourceProfileId: currentProfile.id || "",
+      note: "Saved from MasterResume editor."
+    }
+  });
+  const validation = validateMasterResumeContract(nextMasterResume);
+  if (!validation.valid) {
+    const error = new Error(`Invalid MasterResume payload: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_MASTER_RESUME_CONTRACT";
+    error.details = { errors: validation.errors };
+    throw error;
+  }
+
+  store.saveMasterResume(nextMasterResume);
+  logActivity({
+    type: "master_resume_saved",
+    entityType: "master_resume",
+    entityId: nextMasterResume.masterResumeId,
+    action: "master_resume_saved",
+    actor: "user",
+    summary: `已保存 ${nextMasterResume.basicInfo?.name || currentProfile.fullName || "候选人"} 的结构化主简历。`,
+    metadata: {
+      masterResumeId: nextMasterResume.masterResumeId,
+      source: nextMasterResume.trace?.source || "canonical_saved"
+    }
+  });
+
+  return getMasterResumeView();
 }
 
 function reflectInterview(payload) {
@@ -1509,6 +3500,15 @@ function getJobDetail(jobId) {
           : storedAssessment.overrideSummary || null
       }
     : null;
+  const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+  const controlGateResult = jobDecision
+    ? buildControlGateResultForJob({
+        job,
+        fitAssessment,
+        jobDecision,
+        traceSource: "job_detail_view"
+      })
+    : null;
   const globalPolicy =
     store.getGlobalStrategyPolicy() ||
     refreshGlobalStrategyPolicy(store.getStrategyProfile() || refreshStrategyProfile(), {
@@ -1521,10 +3521,25 @@ function getJobDetail(jobId) {
   const resumeDocument = job.resumeDocumentId
     ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
     : store.getLatestResumeDocument();
+  const feedbackTraces = extractFeedbackTraces(activityLogs);
+  const resumeViewModel = buildResumeViewModel(resumeDocument);
+  const feedbackTimelineView = buildFeedbackTimelineView(feedbackTraces);
+  const jobWorkspaceViewModel = buildJobWorkspaceViewModel({
+    job,
+    jobDecision,
+    controlGateResult,
+    feedbackTraces
+  });
 
   return {
     job,
     fitAssessment,
+    jobDecision,
+    controlGateResult,
+    feedbackTraces,
+    feedbackTimelineView,
+    resumeViewModel,
+    jobWorkspaceViewModel,
     applicationPrep,
     tailoringOutput,
     resumeDocument,
@@ -1549,45 +3564,957 @@ function getJobDetail(jobId) {
   };
 }
 
+async function getJobWorkspaceList(options = {}) {
+  const startedAt = Date.now();
+  const stageTimings = {};
+  const stageMark = (name, start) => {
+    stageTimings[name] = Date.now() - start;
+  };
+  const includeProfiling = Boolean(options?.includeProfiling);
+
+  const readStart = Date.now();
+  const jobs = store.listJobs();
+  const profile = store.getProfile() || {};
+  const legacyLightweightProfile = normalizeLightweightProfile(profile);
+  const hasExplicitJobPreference = hasExplicitJobPreferenceProfile(profile?.jobPreferenceProfile || {});
+  const preferenceSource = hasExplicitJobPreference ? "jobPreferenceProfile" : "legacy";
+  const jobPreferenceProfile = hasExplicitJobPreference
+    ? normalizeJobPreferenceProfile(
+        {
+          jobPreferenceProfile: profile.jobPreferenceProfile,
+          lightweightProfile: legacyLightweightProfile
+        },
+        { strict: true }
+      )
+    : normalizeJobPreferenceProfile({
+        ...profile,
+        lightweightProfile: legacyLightweightProfile
+      });
+  const lightweightProfile = buildLightweightProfileFromJobPreferenceProfile(
+    jobPreferenceProfile,
+    legacyLightweightProfile
+  );
+  stageMark("read_jobs_and_profile_ms", readStart);
+
+  const normalizeStart = Date.now();
+  const normalizedJobs = jobs.filter((job) => !isOfflineJsonFallbackJob(job));
+  const rawLimit = Number(options?.limit);
+  const hasLimit = Number.isFinite(rawLimit) && rawLimit > 0;
+  const limit = hasLimit ? Math.max(1, Math.min(500, Math.floor(rawLimit))) : null;
+  const selectedJobs = normalizedJobs;
+  stageMark("normalize_jobs_ms", normalizeStart);
+
+  const prefetchStart = Date.now();
+  const selectedJobIdSet = new Set(selectedJobs.map((job) => String(job.id || "")).filter(Boolean));
+  const fitAssessments = store.listFitAssessments();
+  const fitAssessmentByJobId = new Map(
+    (Array.isArray(fitAssessments) ? fitAssessments : [])
+      .filter((entry) => selectedJobIdSet.has(String(entry?.jobId || "")))
+      .map((entry) => [String(entry.jobId || ""), entry])
+  );
+  const activityLogs = store.listActivityLogs();
+  const activityLogsByJobId = new Map();
+  (Array.isArray(activityLogs) ? activityLogs : []).forEach((entry) => {
+    const jobId = String(entry?.jobId || "");
+    if (!jobId || !selectedJobIdSet.has(jobId)) return;
+    if (!activityLogsByJobId.has(jobId)) activityLogsByJobId.set(jobId, []);
+    activityLogsByJobId.get(jobId).push(entry);
+  });
+  stageMark("prefetch_fit_and_activity_ms", prefetchStart);
+
+  const baseViewStart = Date.now();
+  const baseJobWorkspaceEntries = selectedJobs.map((job) => {
+      const fitAssessment = fitAssessmentByJobId.get(String(job.id || "")) || null;
+      const jobDecision = buildJobDecisionSnapshotForJob(job, fitAssessment);
+      const controlGateResult = jobDecision
+        ? buildControlGateResultForJob({
+            job,
+            fitAssessment,
+            jobDecision,
+            traceSource: "job_list_view"
+          })
+        : null;
+      const logsForJob = activityLogsByJobId.get(String(job.id || "")) || [];
+      const feedbackTraces = extractFeedbackTraces(logsForJob);
+      const baseViewModel = buildJobWorkspaceViewModel({
+        job,
+        jobDecision,
+        controlGateResult,
+        feedbackTraces
+      });
+      return {
+        job,
+        baseViewModel: {
+          ...baseViewModel,
+          trackerView: buildJobTrackerView(job),
+          feedbackView: buildJobFeedbackView(job),
+          shortlistView: buildJobShortlistView(job),
+          materialsPrepView: buildJobMaterialsPrepView(job),
+          submissionAuditView: buildJobSubmissionAuditView(job),
+          followUpView: buildJobFollowUpView(job)
+        }
+      };
+    });
+  stageMark("view_model_build_ms", baseViewStart);
+
+  const ruleScoringStart = Date.now();
+  const dedupeContext = buildJobDeduplicationContext(selectedJobs);
+  const provisionalScoringEntries = baseJobWorkspaceEntries.map(({ job, baseViewModel }) => {
+    const scoringView = buildJobScoringViewModel({
+      job,
+      lightweightProfile,
+      jobPreferenceProfile,
+      preferenceSource,
+      dedupeContext
+    });
+    return { job, baseViewModel, scoringView };
+  });
+  const feedbackInfluenceSignals = buildFeedbackInfluenceSignals(provisionalScoringEntries);
+  const ruleScoredJobWorkspaceViewModels = provisionalScoringEntries.map(({ job, baseViewModel, scoringView }) => {
+    const feedbackInfluenceSignal = feedbackInfluenceSignals.get(String(job?.id || "")) || null;
+    const nextScoringView = buildJobScoringViewModel({
+      job,
+      lightweightProfile,
+      jobPreferenceProfile,
+      preferenceSource,
+      feedbackInfluenceSignal,
+      baseScoringView: scoringView,
+      dedupeContext
+    });
+    return attachScoringToJobWorkspaceViewModel(baseViewModel, nextScoringView);
+  });
+  stageMark("rule_scoring_ms", ruleScoringStart);
+
+  const sortStart = Date.now();
+  ruleScoredJobWorkspaceViewModels.sort(compareJobWorkspacePriority);
+  stageMark("sort_ms", sortStart);
+
+  const llmStart = Date.now();
+  let jobWorkspaceViewModels = ruleScoredJobWorkspaceViewModels;
+  try {
+    jobWorkspaceViewModels = await applyLlmScoringToTopJobs({
+      lightweightProfile,
+      ruleScoredJobWorkspaceViewModels
+    });
+    jobWorkspaceViewModels = mergeRuleScoringDisplayFields(
+      jobWorkspaceViewModels,
+      ruleScoredJobWorkspaceViewModels
+    );
+    jobWorkspaceViewModels.sort(compareJobWorkspacePriority);
+  } catch (error) {
+    // LLM 派生层必须可降级，不能影响 jobs 主返回。
+    logger.warn("jobs.llm_scoring.unavailable", {
+      source: "workflow.getJobWorkspaceList",
+      error: error?.message || String(error || "unknown_error")
+    });
+  }
+  stageMark("llm_cache_check_and_schedule_ms", llmStart);
+  stageTimings.total_ms = Date.now() - startedAt;
+  stageTimings.jobs_count = jobs.length;
+  stageTimings.normalized_jobs_count = normalizedJobs.length;
+  stageTimings.selected_jobs_count = selectedJobs.length;
+  const dedupedJobWorkspaceViewModels = dedupeJobWorkspaceViewModels(jobWorkspaceViewModels);
+  const finalJobs = limit ? dedupedJobWorkspaceViewModels.slice(0, limit) : dedupedJobWorkspaceViewModels;
+  stageTimings.returned_jobs_count = finalJobs.length;
+  stageTimings.limit = limit;
+  stageTimings.apply_link_company_title_mapping_ms = stageTimings.view_model_build_ms;
+
+  if (includeProfiling || String(process.env.JOBS_PROFILE_LOG || "").trim() === "1") {
+    logger.info("jobs.api.profile", {
+      source: "workflow.getJobWorkspaceList",
+      timings: stageTimings
+    });
+  }
+
+  const response = { jobWorkspaceViewModels: finalJobs };
+  if (includeProfiling) response.profiling = stageTimings;
+  return response;
+}
+
+function normalizeTrackerState(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return TRACKER_STATES.has(normalized) ? normalized : "none";
+}
+
+function normalizeTrackerTimeline(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((entry) => {
+      const state = normalizeTrackerState(entry?.state);
+      if (state === "none") return null;
+      const rawTimestamp = String(entry?.timestamp || "").trim();
+      if (!rawTimestamp) return null;
+      const parsed = new Date(rawTimestamp);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return {
+        state,
+        timestamp: parsed.toISOString()
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+    .slice(0, 20);
+}
+
+function buildJobTrackerView(job = {}) {
+  const trackerState = normalizeTrackerState(job?.trackerState || job?.tracker?.state || "");
+  const timeline = normalizeTrackerTimeline(job?.trackerTimeline || job?.tracker?.timeline || []);
+  return {
+    state: trackerState,
+    timeline,
+    lastUpdatedAt: timeline[0]?.timestamp || null
+  };
+}
+
+function normalizeFeedbackState(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return FEEDBACK_STATES.has(normalized) ? normalized : "none";
+}
+
+function normalizeShortlistState(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return SHORTLIST_STATES.has(normalized) ? normalized : "none";
+}
+
+function normalizeShortlistTimeline(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((entry) => {
+      const state = normalizeShortlistState(entry?.state);
+      if (state === "none") return null;
+      const rawTimestamp = String(entry?.timestamp || "").trim();
+      if (!rawTimestamp) return null;
+      const parsed = new Date(rawTimestamp);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return {
+        state,
+        timestamp: parsed.toISOString()
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+    .slice(0, 20);
+}
+
+function buildJobShortlistView(job = {}) {
+  const shortlistState = normalizeShortlistState(job?.shortlistState || "");
+  const timeline = normalizeShortlistTimeline(job?.shortlistTimeline || []);
+  return {
+    state: shortlistState,
+    timeline,
+    lastUpdatedAt: timeline[0]?.timestamp || null
+  };
+}
+
+function normalizeFeedbackTimeline(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((entry) => {
+      const state = normalizeFeedbackState(entry?.state);
+      if (state === "none") return null;
+      const rawTimestamp = String(entry?.timestamp || "").trim();
+      if (!rawTimestamp) return null;
+      const parsed = new Date(rawTimestamp);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return {
+        state,
+        timestamp: parsed.toISOString()
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+    .slice(0, 20);
+}
+
+function buildJobFeedbackView(job = {}) {
+  const feedbackState = normalizeFeedbackState(job?.feedbackState || "");
+  const timeline = normalizeFeedbackTimeline(job?.feedbackTimeline || []);
+  return {
+    state: feedbackState,
+    timeline,
+    lastUpdatedAt: timeline[0]?.timestamp || null
+  };
+}
+
+function normalizeMaterialsPrepView(input = {}) {
+  const resumeStatus = MATERIAL_RESUME_STATES.has(String(input?.resumeStatus || "").trim().toLowerCase())
+    ? String(input.resumeStatus || "").trim().toLowerCase()
+    : "none";
+  const coverLetterStatus = MATERIAL_COVER_LETTER_STATES.has(
+    String(input?.coverLetterStatus || "").trim().toLowerCase()
+  )
+    ? String(input.coverLetterStatus || "").trim().toLowerCase()
+    : "none";
+  const interviewPrepStatus = MATERIAL_INTERVIEW_PREP_STATES.has(
+    String(input?.interviewPrepStatus || "").trim().toLowerCase()
+  )
+    ? String(input.interviewPrepStatus || "").trim().toLowerCase()
+    : "none";
+  const notes = String(input?.notes || "").trim().slice(0, 2000);
+  const rawUpdatedAt = String(input?.lastUpdatedAt || "").trim();
+  const parsed = rawUpdatedAt ? new Date(rawUpdatedAt) : null;
+  const lastUpdatedAt =
+    parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : null;
+
+  return {
+    resumeStatus,
+    coverLetterStatus,
+    interviewPrepStatus,
+    notes,
+    lastUpdatedAt
+  };
+}
+
+function buildJobMaterialsPrepView(job = {}) {
+  return normalizeMaterialsPrepView(job?.materialsPrep || {});
+}
+
+function normalizeSubmissionAuditView(input = {}) {
+  const status = SUBMISSION_AUDIT_STATUS_STATES.has(String(input?.status || "").trim().toLowerCase())
+    ? String(input.status || "").trim().toLowerCase()
+    : "none";
+  const source = SUBMISSION_AUDIT_SOURCE_STATES.has(String(input?.source || "").trim().toLowerCase())
+    ? String(input.source || "").trim().toLowerCase()
+    : "manual";
+  const normalizeIso = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  };
+  return {
+    status,
+    source,
+    submittedAt: normalizeIso(input?.submittedAt),
+    lastAttemptAt: normalizeIso(input?.lastAttemptAt),
+    attemptCount: Number.isFinite(Number(input?.attemptCount)) ? Math.max(0, Number(input.attemptCount)) : 0,
+    lastError: String(input?.lastError || "").trim().slice(0, 2000),
+    notes: String(input?.notes || "").trim().slice(0, 2000)
+  };
+}
+
+function buildJobSubmissionAuditView(job = {}) {
+  return normalizeSubmissionAuditView(job?.submissionAudit || {});
+}
+
+function normalizeFollowUpView(input = {}) {
+  const status = FOLLOW_UP_STATUS_STATES.has(String(input?.status || "").trim().toLowerCase())
+    ? String(input.status || "").trim().toLowerCase()
+    : "none";
+  const channel = FOLLOW_UP_CHANNEL_STATES.has(String(input?.channel || "").trim().toLowerCase())
+    ? String(input.channel || "").trim().toLowerCase()
+    : "other";
+  const normalizeIso = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  };
+  return {
+    status,
+    dueAt: normalizeIso(input?.dueAt),
+    channel,
+    notes: String(input?.notes || "").trim().slice(0, 2000),
+    lastUpdatedAt: normalizeIso(input?.lastUpdatedAt)
+  };
+}
+
+function buildJobFollowUpView(job = {}) {
+  return normalizeFollowUpView(job?.followUp || {});
+}
+
+function scoreFeedbackStateValue(state = "none") {
+  if (state === "good_fit") return 1;
+  if (state === "bad_fit") return -1;
+  if (state === "misclassified") return -1;
+  return 0;
+}
+
+function buildFeedbackInfluenceSignals(provisionalScoringEntries = []) {
+  const aggregates = new Map();
+  const register = (key = "", score = 0) => {
+    if (!key) return;
+    if (!aggregates.has(key)) {
+      aggregates.set(key, { total: 0, positive: 0, negative: 0 });
+    }
+    const bucket = aggregates.get(key);
+    bucket.total += 1;
+    if (score > 0) bucket.positive += 1;
+    if (score < 0) bucket.negative += 1;
+  };
+
+  provisionalScoringEntries.forEach(({ job, scoringView }) => {
+    const feedbackState = normalizeFeedbackState(job?.feedbackState || "");
+    const feedbackScore = scoreFeedbackStateValue(feedbackState);
+    if (feedbackScore === 0) return;
+    const inferredIndustry = String(scoringView?.inferredIndustry || "").trim();
+    const inferredRoleFamily = String(scoringView?.inferredRoleFamily || "").trim();
+    register(`industry:${inferredIndustry}`, feedbackScore);
+    // 角色为空时不参与同类反馈聚合，避免空桶扩散到不相关岗位。
+    if (inferredRoleFamily) {
+      register(`role:${inferredRoleFamily}`, feedbackScore);
+    }
+  });
+
+  const signalsByJobId = new Map();
+  provisionalScoringEntries.forEach(({ job, scoringView }) => {
+    const inferredIndustry = String(scoringView?.inferredIndustry || "").trim();
+    const inferredRoleFamily = String(scoringView?.inferredRoleFamily || "").trim();
+    const industryBucket = aggregates.get(`industry:${inferredIndustry}`) || { total: 0, positive: 0, negative: 0 };
+    const roleBucket = inferredRoleFamily
+      ? aggregates.get(`role:${inferredRoleFamily}`) || { total: 0, positive: 0, negative: 0 }
+      : { total: 0, positive: 0, negative: 0 };
+    const total = industryBucket.total + roleBucket.total;
+    if (total <= 0) {
+      signalsByJobId.set(String(job?.id || ""), {
+        boost: 0,
+        reason: ""
+      });
+      return;
+    }
+    const netScore = industryBucket.positive + roleBucket.positive - industryBucket.negative - roleBucket.negative;
+    let boost = 0;
+    let reason = "";
+    if (netScore >= 2) {
+      boost = 4;
+      reason = "基于你的历史偏好反馈，此类岗位优先级略提升";
+    } else if (netScore === 1) {
+      boost = 3;
+      reason = "基于你的历史偏好反馈，此类岗位优先级小幅提升";
+    } else if (netScore <= -2) {
+      boost = -4;
+      reason = "基于你的历史偏好反馈，此类岗位优先级略降低";
+    } else if (netScore === -1) {
+      boost = -3;
+      reason = "基于你的历史偏好反馈，此类岗位优先级小幅降低";
+    }
+    signalsByJobId.set(String(job?.id || ""), { boost, reason });
+  });
+
+  return signalsByJobId;
+}
+
+function compareJobWorkspacePriority(left = {}, right = {}) {
+  const leftFeedbackBoost = Number(left?.scoringView?.feedbackInfluence?.boost);
+  const rightFeedbackBoost = Number(right?.scoringView?.feedbackInfluence?.boost);
+  // 生产排序稳定顺序：用户五维优先级 > 等级 > 各维度 > 末位弱反馈信号。
+  // jobQualityFit、sourceReliability 等质量/来源字段仅保留诊断用途，不参与生产排序。
+  const comparisons = [
+    compareNumericDesc(left?.scoringView?.userPriorityScore ?? left?.scoringView?.preferenceMatchScore, right?.scoringView?.userPriorityScore ?? right?.scoringView?.preferenceMatchScore),
+    compareNumericDesc(resolveGradeRank(left?.scoringView?.decisionVerdict?.grade), resolveGradeRank(right?.scoringView?.decisionVerdict?.grade)),
+    compareNumericDesc(left?.scoringView?.roleFit, right?.scoringView?.roleFit),
+    compareNumericDesc(left?.scoringView?.industryFit, right?.scoringView?.industryFit),
+    compareNumericDesc(left?.scoringView?.locationFit, right?.scoringView?.locationFit),
+    compareNumericDesc(left?.scoringView?.companyFit, right?.scoringView?.companyFit),
+    compareNumericDesc(left?.scoringView?.applicationAccessibilityFit, right?.scoringView?.applicationAccessibilityFit),
+    compareNumericDesc(
+      Number.isFinite(leftFeedbackBoost) ? leftFeedbackBoost : 0,
+      Number.isFinite(rightFeedbackBoost) ? rightFeedbackBoost : 0
+    )
+  ];
+  const decided = comparisons.find((value) => value !== 0);
+  if (decided) return decided;
+
+  const leftTime = new Date(left?.jobSummary?.updatedAt || left?.feedbackView?.lastUpdatedAt || 0).getTime();
+  const rightTime = new Date(right?.jobSummary?.updatedAt || right?.feedbackView?.lastUpdatedAt || 0).getTime();
+  return rightTime - leftTime;
+}
+
+function resolveGradeRank(grade = "") {
+  const normalized = String(grade || "").trim().toUpperCase();
+  if (normalized === "A") return 5;
+  if (normalized === "B") return 4;
+  if (normalized === "C") return 3;
+  if (normalized === "D") return 2;
+  if (normalized === "F") return 1;
+  return 0;
+}
+
+function compareNumericDesc(leftValue, rightValue) {
+  const left = Number(leftValue);
+  const right = Number(rightValue);
+  if (Number.isFinite(left) && Number.isFinite(right) && right !== left) return right - left;
+  if (Number.isFinite(right) && !Number.isFinite(left)) return 1;
+  if (Number.isFinite(left) && !Number.isFinite(right)) return -1;
+  return 0;
+}
+
+function dedupeJobWorkspaceViewModels(items = []) {
+  const deduped = [];
+  const seen = new Set();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const dedupeKey = buildJobWorkspaceDedupeKey(item);
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    deduped.push(item);
+  });
+  return deduped;
+}
+
+function mergeRuleScoringDisplayFields(items = [], ruleItems = []) {
+  const ruleByJobId = new Map(
+    (Array.isArray(ruleItems) ? ruleItems : [])
+      .map((item) => [String(item?.id || item?.jobSummary?.id || ""), item])
+      .filter(([jobId]) => Boolean(jobId))
+  );
+
+  return (Array.isArray(items) ? items : []).map((item) => {
+    const jobId = String(item?.id || item?.jobSummary?.id || "");
+    const ruleItem = ruleByJobId.get(jobId);
+    if (!ruleItem) return item;
+    const ruleScoringView = ruleItem.scoringView || {};
+    const currentScoringView = item.scoringView || {};
+    return {
+      ...item,
+      scoringView: mergeScoringViewWithRuleFallback(ruleScoringView, currentScoringView)
+    };
+  });
+}
+
+function mergeScoringViewWithRuleFallback(ruleScoringView = {}, currentScoringView = {}) {
+  const merged = { ...ruleScoringView, ...currentScoringView };
+  const stringFields = ["inferredIndustry", "inferredIndustryConfidence", "inferredRoleFamily", "preferenceType", "opportunityType", "opportunityTypeConfidence", "opportunityTypeSummary", "opportunityTypeLabel"];
+  stringFields.forEach((field) => {
+    const currentValue = String(currentScoringView?.[field] || "").trim();
+    if (!currentValue) {
+      merged[field] = String(ruleScoringView?.[field] || "").trim();
+    }
+  });
+  ["inferredSkills", "matchSignals", "mismatchSignals"].forEach((field) => {
+    const currentValue = Array.isArray(currentScoringView?.[field]) ? currentScoringView[field] : [];
+    if (currentValue.length === 0) {
+      merged[field] = Array.isArray(ruleScoringView?.[field]) ? ruleScoringView[field] : [];
+    }
+  });
+  return merged;
+}
+
+function buildJobWorkspaceDedupeKey(item = {}) {
+  const company = normalizeDedupeText(item?.jobSummary?.company || "");
+  const title = normalizeJobTitleForDedupe(item?.jobSummary?.title || "");
+  return `${company}::${title}`;
+}
+
+function normalizeDedupeText(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+function normalizeJobTitleForDedupe(value = "") {
+  return normalizeDedupeText(value)
+    .replace(/（[^）]*）/g, "")
+    .replace(/[|｜/、,，;；:：·•()\[\]{}【】]/g, "")
+    .replace(/[^a-z0-9\u4e00-\u9fa5]/g, "");
+}
+
+function isOfflineJsonFallbackJob(job = {}) {
+  const company = String(job.company || "");
+  const title = String(job.title || "");
+  const url = String(job.jobUrl || job.sourceUrl || "");
+  return (
+    company === "工程师 团队" ||
+    title === "工程师 相关岗位" ||
+    /applyflow\.local\/fallback/i.test(url) ||
+    /^fallback_/i.test(String(job.sourceJobId || job.externalId || ""))
+  );
+}
+
+function sanitizeForUiBoundary(value, forbiddenKeys = new Set()) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForUiBoundary(item, forbiddenKeys));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const output = {};
+  Object.entries(value).forEach(([key, nestedValue]) => {
+    if (forbiddenKeys.has(key)) return;
+    output[key] = sanitizeForUiBoundary(nestedValue, forbiddenKeys);
+  });
+  return output;
+}
+
+function buildTailoredResumeContractForJob({
+  job = {},
+  fitAssessment = null,
+  resumeDocument = null,
+  masterResume = null,
+  tailoringOutput = null,
+  applicationPrep = null
+} = {}) {
+  const profile = store.getProfile() || {};
+  const resolvedMasterResume = masterResume || resolveTailoringMasterResumeSource(profile, resumeDocument).masterResume;
+  if (!tailoringOutput || !job?.id || (!resumeDocument && !resolvedMasterResume)) return null;
+  const baseResumeAsset = buildTailoringBaseResumeAsset({
+    profile,
+    resumeDocument,
+    masterResume: resolvedMasterResume
+  });
+  const jobSummary = buildJobSummaryModel(job, fitAssessment, tailoringOutput);
+  const canonicalTailoredResume = buildTailoredWorkspaceResumeModel(tailoringOutput, baseResumeAsset, jobSummary);
+  const reviewModules = buildWorkspaceReviewModules(baseResumeAsset, canonicalTailoredResume);
+
+  const sectionDiffs = reviewModules.flatMap((module) =>
+    (Array.isArray(module.items) ? module.items : []).map((item, index) => ({
+      diffId: `${module.key}_${index + 1}`,
+      sectionKey: module.key,
+      before: item.original || "",
+      after: item.tailored || "",
+      reason: module.reason || "",
+      status: "accepted"
+    }))
+  );
+
+  const contract = createTailoredResumeContract({
+    tailoredResumeId: tailoringOutput.id || createId("tailored_resume"),
+    jobId: job.id,
+    masterResumeId: resolvedMasterResume?.masterResumeId || resumeDocument?.id || "",
+    version: Number(tailoringOutput.version || tailoringOutput.workspace?.activeVersion || 1),
+    canonicalTailoredResume,
+    changeReasons: [
+      ...(tailoringOutput.tailoringExplainability || []),
+      ...(tailoringOutput.insights
+        ? [
+            tailoringOutput.insights.headline || "",
+            tailoringOutput.insights.strongestMatch || "",
+            tailoringOutput.insights.biggestGap || "",
+            tailoringOutput.insights.nextEditFocus || ""
+          ]
+        : [])
+    ],
+    generatedSections: reviewModules.map((module) => module.key),
+    sectionDiffs,
+    exportStatus: {
+      status: applicationPrep ? "ready" : "not_ready",
+      docxReady: Boolean(applicationPrep),
+      lastExportedAt: null
+    },
+    trace: {
+      source: resolvedMasterResume?.trace?.source || "tailoring_output_adapter",
+      model: tailoringOutput.llmMeta?.model || "",
+      runId: tailoringOutput.id || ""
+    },
+    createdAt: tailoringOutput.createdAt || nowIso(),
+    updatedAt: tailoringOutput.updatedAt || nowIso()
+  });
+
+  const validation = validateTailoredResumeContract(contract);
+  if (!validation.ok) {
+    const error = new Error(`Invalid TailoredResume contract: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_TAILORED_RESUME_CONTRACT";
+    error.details = { errors: validation.errors, contract };
+    throw error;
+  }
+
+  return contract;
+}
+
+function buildPrepDtoFromContracts({
+  job = {},
+  resumeDocument = null,
+  tailoredResumeContract = null,
+  applicationPrep = null,
+  targetingBrief = null,
+  shortlistAdmission = null
+} = {}) {
+  if (!job?.id || !tailoredResumeContract) return null;
+
+  const prepDto = createPrepDto({
+    prepDtoId: applicationPrep?.id || createId("prep_dto"),
+    jobId: job.id,
+    tailoredResumeId: tailoredResumeContract.tailoredResumeId,
+    masterResumeId: tailoredResumeContract.masterResumeId,
+    prepVersion: Number(applicationPrep?.version || 1),
+    resumeDocumentId: resumeDocument?.id || "",
+    targetKeywords: targetingBrief?.targetKeywords || [],
+    tailoredSummary:
+      applicationPrep?.tailoredSummary || tailoredResumeContract.canonicalTailoredResume?.selfEvaluation || "",
+    sectionDiffs: tailoredResumeContract.sectionDiffs || [],
+    changeReasons: tailoredResumeContract.changeReasons || [],
+    selfIntro: applicationPrep?.selfIntro || {},
+    qaDraft: applicationPrep?.qaDraft || [],
+    talkingPoints: applicationPrep?.talkingPoints || [],
+    coverNote: applicationPrep?.coverNote || "",
+    outreachNote: applicationPrep?.outreachNote || "",
+    checklist: applicationPrep?.checklist || [],
+    admissionContext: normalizeAdmissionContext(shortlistAdmission),
+    prepStatus: applicationPrep ? "ready" : "draft",
+    updatedAt: applicationPrep?.updatedAt || tailoredResumeContract.updatedAt || nowIso()
+  });
+
+  const validation = validatePrepDto(prepDto);
+  if (!validation.ok) {
+    const error = new Error(`Invalid Prep DTO: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_PREP_DTO";
+    error.details = { errors: validation.errors, prepDto };
+    throw error;
+  }
+
+  return prepDto;
+}
+
+function buildExecutionDtoFromContracts({
+  job = {},
+  controlGateResult = null,
+  tailoredResumeContract = null,
+  prepDto = null,
+  executionMode = "dry-run",
+  targetUrl = "",
+  actor = "system",
+  note = "",
+  shortlistAdmission = null
+} = {}) {
+  if (!job?.id || !tailoredResumeContract || !prepDto) return null;
+
+  const runId = createId("run");
+  const executionDto = createExecutionDto({
+    runId,
+    jobId: job.id,
+    tailoredResumeId: tailoredResumeContract.tailoredResumeId,
+    prepDtoId: prepDto.prepDtoId || "",
+    prepVersion: prepDto.prepVersion || 1,
+    gateSnapshot: {
+      controlId: controlGateResult?.controlId || "",
+      status: controlGateResult?.status || "",
+      reasons: controlGateResult?.reasons || [],
+      blockingIssues: controlGateResult?.blockingIssues || [],
+      requiredActions: controlGateResult?.requiredActions || [],
+      checkedAt: controlGateResult?.checkedAt || nowIso()
+    },
+    executionMode,
+    confirmState: {
+      state: controlGateResult?.status === "needs_human_review" ? "pending" : "confirmed",
+      required: controlGateResult?.status === "needs_human_review",
+      confirmToken: controlGateResult?.status === "needs_human_review" ? createId("confirm") : "",
+      confirmedBy: controlGateResult?.status === "needs_human_review" ? "" : actor,
+      confirmedAt: controlGateResult?.status === "needs_human_review" ? null : nowIso()
+    },
+    targetUrl: targetUrl || job.jobUrl || "",
+    prefillPayload: {
+      targetKeywords: prepDto.targetKeywords || [],
+      tailoredSummary: prepDto.tailoredSummary || "",
+      rewriteBullets: prepDto.rewriteBullets || []
+    },
+    formPayload: {},
+    auditContext: {
+      actor,
+      source: "workflow_controller.execution",
+      note
+    },
+    admissionContext: normalizeAdmissionContext(shortlistAdmission),
+    trace: {
+      runId,
+      source: "execution_dto_builder",
+      createdBy: actor
+    },
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  });
+
+  const validation = validateExecutionDto(executionDto);
+  if (!validation.ok) {
+    const error = new Error(`Invalid Execution DTO: ${validation.errors.join("; ")}`);
+    error.code = "INVALID_EXECUTION_DTO";
+    error.details = { errors: validation.errors, executionDto };
+    throw error;
+  }
+
+  return executionDto;
+}
+
+function assertSubmitAllowed(controlGateResult, executionDto = null) {
+  if (!controlGateResult || typeof controlGateResult !== "object") {
+    const error = new Error("ControlGateResult is required before submit.");
+    error.code = "CONTROL_GATE_REQUIRED";
+    throw error;
+  }
+  if (controlGateResult.status === "blocked") {
+    const error = new Error("Submit blocked by control gate.");
+    error.code = "CONTROL_GATE_BLOCKED";
+    error.details = { controlGateResult };
+    throw error;
+  }
+  if (controlGateResult.status === "needs_human_review") {
+    const confirmed = executionDto?.confirmState?.state === "confirmed";
+    if (!confirmed) {
+      const error = new Error("Submit requires human confirmation.");
+      error.code = "HUMAN_CONFIRM_REQUIRED";
+      error.details = { controlGateResult, executionDto };
+      throw error;
+    }
+  }
+}
+
+function getJobDetailView(jobId) {
+  const detail = getJobDetail(jobId);
+  const feedbackTimelineView = buildFeedbackTimelineView(detail.feedbackTraces || []);
+  const resumeViewModel = buildResumeViewModel(detail.resumeDocument || null);
+  const tailoredResumeContract = buildTailoredResumeContractForJob({
+    job: detail.job,
+    fitAssessment: detail.fitAssessment,
+    resumeDocument: detail.resumeDocument,
+    tailoringOutput: detail.tailoringOutput,
+    applicationPrep: detail.applicationPrep
+  });
+  const detailProfile = store.getProfile() || {};
+  const detailMasterResumeSource = resolveTailoringMasterResumeSource(detailProfile, detail.resumeDocument);
+  const prepDto = buildPrepDtoFromContracts({
+    job: detail.job,
+    resumeDocument: detail.resumeDocument,
+    tailoredResumeContract,
+    applicationPrep: detail.applicationPrep,
+    targetingBrief: detail.tailoringOutput?.targetingBrief || null,
+    shortlistAdmission: detail.job?.shortlistAdmission || null
+  });
+  const tailoringDisplayView = buildTailoringWorkspaceViewModel({
+    job: detail.job || {},
+    workspace: {
+      id: detail.tailoringOutput?.workspace?.id || `workspace_${detail.job?.id || "job"}`,
+      name: detail.tailoringOutput?.workspace?.name || buildDefaultTailoringWorkspaceName(detail.job || {}),
+      activeVersion: detail.tailoringOutput?.workspace?.activeVersion || detail.tailoringOutput?.version || 1,
+      updatedAt: detail.tailoringOutput?.updatedAt || detail.job?.updatedAt || nowIso(),
+      jobSummary: buildJobSummaryModel(detail.job || {}, detail.fitAssessment, detail.tailoringOutput || null),
+      baseResumeAsset: buildTailoringBaseResumeAsset({
+        profile: detailProfile,
+        resumeDocument: detail.resumeDocument,
+        masterResume: detailMasterResumeSource.masterResume
+      }),
+      tailoredResume: tailoredResumeContract?.canonicalTailoredResume || {
+        workExperience: [],
+        projectExperience: [],
+        selfEvaluation: ""
+      },
+      reviewSummary: { acceptedCount: (tailoredResumeContract?.sectionDiffs || []).length, pendingCount: 0, rejectedCount: 0 },
+      reviewModules: [],
+      insights: detail.tailoringOutput?.insights || {}
+    },
+    tailoringOutput: detail.tailoringOutput || null,
+    tailoredResumeContract
+  });
+  const executionSessionView = buildExecutionSessionView({
+    executionDto: detail.job?.latestExecutionDto || null,
+    submitContract: detail.job?.latestSubmitContract || null,
+    feedbackTraces: detail.feedbackTraces || [],
+    controlGateResult: detail.controlGateResult || null
+  });
+  const browserApplyViewModel =
+    detail.job?.latestBrowserApplyViewModel && typeof detail.job.latestBrowserApplyViewModel === "object"
+      ? detail.job.latestBrowserApplyViewModel
+      : null;
+  const operationData = sanitizeForUiBoundary(
+    {
+      applicationPrep: detail.applicationPrep || null,
+      tailoredResumeContract,
+      tailoringDisplayView,
+      prepDto,
+      executionSessionView,
+      browserApplyViewModel,
+      tasks: detail.tasks || [],
+      interviewReflection: detail.interviewReflection || null,
+      badCase: detail.badCase || null,
+      pipelineStages: detail.pipelineStages || []
+    },
+    new Set(["resumeDocument", "structuredProfile", "cleanedText", "rawText"])
+  );
+
+  return {
+    jobId: detail.job?.id || jobId,
+    jobWorkspaceViewModel: detail.jobWorkspaceViewModel,
+    resumeViewModel,
+    feedbackTimelineView,
+    executionSessionView,
+    browserApplyViewModel,
+    executionActions: {
+      nextAction: detail.nextAction || null,
+      allowedNextStatuses: detail.allowedNextStatuses || [],
+      recommendedNextStatuses: detail.recommendedNextStatuses || []
+    },
+    operationData,
+    governanceView: {
+      globalPolicy: detail.globalPolicy || null,
+      policyExplanation: detail.policyExplanation || [],
+      policyProposals: detail.policyProposals || [],
+      policyAuditLogs: detail.policyAuditLogs || []
+    }
+  };
+}
+
 function buildTailoringWorkspace(jobId) {
   const detail = getJobDetail(jobId);
-  const { job, fitAssessment, activityLogs, nextAction } = detail;
+  const { job, fitAssessment, nextAction } = detail;
   const tailoringOutput = store.getTailoringOutputByJobId(jobId) || null;
+  const applicationPrep = store.getApplicationPrepByJobId(jobId) || null;
   const resumeDocument = job.resumeDocumentId
     ? store.getResumeDocument(job.resumeDocumentId) || store.getLatestResumeDocument()
     : store.getLatestResumeDocument();
-  const baseResumeAsset = sanitizeCanonicalResumeAsset(normalizeResumeWorkspaceAssetModel(resumeDocument, store.getProfile() || {}));
+  const profile = store.getProfile() || {};
+  const masterResumeSource = resolveTailoringMasterResumeSource(profile, resumeDocument);
+  const baseResumeAsset = buildTailoringBaseResumeAsset({
+    profile,
+    resumeDocument,
+    masterResume: masterResumeSource.masterResume
+  });
   const safeTailoringOutput = tailoringOutput || {
     workspaceDraft: null,
     tailoredSummary: "",
     reviewModules: [],
     insights: {}
   };
-  const tailoredResume = buildTailoredWorkspaceResumeModel(safeTailoringOutput, baseResumeAsset);
   const jobSummary = buildJobSummaryModel(job, fitAssessment, safeTailoringOutput);
-  const reviewModules = safeTailoringOutput.reviewModules?.length
-    ? safeTailoringOutput.reviewModules
-    : buildWorkspaceReviewModules(jobSummary, baseResumeAsset, tailoredResume);
+  const tailoredResume = buildTailoredWorkspaceResumeModel(safeTailoringOutput, baseResumeAsset, jobSummary);
+  const reviewModules = buildWorkspaceReviewModules(baseResumeAsset, tailoredResume);
+  const insights = buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume);
+  const workspaceState = {
+    id: safeTailoringOutput.workspace?.id || `workspace_${job.id}`,
+    name: safeTailoringOutput.workspace?.name || buildDefaultTailoringWorkspaceName(job),
+    activeVersion: safeTailoringOutput.workspace?.activeVersion || safeTailoringOutput.version || 1,
+    lastRefinePrompt: safeTailoringOutput.workspace?.lastRefinePrompt || "",
+    updatedAt: safeTailoringOutput.workspace?.updatedAt || safeTailoringOutput.updatedAt || job.updatedAt,
+    canGeneratePrepFromAcceptedOnly: true,
+    baseResumeAsset,
+    tailoredResume,
+    reviewSummary: buildReviewSummary(reviewModules),
+    reviewModules,
+    insights,
+    jobSummary,
+    nextAction
+  };
+  const tailoredResumeContract = buildTailoredResumeContractForJob({
+    job,
+    fitAssessment,
+    resumeDocument,
+    masterResume: masterResumeSource.masterResume,
+    tailoringOutput: safeTailoringOutput,
+    applicationPrep
+  });
+  const prepDto = buildPrepDtoFromContracts({
+    job,
+    resumeDocument,
+    tailoredResumeContract,
+    applicationPrep,
+    targetingBrief: safeTailoringOutput.targetingBrief || null,
+    shortlistAdmission: job.shortlistAdmission || null
+  });
+  const feedbackTimelineView = buildFeedbackTimelineView(detail.feedbackTraces || []);
 
   return {
-    ...detail,
-    tailoringOutput: safeTailoringOutput,
-    workspace: {
-      id: safeTailoringOutput.workspace?.id || `workspace_${job.id}`,
-      name: safeTailoringOutput.workspace?.name || buildDefaultTailoringWorkspaceName(job),
-      activeVersion: safeTailoringOutput.workspace?.activeVersion || safeTailoringOutput.version || 1,
-      lastRefinePrompt: safeTailoringOutput.workspace?.lastRefinePrompt || "",
-      updatedAt: safeTailoringOutput.workspace?.updatedAt || safeTailoringOutput.updatedAt || job.updatedAt,
-      canGeneratePrepFromAcceptedOnly: true,
-      baseResumeAsset,
-      tailoredResume,
-      reviewSummary: buildReviewSummary(reviewModules),
-      reviewModules,
-      insights: safeTailoringOutput.insights || buildWorkspaceInsights(jobSummary, baseResumeAsset, tailoredResume),
-      jobSummary,
-      nextAction
-    },
-    workspaceActivity: (activityLogs || []).filter((entry) => ["tailoring_generated", "tailoring_review_saved", "prep_saved"].includes(entry.type))
+    jobId: job.id,
+    jobWorkspaceViewModel: detail.jobWorkspaceViewModel,
+    resumeViewModel: detail.resumeViewModel,
+    feedbackTimelineView,
+    tailoredResumeContract,
+    prepDto,
+    tailoringWorkspaceViewModel: buildTailoringWorkspaceViewModel({
+      job,
+      workspace: workspaceState,
+      tailoringOutput: safeTailoringOutput,
+      tailoredResumeContract
+    }),
+    tailoringWorkspaceEditDto: buildTailoringWorkspaceEditDto({
+      job,
+      workspace: workspaceState,
+      tailoringOutput: safeTailoringOutput
+    })
   };
 }
 
@@ -1686,14 +4613,6 @@ function buildJobPolicyExplanation(job, fitAssessment, globalPolicy) {
   if (!fitAssessment) return explanation;
 
   explanation.push(`策略判断：${fitAssessment.strategyDecision}。`);
-
-  if (fitAssessment.policyInfluenceSummary) {
-    explanation.push(fitAssessment.policyInfluenceSummary);
-  }
-
-  if (fitAssessment.historyInfluenceSummary) {
-    explanation.push(fitAssessment.historyInfluenceSummary);
-  }
 
   if (job.status === "archived" && fitAssessment.strategyDecision === "avoid") {
     explanation.push("这条岗位被默认归档，因为当前策略与历史证据都表明继续投入的预期收益较低。");
@@ -2165,6 +5084,28 @@ function applyJobOverride(jobId, payload = {}) {
     activePolicyVersion: createPolicyVersion(store.getGlobalStrategyPolicy())
   });
 
+  const updatedAssessment = store.getFitAssessmentByJobId(jobId);
+  const jobDecision = buildJobDecisionSnapshotForJob(updatedJob, updatedAssessment);
+  recordFeedbackTrace({
+    jobId,
+    decisionId: jobDecision?.decisionId || "",
+    eventType: "user_override",
+    outcome: "overridden",
+    actor: "user",
+    jobDecision,
+    executionSnapshot: {
+      stage: "override",
+      status: "completed",
+      details: `User override applied: ${action}`
+    },
+    userOverride: {
+      applied: true,
+      action,
+      reason: payload.reason || ""
+    },
+    source: "workflow_controller.override"
+  });
+
   return updatedJob;
 }
 
@@ -2368,17 +5309,78 @@ async function uploadResumeDocument(payload) {
           : "系统未能稳定解析这份简历，建议用户改传 DOCX 或稍后重试。"
   });
 
-  return { resumeDocument: savedResume };
+  return { resumeDocument: savedResume, resumeViewModel: buildResumeViewModel(savedResume) };
 }
 
 function getCurrentResume() {
+  const resumeDocument = store.getLatestResumeDocument() || null;
+  const resumeViewModel = buildResumeViewModel(resumeDocument);
   return {
-    resumeDocument: store.getLatestResumeDocument() || null,
-    resumeDocuments: store.listResumeDocuments()
+    resumeViewModel,
+    resumeMeta: {
+      resumeId: resumeViewModel.resumeId || "",
+      hasResume: Boolean(resumeViewModel.resumeId),
+      parseStatus: resumeViewModel.parseStatus || "missing",
+      parseQuality: resumeViewModel.parseQuality || "low",
+      parseQualityScore: Number.isFinite(Number(resumeViewModel.parseQualityScore))
+        ? Number(resumeViewModel.parseQualityScore)
+        : 0,
+      uploadedAt: resumeViewModel.uploadedAt || null,
+      warningCount: Array.isArray(resumeViewModel.warnings) ? resumeViewModel.warnings.length : 0
+    }
   };
 }
 
-async function exportJobTailoringDocx(jobId) {
+function getMasterResumeView() {
+  const profile = store.getProfile() || {};
+  const savedCanonicalMasterResume = store.getMasterResume();
+  const latestResumeDocument = store.getLatestResumeDocument() || null;
+
+  let masterResumeContract = null;
+  let source = "empty_seed";
+
+  if (savedCanonicalMasterResume) {
+    masterResumeContract = createMasterResumeContract(savedCanonicalMasterResume);
+    const validation = validateMasterResumeContract(masterResumeContract);
+    if (!validation.valid) {
+      masterResumeContract = null;
+    } else {
+      source = "canonical_saved";
+    }
+  }
+
+  if (!masterResumeContract && latestResumeDocument) {
+    masterResumeContract = buildMasterResumeSeedFromResumeDocument(latestResumeDocument, profile);
+    source = "resume_document_seed";
+  }
+
+  if (!masterResumeContract) {
+    masterResumeContract = buildEmptyMasterResume(profile);
+  }
+
+  const normalizedMasterResume = createMasterResumeContract({
+    ...masterResumeContract,
+    trace: {
+      ...(masterResumeContract.trace || {}),
+      source
+    }
+  });
+
+  return {
+    masterResumeViewModel: buildMasterResumeViewModel(normalizedMasterResume),
+    masterResumeEditDto: buildMasterResumeEditDto(normalizedMasterResume),
+    masterResumeMeta: {
+      masterResumeId: normalizedMasterResume.masterResumeId,
+      source,
+      hasSavedCanonical: source === "canonical_saved",
+      seededFromResumeDocument: source === "resume_document_seed",
+      sourceResumeId: normalizedMasterResume.trace?.sourceResumeId || "",
+      updatedAt: normalizedMasterResume.updatedAt || null
+    }
+  };
+}
+
+async function exportJobTailoringByFormat(jobId, exportFormat = "docx") {
   const job = store.getJob(jobId);
   if (!job) {
     const error = new Error(`Job ${jobId} not found.`);
@@ -2398,14 +5400,111 @@ async function exportJobTailoringDocx(jobId) {
     throw error;
   }
 
-  const exported = await exportTailoredResumeDocx({
+  const tailoredResumeContract = buildTailoredResumeContractForJob({
     job,
-    tailoringOutput: {
-      ...tailoringOutput,
-      applicationPrepSnapshot: applicationPrep
-    },
-    resumeDocument
+    fitAssessment: store.getFitAssessmentByJobId(jobId),
+    resumeDocument,
+    tailoringOutput,
+    applicationPrep
   });
+  const prepDto = buildPrepDtoFromContracts({
+    job,
+    resumeDocument,
+    tailoredResumeContract,
+    applicationPrep,
+    targetingBrief: tailoringOutput?.targetingBrief || null,
+    shortlistAdmission: job?.shortlistAdmission || null
+  });
+  const canonicalResumeContract = buildCanonicalResumeFromResumeDocument(resumeDocument || null);
+
+  const resumeExportContract = createResumeExportContract({
+    exportId: createId("export"),
+    jobId: job.id,
+    masterResumeId: tailoredResumeContract.masterResumeId || resumeDocument?.id || "",
+    tailoredResumeId: tailoredResumeContract.tailoredResumeId || "",
+    exportFormat,
+    exportStatus: "ready",
+    artifactName: `${job.company || "ApplyFlow"}-${job.title || "TailoredResume"}.${exportFormat}`,
+    artifactMeta: {
+      mimeType:
+        exportFormat === "pdf"
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      extension: exportFormat
+    },
+    trace: {
+      source: "workflow_controller.export",
+      runId: tailoredResumeContract.trace?.runId || tailoredResumeContract.tailoredResumeId || ""
+    },
+    warnings: [],
+    errors: [],
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  });
+  const exportContractValidation = validateResumeExportContract(resumeExportContract);
+  if (!exportContractValidation.ok) {
+    const error = new Error(`Invalid ResumeExport contract: ${exportContractValidation.errors.join("; ")}`);
+    error.code = "INVALID_RESUME_EXPORT_CONTRACT";
+    error.details = { errors: exportContractValidation.errors, resumeExportContract };
+    throw error;
+  }
+
+  const { exportDto } = buildExportDtoFromContracts({
+    resumeExportContract,
+    canonicalResumeContract,
+    tailoredResumeContract,
+    prepDto,
+    exportOptions: {
+      candidateName: resumeDocument?.name || "",
+      targetRole: job.title || "",
+      targetCompany: job.company || "",
+      targetLocation: job.location || "",
+      transitionalSources: ["resumeDocument->canonical_resume_contract"]
+    }
+  });
+  const exportDtoValidation = validateExportDto(exportDto);
+  if (!exportDtoValidation.ok) {
+    const error = new Error(`Invalid ExportDTO: ${exportDtoValidation.errors.join("; ")}`);
+    error.code = "INVALID_EXPORT_DTO";
+    error.details = { errors: exportDtoValidation.errors, exportDto };
+    throw error;
+  }
+
+  let finalizedExportContract = resumeExportContract;
+  let exported = null;
+  try {
+    exported =
+      exportFormat === "pdf"
+        ? await exportTailoredResumePdf(exportDto)
+        : await exportTailoredResumeDocx(exportDto);
+    finalizedExportContract = completeResumeExportContractSuccess(resumeExportContract, exported);
+    const finalizedValidation = validateResumeExportContract(finalizedExportContract);
+    if (!finalizedValidation.ok) {
+      const error = new Error(`Invalid finalized ResumeExport contract: ${finalizedValidation.errors.join("; ")}`);
+      error.code = "INVALID_RESUME_EXPORT_CONTRACT";
+      error.details = { errors: finalizedValidation.errors, finalizedExportContract };
+      throw error;
+    }
+  } catch (exportError) {
+    finalizedExportContract = completeResumeExportContractFailure(resumeExportContract, {
+      message: exportError?.message || `${String(exportFormat || "docx").toUpperCase()} export failed.`,
+      warnings: []
+    });
+    const failedValidation = validateResumeExportContract(finalizedExportContract);
+    if (!failedValidation.ok) {
+      exportError.details = {
+        ...(exportError.details || {}),
+        failedContractValidationErrors: failedValidation.errors
+      };
+    }
+    exportError.code = exportError.code || `${String(exportFormat || "docx").toUpperCase()}_EXPORT_FAILED`;
+    exportError.details = {
+      ...(exportError.details || {}),
+      exportContract: finalizedExportContract,
+      exportDto
+    };
+    throw exportError;
+  }
 
   logActivity({
     type: "tailoring_exported",
@@ -2413,14 +5512,437 @@ async function exportJobTailoringDocx(jobId) {
     entityId: tailoringOutput.id,
     action: "tailoring_exported",
     jobId,
-    summary: `??? ${job.company} / ${job.title} ? DOCX ?????`,
+    summary: `Exported ${job.company} / ${job.title} as ${String(exportFormat).toUpperCase()}.`,
     agentName: "??????",
-    inputSummary: `??????????${job.company} / ${job.title}?`,
-    outputSummary: `???? ${exported.fileName}??????????????????`,
-    decisionReason: "????????????????????????????????????????"
+    inputSummary: `Export request for ${job.company} / ${job.title}.`,
+    outputSummary: `Produced ${exported.fileName}.`,
+    decisionReason: "Resume export completed via contract-driven export pipeline."
   });
 
-  return exported;
+  return {
+    ...exported,
+    exportContract: finalizedExportContract,
+    exportDto
+  };
+}
+
+async function exportJobTailoringDocx(jobId) {
+  return exportJobTailoringByFormat(jobId, "docx");
+}
+
+async function exportJobTailoringPdf(jobId) {
+  return exportJobTailoringByFormat(jobId, "pdf");
+}
+
+function buildJobDraftFromCanonicalListing(listing = {}, intentId = "", admission = null) {
+  const requirementLines = Array.isArray(listing.requirements) ? listing.requirements.filter(Boolean).slice(0, 10) : [];
+  const jdRaw = [listing.jdSummary || "", ...requirementLines].filter(Boolean).join("\n");
+  return {
+    id: createId("job"),
+    company: listing.company || "Unknown Company",
+    title: listing.title || "Untitled Listing",
+    location: listing.location || "",
+    priority: "medium",
+    status: "inbox",
+    sourceLabel: listing.source || "discovery",
+    sourcePlatform: listing.source || "discovery",
+    jobUrl: listing.normalizedUrl || listing.sourceUrl || "",
+    jdRaw,
+    importMeta: {
+      strategy: "discovery_shortlist_admission",
+      importedFromIntentId: intentId,
+      listingId: listing.listingId,
+      shortlistId: admission?.shortlistId || "",
+      admissionId: admission?.admissionId || ""
+    },
+    discoveryContext: {
+      intentId,
+      listingId: listing.listingId,
+      clusterId: admission?.clusterId || "",
+      shortlistId: admission?.shortlistId || "",
+      source: "discovery_shortlist"
+    },
+    shortlistAdmission: admission || null,
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  };
+}
+
+function attachShortlistAdmissionToJobWorkflow(jobId, payload = {}) {
+  const job = store.getJob(jobId);
+  if (!job) {
+    const error = new Error(`Job ${jobId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const intentId = String(payload.intentId || "").trim();
+  const listingId = String(payload.listingId || "").trim();
+  if (!intentId || !listingId) {
+    const error = new Error("intentId and listingId are required for shortlist admission.");
+    error.code = "VALIDATION_ERROR";
+    throw error;
+  }
+
+  const admission = createShortlistAdmission({
+    intentId,
+    listingId,
+    actor: String(payload.actor || "user"),
+    overrideReason: String(payload.overrideReason || "").trim(),
+    allowSkipOverride: Boolean(payload.allowSkipOverride)
+  });
+
+  if (!["admitted", "overridden"].includes(admission.admissionStatus)) {
+    const error = new Error("Listing is not admitted to Tailor/Execute chain.");
+    error.code =
+      admission.admissionStatus === "override_required"
+        ? "SHORTLIST_OVERRIDE_REQUIRED"
+        : "SHORTLIST_ADMISSION_BLOCKED";
+    error.details = { admission };
+    throw error;
+  }
+
+  const updatedJob = updateJob(jobId, () => ({
+    shortlistAdmission: admission,
+    discoveryContext: {
+      intentId: admission.intentId,
+      listingId: admission.listingId,
+      clusterId: admission.clusterId,
+      shortlistId: admission.shortlistId,
+      source: "discovery_shortlist"
+    }
+  }));
+
+  if (admission.admissionStatus === "overridden") {
+    recordFeedbackTrace({
+      jobId,
+      decisionId: "",
+      eventType: "user_override",
+      outcome: "overridden",
+      actor: admission.override?.actor || admission.actor || "user",
+      executionSnapshot: {
+        stage: "shortlist_admission",
+        status: "override_applied",
+        details: `Override admitted listing from bucket=${admission.admissionBucket}.`
+      },
+      userOverride: {
+        applied: true,
+        action: "shortlist_admission_override",
+        reason: admission.override?.overrideReason || ""
+      },
+      runId: admission.admissionId || "",
+      source: "workflow_controller.discovery"
+    });
+  }
+
+  return { job: updatedJob, admission };
+}
+
+async function admitDiscoveryListingWorkflow(intentId, listingId, payload = {}) {
+  const admission = createShortlistAdmission({
+    intentId,
+    listingId,
+    actor: String(payload.actor || "user"),
+    overrideReason: String(payload.overrideReason || "").trim(),
+    allowSkipOverride: Boolean(payload.allowSkipOverride)
+  });
+
+  if (!["admitted", "overridden"].includes(admission.admissionStatus)) {
+    const error = new Error("Listing is not admitted to Tailor/Execute chain.");
+    error.code =
+      admission.admissionStatus === "override_required"
+        ? "SHORTLIST_OVERRIDE_REQUIRED"
+        : "SHORTLIST_ADMISSION_BLOCKED";
+    error.details = { admission };
+    throw error;
+  }
+
+  const listing = getCanonicalListingByIntentAndListingId(intentId, listingId);
+  if (!listing) {
+    const error = new Error(`Listing ${listingId} not found in intent ${intentId}.`);
+    error.code = "LISTING_NOT_FOUND";
+    throw error;
+  }
+
+  const draft = buildJobDraftFromCanonicalListing(listing, intentId, admission);
+  const savedJob = store.saveJob(draft) || draft;
+
+  logActivity({
+    type: "discovery_listing_admitted",
+    entityType: "job",
+    entityId: savedJob.id,
+    action: "discovery_listing_admitted",
+    actor: admission.actor || "user",
+    jobId: savedJob.id,
+    summary: `已将 shortlist listing ${listingId} 准入并创建岗位 ${savedJob.company} / ${savedJob.title}。`,
+    metadata: {
+      intentId,
+      listingId,
+      shortlistId: admission.shortlistId,
+      admissionId: admission.admissionId,
+      admissionStatus: admission.admissionStatus,
+      admissionBucket: admission.admissionBucket
+    }
+  });
+
+  if (admission.admissionStatus === "overridden") {
+    recordFeedbackTrace({
+      jobId: savedJob.id,
+      decisionId: "",
+      eventType: "user_override",
+      outcome: "overridden",
+      actor: admission.override?.actor || admission.actor || "user",
+      executionSnapshot: {
+        stage: "shortlist_admission",
+        status: "override_applied",
+        details: `Override admitted listing from bucket=${admission.admissionBucket}.`
+      },
+      userOverride: {
+        applied: true,
+        action: "shortlist_admission_override",
+        reason: admission.override?.overrideReason || ""
+      },
+      runId: admission.admissionId || "",
+      source: "workflow_controller.discovery"
+    });
+  } else {
+    recordFeedbackTrace({
+      jobId: savedJob.id,
+      decisionId: "",
+      eventType: "execution_prepared",
+      outcome: "observed",
+      actor: admission.actor || "system",
+      executionSnapshot: {
+        stage: "shortlist_admission",
+        status: "admitted",
+        details: "Listing admitted from shortlist to Tailor/Execute chain."
+      },
+      runId: admission.admissionId || "",
+      source: "workflow_controller.discovery"
+    });
+  }
+
+  return { admission, job: savedJob };
+}
+
+function createDiscoveryIntentWorkflow(payload = {}) {
+  const profile = store.getProfile() || {};
+  const intent = createDiscoveryIntent({
+    userId: payload.userId || profile.id || "user_a",
+    keywords: payload.keywords || [],
+    city: payload.city || "",
+    jobType: payload.jobType || "unknown",
+    seniority: payload.seniority || "unknown",
+    salaryRange: payload.salaryRange || {},
+    constraints: payload.constraints || {},
+    riskTolerance: payload.riskTolerance || "medium"
+  });
+
+  return { intent };
+}
+
+function importDiscoveryCandidatesWorkflow(intentId, payload = {}) {
+  const profile = store.getProfile() || {};
+  return importCandidatesToCanonicalListings({
+    intentId,
+    userId: profile.id || payload.userId || "user_a",
+    candidates: payload.candidates || payload.jobLinks || [],
+    profile
+  });
+}
+
+function importDiscoveryFeishuLeadsWorkflow(intentId, payload = {}) {
+  const profile = store.getProfile() || {};
+  const leadProcessingResult = ingestFeishuRawLeads({
+    leads: payload.leads || [],
+    fetchMeta: {
+      origin: payload.origin || "feishu_ui_import",
+      docName: payload.docName || "",
+      importedAt: nowIso(),
+      rawStatus: "ok"
+    }
+  });
+  const storedLeadProcessingResult = saveLeadProcessingResult(intentId, leadProcessingResult);
+  const importResult = importCandidatesToCanonicalListings({
+    intentId,
+    userId: profile.id || payload.userId || "user_a",
+    candidates: leadProcessingResult.candidateInputs || [],
+    profile
+  });
+
+  return {
+    ...importResult,
+    leadProcessingResult: storedLeadProcessingResult
+  };
+}
+
+async function syncDiscoveryFeishuBitableWorkflow(intentId, payload = {}) {
+  const profile = store.getProfile() || {};
+  return syncFeishuBitableLeads({
+    intentId,
+    userId: profile.id || payload.userId || "user_a",
+    profile,
+    appToken: payload.appToken || "",
+    tableId: payload.tableId || "",
+    tenantAccessToken: payload.tenantAccessToken || "",
+    viewId: payload.viewId || "",
+    pageSize: Number(payload.pageSize || 100),
+    maxPages: Number(payload.maxPages || 10),
+    docName: payload.docName || "",
+    origin: payload.origin || "feishu_bitable_sync",
+    fieldMap: payload.fieldMap || {},
+    fetchImpl: payload.fetchImpl
+  });
+}
+
+async function importDiscoveryOfflineJsonWorkflow(intentId, payload = {}) {
+  const profile = store.getProfile() || {};
+  const lightweightProfile =
+    profile.lightweightProfile && typeof profile.lightweightProfile === "object"
+      ? profile.lightweightProfile
+      : {};
+  const effectiveIntentId = String(intentId || createId("intent")).trim();
+  let intent = getDiscoveryIntent(effectiveIntentId);
+  if (!intent) {
+    intent = createDiscoveryIntent({
+      intentId: effectiveIntentId,
+      userId: profile.id || payload.userId || "user_a",
+      keywords: Array.isArray(payload.keywords)
+        ? payload.keywords
+        : Array.isArray(lightweightProfile.targetRoles)
+          ? lightweightProfile.targetRoles
+          : [],
+      city:
+        payload.city ||
+        (Array.isArray(lightweightProfile.preferredLocations) ? lightweightProfile.preferredLocations[0] || "" : ""),
+      jobType: payload.jobType || "unknown"
+    });
+    logger.warn("discovery.offline_json_intent_recreated", {
+      source: "workflow.importDiscoveryOfflineJsonWorkflow",
+      intentId: effectiveIntentId
+    });
+  }
+  const batchInput = {
+    filePath: payload.filePath || "data/standardized_feishu_records.json",
+    records: Array.isArray(payload.records) ? payload.records : null,
+    candidateLimit: Number(payload.candidateLimit || 50),
+    resolutionLimit: Number(payload.resolutionLimit || 30),
+    fallbackKeywords: Array.isArray(payload.fallbackKeywords)
+      ? payload.fallbackKeywords
+      : Array.isArray(lightweightProfile.targetRoles)
+        ? lightweightProfile.targetRoles
+        : [],
+    fallbackCity:
+      payload.fallbackCity ||
+      (Array.isArray(lightweightProfile.preferredLocations) ? lightweightProfile.preferredLocations[0] || "" : ""),
+    fallbackCount: Number(payload.fallbackCount || 12)
+  };
+
+  const batch = await loadOfflineJsonBatch(batchInput);
+
+  const leadProcessingResult = buildLeadProcessingResultFromOfflineJson(batch.selectedRecords, {
+    filePath: batch.filePath,
+    origin: payload.origin || "offline_json_import",
+    docName: payload.docName || "standardized_feishu_records",
+    importedAt: nowIso()
+  });
+  const storedLeadProcessingResult = saveLeadProcessingResult(effectiveIntentId, leadProcessingResult);
+  const importResult = importCandidatesToCanonicalListings({
+    intentId: effectiveIntentId,
+    userId: profile.id || payload.userId || "user_a",
+    candidates: leadProcessingResult.candidateInputs || [],
+    profile
+  });
+
+  const origin = String(payload.origin || "offline_json_import");
+  const shouldAutoAdmitForJobs =
+    Boolean(payload.autoAdmitForJobs) ||
+    origin === "dashboard_bootstrap" ||
+    origin === "onboarding_bootstrap";
+  const autoAdmitLimit = Math.max(0, Number(payload.autoAdmitLimit || 12));
+  const admittedJobs = [];
+
+  if (shouldAutoAdmitForJobs && autoAdmitLimit > 0) {
+    const shortlist = getShortlistResultByIntent(effectiveIntentId, { profile }) || {};
+    const ranking = getRankingResultByIntent(effectiveIntentId, { profile }) || {};
+    const buckets = [
+      ...(Array.isArray(shortlist.shortlistedItems) ? shortlist.shortlistedItems : []),
+      ...(Array.isArray(shortlist.holdItems) ? shortlist.holdItems : []),
+      ...(Array.isArray(ranking.rankedItems) ? ranking.rankedItems : [])
+    ];
+    const listingIds = [];
+    const seen = new Set();
+    buckets.forEach((item) => {
+      const listingId = String(item?.listingId || "").trim();
+      if (!listingId || seen.has(listingId)) return;
+      seen.add(listingId);
+      listingIds.push(listingId);
+    });
+
+    const admitTargets = listingIds.slice(0, autoAdmitLimit);
+    for (const listingId of admitTargets) {
+      try {
+        const listing = getCanonicalListingByIntentAndListingId(effectiveIntentId, listingId);
+        const listingUrl = String(listing?.sourceUrl || listing?.normalizedUrl || "");
+        if (
+          listing?.metadata?.isFallback === true ||
+          /^fallback_/i.test(String(listing?.sourceJobId || "")) ||
+          /applyflow\.local\/fallback/i.test(listingUrl)
+        ) {
+          continue;
+        }
+        const admitted = await admitDiscoveryListingWorkflow(effectiveIntentId, listingId, {
+          actor: "system",
+          overrideReason: "offline_json bootstrap for jobs list visibility",
+          allowSkipOverride: true
+        });
+        if (admitted?.job?.id) {
+          admittedJobs.push(admitted.job.id);
+        }
+      } catch (error) {
+        // Best effort: skip blocked or already-admitted listings.
+      }
+    }
+  }
+
+  return {
+    ...importResult,
+    source: "offline_json",
+    batchSummary: batch.selectedSummary,
+    leadProcessingResult: storedLeadProcessingResult,
+    admissionSummary: {
+      autoAdmitEnabled: shouldAutoAdmitForJobs,
+      autoAdmitLimit,
+      admittedJobsCount: admittedJobs.length
+    }
+  };
+}
+
+function getDiscoveryIntentView(intentId) {
+  const intent = getDiscoveryIntent(intentId);
+  if (!intent) {
+    const error = new Error(`Discovery intent ${intentId} not found.`);
+    error.code = "NOT_FOUND";
+    throw error;
+  }
+
+  const leadProcessingResult = getLeadProcessingResultByIntent(intentId);
+
+  return {
+    intent,
+    leadResolutionViewModel: buildLeadResolutionViewModel(leadProcessingResult),
+    canonicalListings: listCanonicalListingsByIntent(intentId),
+    dedupCandidatePool: getDedupCandidatePoolByIntent(intentId),
+    batchDecisionResult: getBatchDecisionResultByIntent(intentId, {
+      profile: store.getProfile() || {}
+    }),
+    rankingResult: getRankingResultByIntent(intentId, {
+      profile: store.getProfile() || {}
+    }),
+    shortlistResult: getShortlistResultByIntent(intentId, {
+      profile: store.getProfile() || {}
+    })
+  };
 }
 
 module.exports = {
@@ -2430,14 +5952,30 @@ module.exports = {
   generateResumeTailoringOutput,
   saveResumeTailoringOutput,
   prepareJobApplication,
+  runExecutionDryRun,
+  runBrowserApplySession,
+  confirmExecutionRun,
+  submitJobApplication,
   saveApplicationPrep,
   transitionJobStatus,
+  updateJobTrackerState,
+  updateJobFeedbackState,
+  updateJobShortlistState,
+  updateJobMaterialsPrep,
+  updateJobSubmissionAudit,
+  updateJobFollowUp,
   saveProfile,
+  saveOnboardingProfile,
+  saveMasterResume,
   uploadResumeDocument,
   getCurrentResume,
+  getMasterResumeView,
   exportJobTailoringDocx,
+  exportJobTailoringPdf,
   reflectInterview,
   getJobDetail,
+  getJobDetailView,
+  getJobWorkspaceList,
   buildTailoringWorkspace,
   getOrBuildTailoringWorkspace,
   saveTailoringWorkspace,
@@ -2456,6 +5994,14 @@ module.exports = {
   updateBadCase,
   applyJobOverride,
   listBadCases,
-  isPrepReady
+  isPrepReady,
+  createDiscoveryIntentWorkflow,
+  importDiscoveryCandidatesWorkflow,
+  importDiscoveryFeishuLeadsWorkflow,
+  syncDiscoveryFeishuBitableWorkflow,
+  importDiscoveryOfflineJsonWorkflow,
+  getDiscoveryIntentView,
+  admitDiscoveryListingWorkflow,
+  attachShortlistAdmissionToJobWorkflow
 };
 

@@ -1,0 +1,106 @@
+{
+  "fetchMeta": {
+    "origin": "feishu_export_json",
+    "docName": "Campus + PM Leads",
+    "rawStatus": "ok"
+  },
+  "leads": [
+    {
+      "sourceLeadId": "feishu_row_1",
+      "title": "AI Product Manager",
+      "company": "Direct Apply Labs",
+      "location": "Shanghai",
+      "contentText": "Apply now. Own AI workflow planning, stakeholder alignment, and product delivery for agent products.",
+      "links": [
+        {
+          "url": "https://jobs.example.com/direct-apply-ai-pm",
+          "label": "职位详情",
+          "type": "direct_apply",
+          "isPrimary": true
+        }
+      ],
+      "images": [],
+      "attachments": []
+    },
+    {
+      "sourceLeadId": "feishu_row_2",
+      "title": "Platform PM",
+      "company": "Announcement Works",
+      "location": "Beijing",
+      "contentText": "招聘公告：Platform PM，负责平台规划、跨团队协作、需求抽象、roadmap 管理。要求具备 AI 产品经验、数据分析能力、流程设计能力，并推动复杂项目落地。",
+      "links": [
+        {
+          "url": "https://announcement.example.com/platform-pm",
+          "label": "公告链接",
+          "type": "announcement"
+        }
+      ],
+      "images": [],
+      "attachments": []
+    },
+    {
+      "sourceLeadId": "feishu_row_3",
+      "title": "Growth PM",
+      "company": "Mini Program Team",
+      "location": "Hangzhou",
+      "contentText": "扫码投递，小程序申请。",
+      "links": [],
+      "images": [
+        {
+          "id": "img_qr_1",
+          "name": "qr.png",
+          "note": "二维码投递"
+        }
+      ],
+      "attachments": []
+    },
+    {
+      "sourceLeadId": "feishu_row_4",
+      "title": "Operations PM",
+      "company": "Email Apply Co",
+      "location": "Shanghai",
+      "contentText": "请将简历发送至 jobs@example.com，邮件标题注明 岗位+姓名。",
+      "links": [],
+      "images": [],
+      "attachments": [
+        {
+          "id": "att_1",
+          "name": "notice.pdf",
+          "note": "邮件投递说明附件"
+        }
+      ]
+    },
+    {
+      "sourceLeadId": "feishu_row_5",
+      "title": "",
+      "company": "",
+      "location": "",
+      "contentText": "",
+      "links": [],
+      "images": [
+        {
+          "id": "img_only_1",
+          "name": "poster.png",
+          "note": "招聘海报"
+        }
+      ],
+      "attachments": []
+    },
+    {
+      "sourceLeadId": "feishu_row_6",
+      "title": "",
+      "company": "Unknown Co",
+      "location": "",
+      "contentText": "后续再补充。",
+      "links": [
+        {
+          "url": "https://company.example.com/careers",
+          "label": "官网招聘",
+          "type": "gateway"
+        }
+      ],
+      "images": [],
+      "attachments": []
+    }
+  ]
+}

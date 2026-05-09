@@ -1,0 +1,99 @@
+{
+  "savedCanonical": {
+    "masterResumeId": "master_resume_saved_1",
+    "basicInfo": {
+      "name": "Alex Chen",
+      "email": "alex@example.com",
+      "phone": "13800000000",
+      "location": "Shanghai"
+    },
+    "summary": "AI product operator with strong execution and stakeholder communication.",
+    "workExperience": [
+      {
+        "id": "work_1",
+        "company": "ApplyFlow Labs",
+        "role": "Product Operations Manager",
+        "timeRange": "2023.01-2025.03",
+        "bullets": [
+          "Built hiring workflow dashboards.",
+          "Coordinated recruiting process improvements."
+        ]
+      }
+    ],
+    "projectExperience": [
+      {
+        "id": "project_1",
+        "projectName": "AI Resume Copilot",
+        "role": "Product Lead",
+        "timeRange": "2024.06-2024.12",
+        "bullets": [
+          "Shipped structured resume generation workflows."
+        ]
+      }
+    ],
+    "education": [
+      {
+        "id": "education_1",
+        "school": "Fudan University",
+        "degree": "MBA",
+        "timeRange": "2021.09-2023.06"
+      }
+    ],
+    "skills": ["AI Product", "Stakeholder Management", "SQL"],
+    "createdAt": "2026-04-22T08:00:00.000Z",
+    "updatedAt": "2026-04-22T08:00:00.000Z",
+    "trace": {
+      "source": "canonical_saved",
+      "sourceResumeId": "resume_saved_1",
+      "sourceProfileId": "profile_1",
+      "note": "Saved canonical master resume."
+    }
+  },
+  "resumeDocumentSeed": {
+    "id": "resume_seed_1",
+    "fileName": "alex_resume.pdf",
+    "mimeType": "application/pdf",
+    "parseStatus": "parse_success",
+    "parseQuality": {
+      "label": "medium",
+      "score": 0.82
+    },
+    "structuredProfile": {
+      "name": "Alex Chen",
+      "email": "alex@example.com",
+      "phone": "13800000000",
+      "location": "Shanghai",
+      "summary": "Structured resume seed summary.",
+      "workExperience": [
+        {
+          "company": "Seed Company",
+          "role": "Strategy Analyst",
+          "timeRange": "2022.01-2024.01",
+          "bullets": [
+            "Built ops dashboards for recruiting funnel."
+          ]
+        }
+      ],
+      "projectExperience": [
+        {
+          "projectName": "Hiring Intelligence",
+          "role": "Project Owner",
+          "timeRange": "2024.03-2024.09",
+          "bullets": [
+            "Defined structured job ranking rules."
+          ]
+        }
+      ],
+      "educationItems": [
+        {
+          "school": "Tongji University",
+          "degree": "Bachelor",
+          "timeRange": "2017.09-2021.06"
+        }
+      ],
+      "skills": ["Strategy", "Analysis", "Product"]
+    },
+    "createdAt": "2026-04-22T08:00:00.000Z",
+    "updatedAt": "2026-04-22T08:00:00.000Z"
+  }
+}

@@ -1,0 +1,117 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ApplyFlow Assistant</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        width: 420px;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: #f7f8fb;
+        color: #1f2430;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e7e9f0;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        color: #55607a;
+        margin-bottom: 4px;
+      }
+      .title {
+        font-weight: 600;
+        margin: 0 0 6px;
+      }
+      .muted {
+        color: #5b667f;
+        font-size: 12px;
+      }
+      .mono {
+        font-family: Consolas, Menlo, monospace;
+        font-size: 11px;
+      }
+      .status {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .high { background: #dff8eb; color: #0d6d3a; }
+      .medium { background: #fff3cf; color: #855a00; }
+      .low { background: #fde4e4; color: #8a1f1f; }
+      .ok { color: #176d3d; }
+      .warn { color: #855a00; }
+      .bad { color: #8a1f1f; }
+      .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+      button, a.btn {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        text-align: center;
+      }
+      button.primary { background: #1769ff; color: #fff; flex: 1; }
+      button.ghost, a.btn.ghost { background: #eef2ff; color: #1d3b8f; }
+      ul { margin: 6px 0 0; padding-left: 16px; }
+      li { font-size: 12px; margin-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border-bottom: 1px solid #edf0f6; text-align: left; padding: 6px 4px; font-size: 11px; vertical-align: top; }
+      th { color: #4a5470; font-weight: 600; }
+      .pill {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        background: #eef2ff;
+        color: #2f4593;
+      }
+      .status-filled { color: #176d3d; }
+      .status-empty_profile_value, .status-not_found { color: #855a00; }
+      .status-partial_not_supported { color: #855a00; }
+      .status-unsupported_control, .status-selector_mismatch { color: #8a1f1f; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="eyebrow">ApplyFlow Edge Assistant</div>
+      <h3 class="title">网页辅助填写（MVP）</h3>
+      <div class="muted">当前页面支持度：<span id="support-badge" class="status low">检测中</span></div>
+      <div id="support-detail" class="muted" style="margin-top:4px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">当前资料状态</div>
+      <div id="profile-status" class="muted">检测中...</div>
+      <ul id="profile-fields"></ul>
+      <div class="muted" id="data-source-debug" style="margin-top:6px;"></div>
+      <ul id="field-source-debug"></ul>
+      <div class="btn-row">
+        <button id="fill-btn" class="primary">一键填写基础信息</button>
+        <button id="refresh-btn" class="ghost">刷新检测</button>
+      </div>
+      <div class="btn-row">
+        <a class="btn ghost" id="profile-link" href="https://applyflow-staging.applyflow-eugene.workers.dev/#/profile" target="_blank">打开 Resume / Profile</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">字段级结果（点击“一键填写”后更新）</div>
+      <div class="mono">fields: full_name / email / phone / gender / school_name / first_school_name / degree / major / first_major / birth_date / bachelor_start_date / bachelor_end_date / master_start_date / master_end_date / language_exam_language / language_exam_level / language_name / english_proficiency / english_score / certificate_name / achievement_score / summary</div>
+      <div id="field-results"></div>
+      <div id="result" class="muted" style="margin-top:8px;"></div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

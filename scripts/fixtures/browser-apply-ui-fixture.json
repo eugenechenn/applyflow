@@ -1,0 +1,13 @@
+{
+  "jobId": "job_browser_ui_001",
+  "listingId": "listing_browser_ui_001",
+  "targetUrl": "https://example.com/apply/ui",
+  "prefillPayload": {
+    "name": "Wang Lei",
+    "email": "wanglei@example.com",
+    "phone": "13900000000",
+    "resumeUploadPath": "C:/tmp/resume.pdf",
+    "summary": "Product + AI workflow experience."
+  }
+}
+

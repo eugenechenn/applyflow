@@ -1,0 +1,25 @@
+{
+  "requiredTokens": [
+    "const PASSIVE_ARRAY_MODULES =",
+    "async function fillArraySectionsPassive(",
+    "education: {",
+    "work_experience: {",
+    "project_experience: {",
+    "family: {",
+    "if (options.allowScroll !== false)",
+    "const moduleFillSummary = await fillArraySectionsPassive(profile);"
+  ],
+  "requiredFieldTokens": [
+    "company_name",
+    "job_title",
+    "work_description",
+    "project_description",
+    "start_date",
+    "end_date"
+  ],
+  "forbiddenTokens": [
+    "clickAddExperience",
+    "autoAddSectionRow",
+    "autoScrollPageForFill"
+  ]
+}

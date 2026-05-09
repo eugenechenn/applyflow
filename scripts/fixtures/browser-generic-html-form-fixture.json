@@ -1,0 +1,112 @@
+{
+  "bridgeInput": {
+    "runId": "run_browser_generic_001",
+    "jobId": "job_browser_generic_001",
+    "listingId": "listing_browser_generic_001",
+    "targetUrl": "https://example.com/apply/standard",
+    "executionMode": "live",
+    "gateStatus": "allowed",
+    "confirmState": "pending",
+    "prefillPayload": {
+      "name": "Li Hua",
+      "email": "lihua@example.com",
+      "phone": "13800000000",
+      "resumeUploadPath": "C:/tmp/resume.pdf",
+      "summary": "5 years of product + AI workflow experience."
+    },
+    "formPayload": {
+      "portfolioUrl": "https://portfolio.example.com/lihua"
+    }
+  },
+  "standardFormSnapshot": {
+    "hasForm": true,
+    "sourceUrl": "https://example.com/apply/standard",
+    "pageTitle": "Standard Job Apply",
+    "features": {
+      "hasCaptcha": false,
+      "requiresLogin": false,
+      "hasDeepIframe": false,
+      "multiStepHeavy": false,
+      "dynamicQuestionnaire": false
+    },
+    "fields": [
+      {
+        "selector": "input[name='full_name']",
+        "name": "full_name",
+        "label": "Full Name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "selector": "input[name='email']",
+        "name": "email",
+        "label": "Email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "selector": "input[name='phone']",
+        "name": "phone",
+        "label": "Phone",
+        "type": "tel",
+        "required": false
+      },
+      {
+        "selector": "input[name='resume']",
+        "name": "resume",
+        "label": "Resume Upload",
+        "type": "file",
+        "required": true
+      },
+      {
+        "selector": "textarea[name='cover_letter']",
+        "name": "cover_letter",
+        "label": "Cover Letter",
+        "type": "textarea",
+        "required": false
+      },
+      {
+        "selector": "input[name='portfolio_url']",
+        "name": "portfolio_url",
+        "label": "Portfolio URL",
+        "type": "url",
+        "required": false
+      }
+    ]
+  },
+  "noFormSnapshot": {
+    "hasForm": false,
+    "sourceUrl": "https://example.com/jobs/notice",
+    "pageTitle": "Job Notice",
+    "features": {
+      "hasCaptcha": false,
+      "requiresLogin": false,
+      "hasDeepIframe": false,
+      "multiStepHeavy": false,
+      "dynamicQuestionnaire": false
+    },
+    "fields": []
+  },
+  "blockedSnapshot": {
+    "hasForm": true,
+    "sourceUrl": "https://example.com/apply/complex",
+    "pageTitle": "Complex Apply",
+    "features": {
+      "hasCaptcha": true,
+      "requiresLogin": true,
+      "hasDeepIframe": true,
+      "multiStepHeavy": true,
+      "dynamicQuestionnaire": true
+    },
+    "fields": [
+      {
+        "selector": "input[name='email']",
+        "name": "email",
+        "label": "Email",
+        "type": "email",
+        "required": true
+      }
+    ]
+  }
+}
+

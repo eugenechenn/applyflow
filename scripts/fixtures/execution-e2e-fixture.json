@@ -1,0 +1,12 @@
+{
+  "successChain": {
+    "jobStatusStart": "to_prepare",
+    "jobStatusBeforeSubmit": "ready_to_apply"
+  },
+  "errorChains": {
+    "blockedSubmit": "CONTROL_GATE_BLOCKED",
+    "reviewRequiredWithoutConfirm": "HUMAN_CONFIRM_REQUIRED",
+    "invalidConfirmToken": "INVALID_CONFIRM_TOKEN",
+    "submitPrecondition": "SUBMIT_PRECONDITION_NOT_READY"
+  }
+}

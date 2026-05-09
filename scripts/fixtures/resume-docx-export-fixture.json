@@ -1,0 +1,122 @@
+{
+  "valid": {
+    "resumeExportContract": {
+      "exportId": "export_docx_001",
+      "jobId": "job_docx_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "docx",
+      "exportStatus": "ready",
+      "artifactName": "ApplyFlow-AI_PM.docx",
+      "artifactMeta": {
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "extension": "docx"
+      },
+      "warnings": [],
+      "errors": []
+    },
+    "exportDto": {
+      "exportId": "export_docx_001",
+      "jobId": "job_docx_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "docx",
+      "profile": {
+        "candidateName": "Alex Candidate",
+        "targetRole": "AI Product Manager",
+        "targetCompany": "ApplyFlow",
+        "targetLocation": "Shanghai"
+      },
+      "sections": {
+        "summary": "Built decision-control-feedback closed loops for production agent workflows.",
+        "whyFit": "Strong ownership in contract-first system rebuild.",
+        "workExperience": [
+          {
+            "id": "work_1",
+            "company": "ApplyFlow",
+            "role": "PM",
+            "timeRange": "2025-2026",
+            "bullets": [
+              "Drove phase-based architecture rebuild and guardrails."
+            ]
+          }
+        ],
+        "projectExperience": [
+          {
+            "id": "project_1",
+            "projectName": "ApplyFlow",
+            "role": "Owner",
+            "timeRange": "2026",
+            "bullets": [
+              "Implemented discovery-to-execution controlled pipeline."
+            ]
+          }
+        ],
+        "skills": [
+          "Node.js",
+          "System Design",
+          "AI Agent"
+        ],
+        "keywords": [
+          "decision",
+          "control",
+          "feedback"
+        ],
+        "talkingPoints": [
+          "Explain ranking and shortlist admission rationale."
+        ],
+        "coverNote": "Happy to share architecture and delivery details."
+      },
+      "changeReasons": [
+        "Aligned highlights with decision-first agent scope."
+      ],
+      "sectionDiffs": [
+        {
+          "diffId": "diff_1",
+          "sectionKey": "self_summary",
+          "before": "General PM",
+          "after": "Decision-first AI Agent PM",
+          "reason": "Role targeting",
+          "status": "accepted"
+        }
+      ],
+      "sourceContracts": [
+        "canonical_resume_contract",
+        "tailored_resume_contract",
+        "prep_dto",
+        "export_options"
+      ],
+      "artifactMeta": {
+        "suggestedFileName": "ApplyFlow-AI_PM.docx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      "trace": {
+        "source": "fixture.resume_docx_export",
+        "runId": "run_docx_001"
+      }
+    }
+  },
+  "invalid": {
+    "exportDto": {
+      "jobId": "job_docx_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "docx",
+      "profile": {},
+      "sections": {
+        "workExperience": [],
+        "projectExperience": [],
+        "skills": [],
+        "keywords": [],
+        "talkingPoints": []
+      },
+      "changeReasons": [],
+      "sectionDiffs": [],
+      "sourceContracts": [
+        "canonical_resume_contract"
+      ],
+      "artifactMeta": {}
+    },
+    "expectedErrorCode": "INVALID_EXPORT_DTO"
+  }
+}

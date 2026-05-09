@@ -1,0 +1,106 @@
+{
+  "valid": {
+    "resumeExportContract": {
+      "exportId": "export_map_001",
+      "jobId": "job_map_001",
+      "masterResumeId": "resume_master_001",
+      "tailoredResumeId": "tailored_001",
+      "exportFormat": "docx",
+      "exportStatus": "ready",
+      "artifactName": "ApplyFlow-Export.docx",
+      "artifactMeta": {
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "extension": "docx"
+      },
+      "trace": {
+        "source": "fixture.resume_export_mapping",
+        "runId": "run_map_001"
+      }
+    },
+    "canonicalResumeContract": {
+      "workExperience": [
+        {
+          "id": "work_1",
+          "company": "Company A",
+          "role": "PM Intern",
+          "timeRange": "2025-2026",
+          "bullets": ["Shipped decision-control-feedback workflow."]
+        }
+      ],
+      "projectExperience": [],
+      "selfSummary": "Strong product execution with agent architecture understanding.",
+      "skills": ["System Design", "LLM Agent"]
+    },
+    "tailoredResumeContract": {
+      "tailoredResumeId": "tailored_001",
+      "jobId": "job_map_001",
+      "masterResumeId": "resume_master_001",
+      "version": 1,
+      "canonicalTailoredResume": {
+        "workExperience": [
+          {
+            "id": "work_1",
+            "company": "Company A",
+            "role": "PM Intern",
+            "timeRange": "2025-2026",
+            "bullets": ["Refactored decision contracts for explainable output."]
+          }
+        ],
+        "projectExperience": [],
+        "selfEvaluation": "Tailored for decision-first job agent role.",
+        "skills": ["Node.js", "Product Thinking"]
+      },
+      "changeReasons": ["Emphasized control and feedback loop."],
+      "sectionDiffs": [
+        {
+          "diffId": "diff_1",
+          "sectionKey": "self_summary",
+          "before": "General PM profile",
+          "after": "Decision-first AI Agent PM profile",
+          "reason": "Role alignment",
+          "status": "accepted"
+        }
+      ]
+    },
+    "prepDto": {
+      "prepDtoId": "prep_001",
+      "jobId": "job_map_001",
+      "tailoredResumeId": "tailored_001",
+      "masterResumeId": "resume_master_001",
+      "targetKeywords": ["decision", "control", "feedback"],
+      "tailoredSummary": "Built controlled execution and explainable ranking pipelines.",
+      "talkingPoints": ["Why this role and architecture fit."],
+      "coverNote": "Excited to contribute to production-grade AI Agent systems."
+    },
+    "exportOptions": {
+      "candidateName": "Alex Candidate",
+      "targetRole": "AI Product Manager",
+      "targetCompany": "ApplyFlow",
+      "targetLocation": "Shanghai",
+      "transitionalSources": [
+        "resumeDocument->canonical_resume_contract"
+      ]
+    }
+  },
+  "invalidCases": [
+    {
+      "name": "forbidden_legacy_in_export_options",
+      "input": {
+        "exportOptions": {
+          "candidateName": "Alex",
+          "resumeDocument": {
+            "id": "legacy_resume"
+          }
+        }
+      },
+      "expectedErrorCode": "EXPORT_MAPPING_FORBIDDEN_SOURCE"
+    },
+    {
+      "name": "missing_prep_dto",
+      "input": {
+        "prepDto": null
+      },
+      "expectedErrorCode": "EXPORT_MAPPING_REQUIRED_INPUT"
+    }
+  ]
+}

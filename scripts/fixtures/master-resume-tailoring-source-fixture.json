@@ -1,0 +1,97 @@
+{
+  "job": {
+    "id": "job_master_source_1",
+    "company": "ApplyFlow Labs",
+    "title": "AI Product Manager",
+    "location": "Shanghai",
+    "status": "to_prepare",
+    "jdRaw": "Own AI workflow products, define product strategy, work with engineering, and deliver measurable adoption.",
+    "jdStructured": {
+      "summary": "Own AI workflow products.",
+      "responsibilities": ["Own AI workflow product roadmap", "Partner with engineering", "Measure adoption"],
+      "requirements": ["AI product strategy", "Cross-functional execution"],
+      "preferredQualifications": ["LLM product experience"]
+    }
+  },
+  "fitAssessment": {
+    "id": "fit_master_source_1",
+    "jobId": "job_master_source_1",
+    "recommendation": "apply",
+    "whyApply": ["AI product strategy", "workflow delivery"],
+    "riskFlags": [],
+    "keyGaps": []
+  },
+  "profile": {
+    "id": "profile_master_source_1",
+    "fullName": "Alex Chen",
+    "masterResume": "LEGACY FREE TEXT SHOULD NOT DRIVE TAILORING",
+    "baseResume": "LEGACY BASE RESUME SHOULD NOT DRIVE TAILORING"
+  },
+  "savedCanonical": {
+    "masterResumeId": "master_saved_source_1",
+    "basicInfo": {
+      "name": "Alex Chen",
+      "email": "alex@example.com",
+      "phone": "13800000000",
+      "location": "Shanghai"
+    },
+    "summary": "Canonical AI product leader summary from structured MasterResume.",
+    "workExperience": [
+      {
+        "id": "work_canonical_1",
+        "company": "Canonical Co",
+        "role": "AI Product Lead",
+        "timeRange": "2023-2026",
+        "bullets": ["Owned AI workflow roadmap and increased adoption by 35%."]
+      }
+    ],
+    "projectExperience": [
+      {
+        "id": "project_canonical_1",
+        "projectName": "Canonical Agent Workflow",
+        "role": "Product Owner",
+        "timeRange": "2024",
+        "bullets": ["Launched an agent workflow pilot with engineering and operations teams."]
+      }
+    ],
+    "education": [],
+    "skills": ["AI Product", "Workflow Automation", "LLM", "Stakeholder Management"],
+    "createdAt": "2026-04-01T00:00:00.000Z",
+    "updatedAt": "2026-04-02T00:00:00.000Z",
+    "trace": {
+      "source": "canonical_saved",
+      "sourceResumeId": "resume_seed_source_1",
+      "sourceProfileId": "profile_master_source_1",
+      "note": "Saved from MasterResume editor."
+    }
+  },
+  "resumeDocumentSeed": {
+    "id": "resume_seed_source_1",
+    "fileName": "seed-resume.pdf",
+    "parseStatus": "parse_success",
+    "status": "success",
+    "summary": "Seed summary from parsed resume document.",
+    "cleanedText": "Seed Resume Co Product Manager AI workflow delivery SQL",
+    "structuredProfile": {
+      "name": "Alex Chen",
+      "email": "alex@example.com",
+      "phone": "13800000000",
+      "location": "Shanghai",
+      "summary": "Seed summary from parsed resume document.",
+      "workExperience": [
+        {
+          "id": "work_seed_1",
+          "company": "Seed Resume Co",
+          "role": "Product Manager",
+          "timeRange": "2021-2023",
+          "bullets": ["Built workflow dashboards for product operations."]
+        }
+      ],
+      "projectExperience": [],
+      "skills": ["SQL", "Product Ops"],
+      "educationItems": []
+    },
+    "createdAt": "2026-03-01T00:00:00.000Z",
+    "updatedAt": "2026-03-02T00:00:00.000Z"
+  }
+}

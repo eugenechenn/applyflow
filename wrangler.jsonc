@@ -34,5 +34,29 @@
 		"logs": {
 			"enabled": true
 		}
+	},
+	"env": {
+		"staging": {
+			"name": "applyflow-staging",
+			"vars": {
+				"APPLYFLOW_RUNTIME": "cloudflare",
+				"APPLYFLOW_DB_PROVIDER": "d1",
+				"CLOUDFLARE_D1_BINDING": "APPLYFLOW_DB",
+				"LLM_PROVIDER": "openai-compatible",
+				"LLM_BASE_URL": "https://open.bigmodel.cn/api/paas/v4/",
+				"LLM_MODEL": "glm-4.5-air",
+				"SESSION_COOKIE_NAME": "applyflow_session",
+				"SESSION_COOKIE_SAMESITE": "Lax",
+				"SESSION_COOKIE_SECURE": "true",
+				"RESUME_PARSER_URL": "https://resume-parser-production-5580.up.railway.app/parse-resume"
+			},
+			"d1_databases": [
+				{
+					"binding": "APPLYFLOW_DB",
+					"database_name": "applyflow-staging",
+					"database_id": "ed3ef70f-7ca8-4f95-9858-f5ea825d7188"
+				}
+			]
+		}
 	}
 }

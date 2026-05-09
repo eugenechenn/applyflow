@@ -1,0 +1,130 @@
+{
+  "rankingResult": {
+    "rankingId": "ranking_fixture_shortlist_001",
+    "intentId": "intent_fixture_shortlist_001",
+    "rankedItems": [
+      {
+        "listingId": "listing_apply_shortlist",
+        "clusterId": "cluster_apply_shortlist",
+        "rank": 1,
+        "priorityScore": 92,
+        "recommendation": "apply",
+        "evidence": ["Strong keyword alignment", "High domain relevance"],
+        "risks": [],
+        "gaps": [],
+        "whyRanked": "Top ranked by recommendation apply and low risk.",
+        "riskAdjustments": {
+          "riskPenalty": 0,
+          "gapPenalty": 0,
+          "cautionPenalty": 0,
+          "adjustments": ["evidence boost +12"]
+        },
+        "nextAction": "apply",
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_apply_shortlist",
+            "source": "linkedin",
+            "normalizedUrl": "https://linkedin.com/jobs/view/100",
+            "title": "AI Product Manager",
+            "company": "NovaAI",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ]
+      },
+      {
+        "listingId": "listing_apply_high_risk_hold",
+        "clusterId": "cluster_apply_high_risk_hold",
+        "rank": 2,
+        "priorityScore": 85,
+        "recommendation": "apply",
+        "evidence": ["Strong title match"],
+        "risks": ["Risk 1", "Risk 2", "Risk 3"],
+        "gaps": ["Need more process detail"],
+        "whyRanked": "High score but elevated risk footprint.",
+        "riskAdjustments": {
+          "riskPenalty": 18,
+          "gapPenalty": 4,
+          "cautionPenalty": 0,
+          "adjustments": ["risk penalty -18"]
+        },
+        "nextAction": "apply",
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_apply_high_risk_hold",
+            "source": "indeed",
+            "normalizedUrl": "https://indeed.com/viewjob?jk=200",
+            "title": "Senior AI PM",
+            "company": "Risky Co",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ]
+      },
+      {
+        "listingId": "listing_cautious_hold",
+        "clusterId": "cluster_cautious_hold",
+        "rank": 3,
+        "priorityScore": 61,
+        "recommendation": "cautious",
+        "evidence": ["Partial keyword overlap"],
+        "risks": ["Limited JD details"],
+        "gaps": ["Need ownership proof"],
+        "whyRanked": "Middle score with uncertainty.",
+        "riskAdjustments": {
+          "riskPenalty": 7,
+          "gapPenalty": 4,
+          "cautionPenalty": 6,
+          "adjustments": ["caution penalty -6"]
+        },
+        "nextAction": "collect_info",
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_cautious_hold",
+            "source": "manual_link",
+            "normalizedUrl": "https://example.com/jobs/300",
+            "title": "Product Manager",
+            "company": "Unknown Labs",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ]
+      },
+      {
+        "listingId": "listing_skip_tail",
+        "clusterId": "cluster_skip_tail",
+        "rank": 4,
+        "priorityScore": 22,
+        "recommendation": "skip",
+        "evidence": [],
+        "risks": ["Blocked company"],
+        "gaps": ["Core skill mismatch"],
+        "whyRanked": "Tail due to skip recommendation.",
+        "riskAdjustments": {
+          "riskPenalty": 7,
+          "gapPenalty": 4,
+          "cautionPenalty": 10,
+          "adjustments": ["skip kept at tail"]
+        },
+        "nextAction": "skip",
+        "sourceListingsSummary": [
+          {
+            "listingId": "listing_skip_tail",
+            "source": "manual_link",
+            "normalizedUrl": "https://example.com/jobs/400",
+            "title": "Generalist PM",
+            "company": "Blocked Corp",
+            "location": "Shanghai",
+            "isPrimary": true
+          }
+        ]
+      }
+    ],
+    "generatedAt": "2026-04-21T09:00:00.000Z"
+  },
+  "expected": {
+    "shortlistedMustContain": ["listing_apply_shortlist"],
+    "holdMustContain": ["listing_apply_high_risk_hold", "listing_cautious_hold"],
+    "skippedMustContain": ["listing_skip_tail"]
+  }
+}

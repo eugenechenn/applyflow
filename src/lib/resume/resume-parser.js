@@ -7,7 +7,9 @@ const {
   extractCanonicalSkillTokens,
   buildStructuredWorkExperience,
   buildStructuredProjectExperience,
-  buildStructuredEducation
+  buildStructuredEducation,
+  normalizeResumeData,
+  hasSectionHeading
 } = require("./resume-structuring-audit");
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -292,6 +294,7 @@ function extractContact(cleanedText = "") {
   const lines = splitLines(cleanedText).slice(0, 6);
   const name =
     lines.find((line) => {
+      if (hasSectionHeading(line)) return false;
       if (scoreHeading(line)) return false;
       if (/@|\d/.test(line)) return false;
       return /^[A-Za-z\u4e00-\u9fa5][A-Za-z\u4e00-\u9fa5 .'-]{1,40}$/.test(line);
@@ -345,6 +348,13 @@ function splitChronologicalEntries(text = "", { max = 8 } = {}) {
   let current = null;
 
   for (const line of lines) {
+    if (hasSectionHeading(line)) {
+      if (current) {
+        entries.push(current);
+        current = null;
+      }
+      continue;
+    }
     if (datePattern.test(line)) {
       if (current) entries.push(current);
       current = { header: line, bullets: [] };
@@ -542,7 +552,7 @@ function buildChineseStructuredProfile(cleanedText = "", extractionMethod = "unk
     { key: "education", heading: "教育背景", content: truncateText(education.join("\n"), MAX_SECTION_CONTENT_LENGTH) }
   ].filter((section) => section.content);
 
-  return {
+  return normalizeResumeData({
     name,
     email,
     phone,
@@ -559,7 +569,7 @@ function buildChineseStructuredProfile(cleanedText = "", extractionMethod = "unk
     certifications: [],
     sections,
     extractionMethod
-  };
+  });
 }
 
 function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") {
@@ -580,7 +590,7 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
   const fallbackExperienceLines = allLines.filter((line) => /\b(19|20)\d{2}\b/.test(line) || /(manager|analyst|lead|director|specialist|产品|经理|运营|分析|策略)/i.test(line));
   const fallbackEducationLines = allLines.filter((line) => /(university|college|school|academy|大学|学院|本科|硕士|博士|mba|bachelor|master)/i.test(line));
   const fallbackSkillLines = allLines.filter((line) => /(sql|python|excel|strategy|analysis|product|ai|agent|沟通|数据|实验|增长)/i.test(line));
-  return {
+  return normalizeResumeData({
     ...extractContact(cleanedText),
     summary: truncateText(summaryText, 1200),
     experience: extractBulletLikeItems(getSectionText("experience") || fallbackExperienceLines.join("\n"), 10, 260),
@@ -601,7 +611,7 @@ function buildStructuredProfile(cleanedText = "", extractionMethod = "unknown") 
     certifications: extractBulletLikeItems(getSectionText("certifications"), 6, 140),
     sections,
     extractionMethod
-  };
+  });
 }
 
 async function extractTextFromDocx(buffer) {
@@ -827,7 +837,7 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
     };
   }
 
-  const structuredProfile = buildStructuredProfile(cleanedText, extractionMethod);
+  const structuredProfile = normalizeResumeData(buildStructuredProfile(cleanedText, extractionMethod));
   const parseQuality = inferParseQuality({ rawText, cleanedText, structuredProfile });
   const strongSectionCount = (structuredProfile.sections || []).filter((section) => section.content && section.content.length >= 20).length;
 
@@ -859,7 +869,12 @@ async function parseResumeDocument({ fileName, mimeType, base64Data }) {
     rawTextLength: rawText.length,
     cleanedTextLength: cleanedText.length,
     stageQuality,
-    finalQuality: parseQuality
+    finalQuality: parseQuality,
+    structuredResume: {
+      workExperience: structuredProfile.workExperience || [],
+      projectExperience: structuredProfile.projectExperience || [],
+      selfSummary: structuredProfile.selfSummary || structuredProfile.summary || ""
+    }
   });
 
   return {

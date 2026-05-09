@@ -1,0 +1,39 @@
+{
+  "requiredSlotMapEntries": [
+    "\"profile.gender\": \"gender\"",
+    "\"profile.birth_date\": \"birth_date\"",
+    "\"education.highest.degree\": \"degree\"",
+    "\"education.highest.school_name\": \"school_name\"",
+    "\"education.highest.major\": \"major\"",
+    "\"education.first.school_name\": \"first_school_name\"",
+    "\"education.first.major\": \"first_major\"",
+    "\"education.bachelor.start_date\": \"bachelor_start_date\"",
+    "\"education.bachelor.end_date\": \"bachelor_end_date\"",
+    "\"education.master.start_date\": \"master_start_date\"",
+    "\"education.master.end_date\": \"master_end_date\""
+  ],
+  "requiredAliasTokens": [
+    "最高学历",
+    "学历",
+    "学位",
+    "第一学历毕业院校",
+    "第一学历专业",
+    "出生日期",
+    "开始时间",
+    "结束时间",
+    "参加工作日期",
+    "请选择专业",
+    "专业名称"
+  ],
+  "requiredControlTypes": [
+    "radio_group",
+    "searchable_select",
+    "date_picker"
+  ],
+  "requiredFlowTokens": [
+    "inferSemanticSlotFromHint(",
+    "fillViaDialogFallback(",
+    "fillDateLike(",
+    "fillRadioGroup("
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "currentProfile": {
+    "id": "profile_fixture_autofill",
+    "name": "Legacy User",
+    "fullName": "Legacy User",
+    "background": "legacy background",
+    "summary": "legacy summary",
+    "autofillProfile": {
+      "full_name": "Legacy User",
+      "email": "legacy@example.com",
+      "phone": "13800000000",
+      "school_name": "Legacy University",
+      "degree": "Bachelor",
+      "major": "Computer Science",
+      "first_school_name": "Legacy University",
+      "first_major": "Computer Science",
+      "birth_date": "1999-01-01"
+    }
+  },
+  "structuredPayload": {
+    "name": "Eugene Chen",
+    "background": "AI PM profile",
+    "autofillProfile": {
+      "basic": {
+        "full_name": "Eugene Chen",
+        "gender": "male",
+        "birth_date": "1997/5/9",
+        "email": "eugene@example.com",
+        "phone": "13911112222"
+      },
+      "education": [
+        {
+          "level": "bachelor",
+          "school_name": "South China University",
+          "major": "Software Engineering",
+          "degree": "Bachelor",
+          "start_date": "2015.09",
+          "end_date": "2019.06"
+        },
+        {
+          "level": "master",
+          "school_name": "Shanghai University",
+          "major": "AI",
+          "degree": "Master",
+          "start_date": "2019-09",
+          "end_date": "2022-06"
+        }
+      ],
+      "work_experience": [
+        {
+          "company_name": "ApplyFlow Labs",
+          "department": "Product",
+          "job_title": "PM",
+          "start_date": "2022-07",
+          "end_date": "2024-03",
+          "description": "Owned product delivery."
+        }
+      ],
+      "project_experience": [
+        {
+          "project_name": "CareerOps",
+          "role": "Lead",
+          "description": "Built matching engine.",
+          "start_date": "2023-01",
+          "end_date": "2023-08"
+        }
+      ],
+      "family": [
+        {
+          "name": "Parent A",
+          "relation": "father",
+          "employer": "Factory",
+          "position": "Engineer"
+        }
+      ],
+      "summary": "Structured autofill summary."
+    }
+  },
+  "legacyPayload": {
+    "name": "Legacy Compatible",
+    "background": "compat mode",
+    "full_name": "Legacy Compatible",
+    "email": "legacy.compat@example.com",
+    "phone": "13700001111",
+    "school_name": "Compat School",
+    "degree": "Master",
+    "major": "Product",
+    "first_school_name": "Compat First School",
+    "first_major": "Economics",
+    "birth_date": "1998年3月2日"
+  }
+}

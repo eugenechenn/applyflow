@@ -1,0 +1,62 @@
+{
+  "fetchMeta": {
+    "origin": "feishu_export_json",
+    "docName": "April Job Leads",
+    "rawStatus": "ok"
+  },
+  "leads": [
+    {
+      "sourceLeadId": "row_1",
+      "title": "AI Product Manager",
+      "company": "Example Tech",
+      "location": "Shanghai",
+      "jobUrl": "https://jobs.example.com/positions/ai-pm-001",
+      "description": "Apply now for our AI Product Manager opening. You will own agent workflow design, partner with engineering, and drive product delivery across AI features."
+    },
+    {
+      "sourceLeadId": "row_2",
+      "title": "Agent Platform PM",
+      "company": "Announcement Labs",
+      "location": "Beijing",
+      "jobUrl": "https://announcement.example.com/postings/agent-platform",
+      "description": "招聘公告：Agent Platform PM。负责平台规划、跨团队协作、需求抽象和 roadmap 管理。要求具备 AI 产品经验、数据分析能力、流程设计能力，并能推动复杂项目落地。"
+    },
+    {
+      "sourceLeadId": "row_3",
+      "title": "PM",
+      "company": "Gateway Co",
+      "location": "Shanghai",
+      "jobUrl": "https://company.example.com/careers",
+      "description": "请前往官网招聘页投递。"
+    },
+    {
+      "sourceLeadId": "row_4",
+      "title": "Operations PM",
+      "company": "Mini Program Ltd",
+      "location": "Hangzhou",
+      "description": "扫码投递，小程序申请。",
+      "rawImagesMeta": [
+        {
+          "id": "img_1",
+          "name": "qr.png",
+          "note": "二维码投递"
+        }
+      ]
+    },
+    {
+      "sourceLeadId": "row_5",
+      "title": "",
+      "company": "Unknown Co",
+      "location": "",
+      "description": "有招聘机会，后续再看。"
+    }
+  ],
+  "expected": {
+    "candidateInputCount": 2,
+    "blockedRouting": {
+      "row_3": "manual_followup_required",
+      "row_4": "manual_followup_required",
+      "row_5": "manual_enrich_queue"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "requiredTargetFields": [
+    "gender",
+    "first_school_name",
+    "first_major",
+    "birth_date",
+    "bachelor_start_date",
+    "bachelor_end_date",
+    "master_start_date",
+    "master_end_date",
+    "language_exam_language",
+    "language_exam_level",
+    "english_score",
+    "certificate_name",
+    "achievement_score"
+  ],
+  "requiredControlTypes": [
+    "radio_group",
+    "date_picker",
+    "searchable_select"
+  ],
+  "requiredReasons": [
+    "radio_group_not_found",
+    "radio_option_not_matched",
+    "date_picker_value_not_committed",
+    "not_filled_yet"
+  ],
+  "requiredPatterns": [
+    "\\u6027\\u522b",
+    "\\u7b2c\\u4e00\\u5b66\\u5386\\u6bd5\\u4e1a\\u9662\\u6821",
+    "\\u7b2c\\u4e00\\u5b66\\u5386\\u4e13\\u4e1a",
+    "\\u51fa\\u751f\\u65e5\\u671f",
+    "\\u5f00\\u59cb\\u65f6\\u95f4",
+    "\\u7ed3\\u675f\\u65f6\\u95f4",
+    "\\u8bed\\u8a00\\u7b49\\u7ea7",
+    "\\u82f1\\u8bed\\u7b49\\u7ea7\\/?\\u5206\\u6570",
+    "\\u8bc1\\u4e66\\u540d\\u79f0",
+    "\\u6210\\u7ee9\\u5f97\\u5206"
+  ],
+  "requiredFlowTokens": [
+    "fillViaDialogFallback(",
+    "const dialogFilled = await fillViaDialogFallback",
+    "expandFieldValues(",
+    "normalizeToken(",
+    "const desiredValues = expandFieldValues(field, value)"
+  ],
+  "forbiddenTokens": [
+    "hint: candidate?.hint",
+    "hint: candidate.hint"
+  ]
+}

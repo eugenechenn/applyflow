@@ -1,0 +1,31 @@
+﻿{
+  "requiredAuxiliaryTitle": "辅助材料（网申）",
+  "requiredAuxiliarySectionId": "autofill-materials-section",
+  "requiredJobsCtaId": "profile-jobs-cta",
+  "requiredSaveScrollTrigger": "scrollToJobsCta",
+  "requiredProfileSectionTitles": [
+    "求职偏好",
+    "辅助材料（网申）",
+    "可选简历导入"
+  ],
+  "requiredSectionTitles": [
+    "教育经历（可添加多条）",
+    "工作经历（可添加多条）",
+    "项目经历（可添加多条）",
+    "家庭关系（可添加多条）"
+  ],
+  "requiredArrayKeys": [
+    "education",
+    "work_experience",
+    "project_experience",
+    "family"
+  ],
+  "requiredDateFieldDefinitions": [
+    { "module": "education", "fieldPrefix": "education", "key": "start_date", "type": "month" },
+    { "module": "education", "fieldPrefix": "education", "key": "end_date", "type": "month" },
+    { "module": "work_experience", "fieldPrefix": "work", "key": "start_date", "type": "month" },
+    { "module": "work_experience", "fieldPrefix": "work", "key": "end_date", "type": "month" },
+    { "module": "project_experience", "fieldPrefix": "project", "key": "start_date", "type": "month" },
+    { "module": "project_experience", "fieldPrefix": "project", "key": "end_date", "type": "month" }
+  ]
+}

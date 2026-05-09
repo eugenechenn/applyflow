@@ -1,0 +1,21 @@
+{
+  "intent": {
+    "userId": "user_a",
+    "keywords": ["product manager", "ai"],
+    "city": "Shanghai",
+    "jobType": "full_time",
+    "seniority": "junior",
+    "riskTolerance": "medium"
+  },
+  "import": {
+    "filePath": "data/standardized_feishu_records.json",
+    "candidateLimit": 50,
+    "resolutionLimit": 30,
+    "origin": "offline_json_validation"
+  },
+  "expect": {
+    "candidate_input": 50,
+    "resolution": 30
+  }
+}
+
