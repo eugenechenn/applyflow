@@ -48,7 +48,13 @@
 				"SESSION_COOKIE_NAME": "applyflow_session",
 				"SESSION_COOKIE_SAMESITE": "Lax",
 				"SESSION_COOKIE_SECURE": "true",
-				"RESUME_PARSER_URL": "https://resume-parser-production-5580.up.railway.app/parse-resume"
+				"RESUME_PARSER_URL": "https://resume-parser-production-5580.up.railway.app/parse-resume",
+				"AUTH_PROVIDER": "internal_beta",
+				"INTERNAL_BETA_ENABLED": "true",
+				"DEMO_MODE_ENABLED": "true",
+				"DEMO_USER_ID": "demo_user",
+				"DEMO_AUTO_LOGIN_ENABLED": "false",
+				"DEV_AUTH_BYPASS_ENABLED": "false"
 			},
 			"d1_databases": [
 				{
