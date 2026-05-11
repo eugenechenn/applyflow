@@ -77,16 +77,32 @@ function createUserBWorkspace() {
   return seed;
 }
 
+function createDemoWorkspace() {
+  const seed = createWorkspaceFromSeed(demoData);
+  if (!seed.profile || typeof seed.profile !== "object") {
+    seed.profile = {
+      id: "profile_demo_user",
+      fullName: "ApplyFlow Demo User",
+      headline: "Demo workspace profile",
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+  }
+  return seed;
+}
+
 function buildInitialState() {
   return {
     users: [
       createUserRecord({ id: "user_a", email: "alex@example.com", username: "alex" }),
-      createUserRecord({ id: "user_b", email: "taylor@example.com", username: "taylor" })
+      createUserRecord({ id: "user_b", email: "taylor@example.com", username: "taylor" }),
+      createUserRecord({ id: "demo_user", email: "demo@example.com", username: "demo_user" })
     ],
     sessions: [],
     workspaces: {
       user_a: createWorkspaceFromSeed(demoData),
-      user_b: createUserBWorkspace()
+      user_b: createUserBWorkspace(),
+      demo_user: createDemoWorkspace()
     }
   };
 }

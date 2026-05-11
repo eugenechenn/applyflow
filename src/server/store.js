@@ -157,6 +157,51 @@ function ensureUser({ email, username }) {
   return getRepository().saveUser(user);
 }
 
+function ensureNamedUser({ id, email, username }) {
+  const normalizedId = String(id || "").trim();
+  if (!normalizedId) {
+    const error = new Error("ensureNamedUser requires id.");
+    error.code = "VALIDATION_ERROR";
+    throw error;
+  }
+  const override = getOverrideStore();
+  if (override?.ensureNamedUser) {
+    return override.ensureNamedUser({ id: normalizedId, email, username });
+  }
+  const byId = getUser(normalizedId);
+  if (byId) return byId;
+  const byLogin = findUserByLogin(email || username || normalizedId);
+  if (byLogin) return byLogin;
+  const user = {
+    id: normalizedId,
+    email: email || `${normalizedId}@example.com`,
+    username: username || normalizedId,
+    createdAt: nowIso()
+  };
+  const savedUser = getRepository().saveUser(user);
+  const demoUserId = String(process.env.DEMO_USER_ID || "demo_user").trim() || "demo_user";
+  if (normalizedId === demoUserId) {
+    const existingProfile = getRepository().getProfile(normalizedId);
+    if (!existingProfile) {
+      getRepository().saveProfile(normalizedId, {
+        id: `profile_${normalizedId}`,
+        fullName: "ApplyFlow Demo User",
+        headline: "Demo workspace profile",
+        targetRoles: ["AI Product Manager"],
+        preferredLocations: ["Shanghai"],
+        lightweightProfile: {
+          targetRoles: ["AI Product Manager"],
+          preferredLocations: ["Shanghai"]
+        },
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        userId: normalizedId
+      });
+    }
+  }
+  return savedUser;
+}
+
 function createSession(userId) {
   const override = getOverrideStore();
   if (override?.createSession) return override.createSession(userId);
@@ -471,6 +516,7 @@ module.exports = {
   getUser,
   findUserByLogin,
   ensureUser,
+  ensureNamedUser,
   createSession,
   getSession,
   deleteSession,

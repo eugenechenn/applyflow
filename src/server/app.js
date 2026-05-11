@@ -60,7 +60,7 @@ async function handleRequest(req, res) {
     return;
   }
 
-  if (pathname === "/" || pathname === "/index.html") {
+  if (pathname === "/" || pathname === "/index.html" || pathname === "/demo") {
     serveStaticFile(res, path.join(publicDir, "index.html"));
     return;
   }

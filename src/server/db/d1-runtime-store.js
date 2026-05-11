@@ -433,11 +433,34 @@ async function createWorkerOverrideStore({ env, request, resolvedUserId = null, 
     return user;
   }
 
+  function ensureNamedUser({ id, email, username }) {
+    const normalizedId = String(id || "").trim();
+    if (!normalizedId) {
+      const error = new Error("ensureNamedUser requires id.");
+      error.code = "VALIDATION_ERROR";
+      throw error;
+    }
+    const existingById = getUser(normalizedId);
+    if (existingById) return existingById;
+    const existingByLogin = findUserByLogin(email || username || normalizedId);
+    if (existingByLogin) return existingByLogin;
+    const user = {
+      id: normalizedId,
+      email: email || `${normalizedId}@example.com`,
+      username: username || normalizedId,
+      createdAt: new Date().toISOString()
+    };
+    userState.list.push(user);
+    userState.createdUsers.push(user);
+    return user;
+  }
+
   const overrideStore = {
     listUsers: listUsersLocal,
     getUser,
     findUserByLogin,
     ensureUser,
+    ensureNamedUser,
     getState() {
       return {
         users: userState.list,

@@ -101,6 +101,60 @@ function getCurrentUser() {
   return user;
 }
 
+function getEnvValue(name, fallback = "") {
+  const context = getRequestContext();
+  const fromContext = context?.env?.[name];
+  if (fromContext !== undefined && fromContext !== null && String(fromContext) !== "") {
+    return fromContext;
+  }
+  const fromProcess = process.env[name];
+  if (fromProcess !== undefined && fromProcess !== null && String(fromProcess) !== "") {
+    return fromProcess;
+  }
+  return fallback;
+}
+
+function isTruthy(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function parseAllowedEmails(value = "") {
+  return new Set(
+    String(value || "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function resolveAuthGateConfig() {
+  const authProvider = String(getEnvValue("AUTH_PROVIDER", ""))
+    .trim()
+    .toLowerCase();
+  const internalBetaEnabled = isTruthy(getEnvValue("INTERNAL_BETA_ENABLED", ""));
+  const demoModeEnabled = isTruthy(getEnvValue("DEMO_MODE_ENABLED", ""));
+  const nodeEnv = String(getEnvValue("NODE_ENV", ""))
+    .trim()
+    .toLowerCase();
+  const betaAllowedEmails = parseAllowedEmails(getEnvValue("BETA_ALLOWED_EMAILS", ""));
+  const demoUserId = String(getEnvValue("DEMO_USER_ID", "demo_user")).trim() || "demo_user";
+  const demoResetToken = String(getEnvValue("DEMO_RESET_TOKEN", "")).trim();
+  const restrictPublicAuthSurfaces = internalBetaEnabled || authProvider === "internal_beta" || nodeEnv === "production";
+
+  return {
+    authProvider,
+    internalBetaEnabled,
+    demoModeEnabled,
+    demoUserId,
+    demoResetToken,
+    betaAllowedEmails,
+    restrictPublicAuthSurfaces
+  };
+}
+
 async function readJsonBody(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -150,6 +204,17 @@ async function handleApiRequest(req, res, pathname) {
     }
 
     if (req.method === "GET" && pathname === "/api/auth/users") {
+      const authGate = resolveAuthGateConfig();
+      if (authGate.restrictPublicAuthSurfaces) {
+        return failure(
+          res,
+          {
+            code: "NOT_FOUND",
+            message: "Not found."
+          },
+          404
+        );
+      }
       return success(res, {
         users: store.listUsers().map((user) => ({
           id: user.id,
@@ -170,6 +235,22 @@ async function handleApiRequest(req, res, pathname) {
         error.code = "AUTH_FAILED";
         throw error;
       }
+      const authGate = resolveAuthGateConfig();
+      if (authGate.restrictPublicAuthSurfaces) {
+        const normalizedEmail = String(user.email || "")
+          .trim()
+          .toLowerCase();
+        if (user.id === authGate.demoUserId) {
+          const error = new Error("Demo user is only available via /demo.");
+          error.code = "AUTH_FORBIDDEN";
+          throw error;
+        }
+        if (!normalizedEmail || !authGate.betaAllowedEmails.has(normalizedEmail)) {
+          const error = new Error("This account is not in the internal beta allowlist.");
+          error.code = "AUTH_FORBIDDEN";
+          throw error;
+        }
+      }
       const session = issueSession(res, user.id);
       return success(res, { authenticated: true, user, sessionId: session.sessionId });
     }
@@ -179,14 +260,56 @@ async function handleApiRequest(req, res, pathname) {
         const body = await readJsonBody(req);
         validateRequired(["email"], body);
         ensureString(body.email, "email", { min: 3, max: 200 });
+        const authGate = resolveAuthGateConfig();
         const normalizedEmail = String(body.email).trim().toLowerCase();
         const username = normalizedEmail.split("@")[0] || normalizedEmail;
-        const user =
-          store.findUserByLogin(normalizedEmail) ||
-          store.ensureUser({
-            email: normalizedEmail,
-            username
-          });
+        let user = null;
+        if (authGate.restrictPublicAuthSurfaces) {
+          if (!authGate.demoModeEnabled || String(body.mode || "").trim().toLowerCase() !== "demo") {
+            return failure(
+              res,
+              {
+                code: "AUTH_FORBIDDEN",
+                message: "Demo login is disabled for this environment."
+              },
+              403
+            );
+          }
+          const demoUser = store.getUser(authGate.demoUserId) || store.findUserByLogin(authGate.demoUserId);
+          if (!demoUser) {
+            return failure(
+              res,
+              {
+                code: "DEMO_USER_NOT_FOUND",
+                message: "Demo user is not configured."
+              },
+              404
+            );
+          }
+          if (
+            normalizedEmail &&
+            normalizedEmail !== String(demoUser.email || "").trim().toLowerCase() &&
+            normalizedEmail !== String(demoUser.username || "").trim().toLowerCase() &&
+            normalizedEmail !== String(demoUser.id || "").trim().toLowerCase()
+          ) {
+            return failure(
+              res,
+              {
+                code: "AUTH_FORBIDDEN",
+                message: "Demo login only supports the configured demo user."
+              },
+              403
+            );
+          }
+          user = demoUser;
+        } else {
+          user =
+            store.findUserByLogin(normalizedEmail) ||
+            store.ensureUser({
+              email: normalizedEmail,
+              username
+            });
+        }
         const session = issueSession(res, user.id);
         return success(
           res,
@@ -200,6 +323,61 @@ async function handleApiRequest(req, res, pathname) {
       } catch (error) {
         return sendDebugAuthError(res, error);
       }
+    }
+
+    if (req.method === "POST" && pathname === "/api/demo/session") {
+      const authGate = resolveAuthGateConfig();
+      if (!authGate.demoModeEnabled) {
+        return failure(
+          res,
+          {
+            code: "DEMO_MODE_DISABLED",
+            message: "Demo mode is disabled."
+          },
+          403
+        );
+      }
+      const demoUser = store.ensureNamedUser({
+        id: authGate.demoUserId,
+        email: `${authGate.demoUserId}@example.com`,
+        username: authGate.demoUserId
+      });
+      const session = issueSession(res, demoUser.id);
+      return success(res, { authenticated: true, mode: "demo", user: demoUser, sessionId: session.sessionId }, 201);
+    }
+
+    if (req.method === "POST" && pathname === "/api/demo/reset") {
+      const authGate = resolveAuthGateConfig();
+      if (!authGate.demoModeEnabled) {
+        return failure(
+          res,
+          {
+            code: "DEMO_MODE_DISABLED",
+            message: "Demo mode is disabled."
+          },
+          403
+        );
+      }
+      const body = await readJsonBody(req);
+      const providedToken = String(body.resetToken || req.headers["x-demo-reset-token"] || "").trim();
+      if (!authGate.demoResetToken || !providedToken || providedToken !== authGate.demoResetToken) {
+        return failure(
+          res,
+          {
+            code: "DEMO_RESET_FORBIDDEN",
+            message: "Demo reset is not authorized."
+          },
+          403
+        );
+      }
+      return failure(
+        res,
+        {
+          code: "DEMO_RESET_NOT_IMPLEMENTED",
+          message: "Demo reset is gated but not implemented in this batch."
+        },
+        501
+      );
     }
 
     if (req.method === "POST" && pathname === "/api/auth/logout") {

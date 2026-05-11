@@ -6,6 +6,8 @@ const SESSION_COOKIE_SAMESITE = process.env.SESSION_COOKIE_SAMESITE || "Lax";
 const SESSION_COOKIE_SECURE =
   String(process.env.SESSION_COOKIE_SECURE || "").toLowerCase() === "true" ||
   process.env.NODE_ENV === "production";
+const DEV_AUTH_BYPASS_ENABLED = String(process.env.DEV_AUTH_BYPASS_ENABLED || "").toLowerCase() === "true";
+const INTERNAL_BETA_ENABLED = String(process.env.INTERNAL_BETA_ENABLED || "").toLowerCase() === "true";
 
 function parseCookies(req) {
   const header = req.headers.cookie || "";
@@ -23,9 +25,12 @@ function getSessionCookie(req) {
 }
 
 function resolveUserFromRequest(req) {
-  const devUser = req.headers["x-dev-user"];
-  if (devUser) {
-    return store.findUserByLogin(String(devUser));
+  const allowDevBypass = DEV_AUTH_BYPASS_ENABLED && !INTERNAL_BETA_ENABLED && process.env.NODE_ENV !== "production";
+  if (allowDevBypass) {
+    const devUser = req.headers["x-dev-user"];
+    if (devUser) {
+      return store.findUserByLogin(String(devUser));
+    }
   }
   const sessionId = getSessionCookie(req);
   const session = store.getSession(sessionId);

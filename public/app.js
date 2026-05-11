@@ -343,11 +343,18 @@ async function ensureDemoSession() {
   }
   autoLoginAttempted = true;
   renderLoadingState("正在进入系统", "正在创建演示工作台会话...");
-  await api("/api/login", {
+  await api("/api/demo/session", {
     method: "POST",
-    body: JSON.stringify({ email: DEMO_AUTO_LOGIN_EMAIL })
+    body: JSON.stringify({ email: DEMO_AUTO_LOGIN_EMAIL, mode: "demo" })
   });
   return fetchAuthSession();
+}
+
+function isDemoModeEntry() {
+  const pathname = String(window.location.pathname || "").trim().toLowerCase();
+  if (pathname === "/demo") return true;
+  const params = new URLSearchParams(window.location.search || "");
+  return String(params.get("mode") || "").trim().toLowerCase() === "demo";
 }
 
 function updateAuthChrome() {
@@ -1787,15 +1794,15 @@ async function renderDashboard(message = "", errorMessage = "") {
         <form id="dashboard-preference-form" class="stack" style="margin-top:12px;">
           <div class="split">
             <label>目标岗位
-              <input name="targetRoles" value="${escapeHtml(jobPreference.targetRoles.join(", "))}" placeholder="例如 产品经理, 算法工程师" />
+              <input name="targetRoles" value="" placeholder="例如 产品经理, 算法工程师" />
             </label>
             <label>偏好行业
-              <input name="preferredIndustries" value="${escapeHtml(jobPreference.preferredIndustries.join(", "))}" placeholder="例如 金融, AI/算法, 游戏" />
+              <input name="preferredIndustries" value="" placeholder="例如 金融, AI/算法, 游戏" />
             </label>
           </div>
           <div class="split">
             <label>地点
-              <input name="preferredLocations" value="${escapeHtml(jobPreference.preferredLocations.join(", "))}" placeholder="例如 上海, 北京" />
+              <input name="preferredLocations" value="" placeholder="例如 上海, 北京" />
             </label>
           </div>
           <details class="activity-disclosure">
@@ -1803,18 +1810,18 @@ async function renderDashboard(message = "", errorMessage = "") {
             <div class="stack" style="margin-top:8px;">
               <div class="split">
             <label>技能（可选）
-              <input name="skills" value="${escapeHtml(jobPreference.skills.join(", "))}" placeholder="例如 Python, SQL, React" />
+              <input name="skills" value="" placeholder="例如 Python, SQL, React" />
             </label>
             <label>排除岗位
-              <input name="excludedRoles" value="${escapeHtml(jobPreference.excludedRoles.join(", "))}" placeholder="例如 销售, 客服" />
+              <input name="excludedRoles" value="" placeholder="例如 销售, 客服" />
             </label>
               </div>
               <div class="split">
             <label>排除行业
-              <input name="excludedIndustries" value="${escapeHtml(jobPreference.excludedIndustries.join(", "))}" placeholder="例如 教育, 房产中介" />
+              <input name="excludedIndustries" value="" placeholder="例如 教育, 房产中介" />
             </label>
             <label>公司类型偏好
-              <input name="companyTypes" value="${escapeHtml(jobPreference.companyTypes.join(", "))}" placeholder="例如 大厂, 外企, 国企" />
+              <input name="companyTypes" value="" placeholder="例如 大厂, 外企, 国企" />
             </label>
               </div>
               <div class="split">
@@ -3353,6 +3360,79 @@ async function renderJobs(message = "") {
     if (!text) return "岗位信息存在不确定性，建议补充信息后再判断。";
     return truncateText(text, 44);
   };
+  const COMPANY_VALUE_PROFILES = [
+    { pattern: /(百度|Baidu)/i, summary: "属于全球领先的中文搜索与AI平台公司，在大模型与智能应用生态投入持续领先。" },
+    { pattern: /(阿里|Alibaba|饿了么|淘天|蚂蚁)/i, summary: "属于国内头部数字经济平台体系，在电商、本地生活与云生态的业务复杂度高、成长面广。" },
+    { pattern: /(华为|Huawei)/i, summary: "属于全球领先的ICT与终端科技企业，在通信、云与智能化场景有长期技术积累。" },
+    { pattern: /(腾讯|Tencent)/i, summary: "属于国内头部互联网与数字内容平台，在产品规模化与商业化体系方面成熟度高。" },
+    { pattern: /(字节|抖音|ByteDance)/i, summary: "属于全球化内容与推荐技术平台，在增长、算法与商业化协同上节奏快、机会密度高。" },
+    { pattern: /(美团|Meituan)/i, summary: "属于本地生活头部平台，业务链路长、运营与产品协同要求高，实战价值强。" },
+    { pattern: /(京东|JD)/i, summary: "属于头部零售与供应链科技平台，在履约体系与产业数字化方面场景丰富。" },
+    { pattern: /(网易|NetEase)/i, summary: "属于头部互联网内容与技术公司，在产品化与工程质量体系方面较成熟。" },
+    { pattern: /(小红书)/i, summary: "属于头部内容社区与消费决策平台，在用户增长与内容商业化方向机会集中。" },
+    { pattern: /(拼多多|PDD)/i, summary: "属于高增长电商平台，在供应链、增长与数据驱动方面节奏快、挑战高。" },
+    { pattern: /(SHEIN)/i, summary: "属于全球化快时尚电商平台，在跨境供应链与数据化运营方面具备规模优势。" },
+    { pattern: /(东方财富)/i, summary: "属于头部互联网金融信息与证券服务平台，在金融科技与数据产品方向机会稳定。" },
+    { pattern: /(平安)/i, summary: "属于大型综合金融科技集团体系，在金融场景数字化与风控能力方面基础深厚。" },
+    { pattern: /(搜狐)/i, summary: "属于老牌互联网内容与产品平台，业务边界清晰，适合积累完整产品闭环经验。" },
+    { pattern: /(得物)/i, summary: "属于头部消费平台与潮流电商公司，在用户增长、供给运营与数据驱动方面场景密集。" },
+    { pattern: /(收钱吧)/i, summary: "属于线下支付与数字化经营服务平台，在交易、运营与商家增长场景中业务贴近真实商业闭环。" },
+    { pattern: /(东方财富)/i, summary: "属于头部互联网金融信息与证券服务平台，在财富管理与金融数据产品方向机会稳定。" },
+    { pattern: /(网易云音乐)/i, summary: "属于头部在线音乐与内容平台，在推荐、内容生态与商业化协同方面积累较深。" },
+    { pattern: /(BOSS直聘|boss直聘)/i, summary: "属于头部在线招聘平台，在增长、推荐匹配与商业化产品方向有持续迭代机会。" },
+    { pattern: /(同程旅行)/i, summary: "属于头部在线旅游平台，在交易增长、供给运营与产品协同方面场景完整。" },
+    { pattern: /(途虎养车)/i, summary: "属于汽车后市场头部平台，在供应链、门店协同与用户运营方向有明确业务纵深。" },
+    { pattern: /(七牛云)/i, summary: "属于国内云服务与音视频技术平台，在基础设施产品化与企业服务场景上沉淀较强。" },
+    { pattern: /(平安科技)/i, summary: "属于大型金融科技核心技术平台，在风控、数据与企业级系统能力方面基础深厚。" },
+    { pattern: /(抖音)/i, summary: "属于头部内容与商业化平台，在推荐系统、增长与生态运营方向机会密集。" },
+    { pattern: /(SHEIN)/i, summary: "属于全球化快时尚电商平台，在跨境供应链与数据化运营方面具备规模优势。" },
+    { pattern: /(小红书)/i, summary: "属于头部内容社区与消费决策平台，在内容商业化与用户增长方向机会集中。" }
+  ];
+  const resolveCompanyProfileSummary = (company = "") => {
+    const name = String(company || "").trim();
+    if (!name) return "";
+    const matched = COMPANY_VALUE_PROFILES.find((item) => item.pattern.test(name));
+    return matched ? matched.summary : "";
+  };
+  const buildHeuristicCompanySummary = ({ company = "", companyIndustry = "" } = {}) => {
+    const name = String(company || "").trim();
+    const industry = String(companyIndustry || "").trim();
+    if (!name) return "";
+    const low = name.toLowerCase();
+    if (/(银行|证券|基金|保险|金服|金融)/i.test(name)) {
+      return `${name}属于金融服务体系企业，在合规、风控与数据化运营场景上更强调稳健与长期能力积累。`;
+    }
+    if (/(汽车|车|智驾|自动驾驶|新能源)/i.test(name)) {
+      return `${name}处在智能汽车/产业数字化链路，业务协同链条长，适合沉淀跨团队推进能力。`;
+    }
+    if (/(云|数据|智能|AI|算法|科技|信息|软件|系统|网络|技术)/i.test(name) || /tech|ai|cloud|data/.test(low)) {
+      return `${name}偏技术与数字化方向，在产品与工程协同、数据驱动决策方面有较强实战价值。`;
+    }
+    if (/(电商|零售|供应链|商贸|消费|生活|文旅|出行|音乐|内容|社区)/i.test(name)) {
+      return `${name}偏平台型业务场景，在增长、运营与商业化协同方面更容易形成可迁移经验。`;
+    }
+    if (industry && industry !== "行业未说明" && industry !== "—") {
+      return `${name}位于${industry}方向，建议优先关注其核心业务线与你目标岗位的直接相关度。`;
+    }
+    return `${name}有明确招聘投入，建议优先确认岗位职责边界与成长路径后再安排投递优先级。`;
+  };
+  const buildCompanyValueLine = ({ company = "", companyIndustry = "", companyType = "", opportunityType = "" } = {}) => {
+    const profileSummary = resolveCompanyProfileSummary(company);
+    if (profileSummary) return profileSummary;
+    const heuristicSummary = buildHeuristicCompanySummary({ company, companyIndustry });
+    if (heuristicSummary) return heuristicSummary;
+    const industry = String(companyIndustry || "").trim();
+    const type = String(companyType || "").trim();
+    const opp = String(opportunityType || "").trim();
+    const parts = [];
+    if (industry && industry !== "行业未说明" && industry !== "—") parts.push(`该公司处在${industry}方向`);
+    if (type && type !== "公司类型未说明" && type !== "—") parts.push(`组织类型偏向${type}`);
+    if (opp === "single_role_job") parts.push("岗位职责边界更清晰，投入后转化可预期");
+    if (opp === "high_value_role_pool") parts.push("属于高价值方向池，可先确认具体子岗位再推进");
+    if (opp === "broad_recruitment_entry") parts.push("是综合招聘入口，建议先确认你的具体职责");
+    if (!parts.length) return "该公司信息完整度一般，建议先看岗位详情再决定投入优先级。";
+    return `${parts.join("，")}。`;
+  };
   const renderFiveDimensionExplanationList = ({ dimensions = [], scoring = {}, decisionVerdict = {} } = {}) => {
     const rows = dimensions
       .slice(0, 5)
@@ -3582,12 +3662,15 @@ async function renderJobs(message = "") {
                   const explanationFull = scoringSummary.summaryText;
                   const verdictDisplayLabel = resolveVerdictDisplayLabel(decisionVerdict.verdict, verdictGrade);
                   const opportunityTypeLabel = String(scoring.opportunityTypeLabel || decisionVerdict.opportunityTypeLabel || "").trim();
-                  const roleMatchSignal = (Array.isArray(scoring.matchedSignals) ? scoring.matchedSignals : [])
-                    .map((item) => String(item || "").trim())
-                    .find((item) => item.startsWith("命中岗位方向"));
                   const recommendationLine = buildCardRecommendationLine({
                     decisionVerdict,
                     scoringSummaryText: scoringSummary.summaryText,
+                    opportunityType: scoring.opportunityType || decisionVerdict.opportunityType
+                  });
+                  const companyValueLine = buildCompanyValueLine({
+                    company: job.company || "",
+                    companyIndustry,
+                    companyType,
                     opportunityType: scoring.opportunityType || decisionVerdict.opportunityType
                   });
                   const priorityScoreLabel = Number.isFinite(Number(scoring.userPriorityScore))
@@ -3678,7 +3761,6 @@ async function renderJobs(message = "") {
                         <span class="status evaluating">${escapeHtml(verdictDisplayLabel)}</span>
                         <span class="status inbox">${escapeHtml(verdictConfidence)}</span>
                         ${opportunityTypeLabel ? `<span class="status inbox">${escapeHtml(opportunityTypeLabel)}</span>` : ""}
-                        ${roleMatchSignal ? `<span class="status ready_to_apply">${escapeHtml(roleMatchSignal)}</span>` : ""}
                         <span class="status inbox">优先级分数 ${escapeHtml(priorityScoreLabel)}</span>
                         <span class="status inbox">投递优先级 ${escapeHtml(resolveApplyPriorityLabel(applyPriority))}</span>
                         ${attentionBadge}
@@ -3687,9 +3769,9 @@ async function renderJobs(message = "") {
                         <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
                           <div style="flex:0 0 168px;max-width:100%;">${fiveDimensionRadarSvg}</div>
                           <div style="min-width:0;flex:1;">
-                            <div class="muted">桌面端可悬停查看维度依据。</div>
+                            <div class="muted">这 5 项用于回答：这份岗位为什么值得你投入时间。</div>
                             <details class="activity-disclosure" style="margin-top:8px;">
-                              <summary class="muted" style="cursor:pointer;">查看五维判断依据</summary>
+                              <summary class="muted" style="cursor:pointer;">为什么推荐（五维依据）</summary>
                               ${fiveDimensionExplanationList}
                             </details>
                           </div>
@@ -3697,10 +3779,11 @@ async function renderJobs(message = "") {
                       </div>
                       <div class="panel" style="margin-top:8px;padding:10px;">
                         <div><strong>${escapeHtml(recommendationLine)}</strong></div>
+                        <div class="muted" style="margin-top:6px;">${escapeHtml(companyValueLine)}</div>
                       </div>
                       <div class="muted" style="margin-top:8px;">下一步：${escapeHtml(nextActionLabel)}</div>
                       <details class="activity-disclosure" style="margin-top:8px;">
-                        <summary class="muted" style="cursor:pointer;">评分解释：查看排序理由与维度</summary>
+                        <summary class="muted" style="cursor:pointer;">补充说明（可选）</summary>
                         <div class="muted explanation-extra" style="margin-top:8px;">${escapeHtml(explanationFull || "暂无解释")}</div>
                         ${verdictHardBlockers.length > 0 ? `<div class="muted explanation-extra">阻断项：${escapeHtml(verdictHardBlockers[0])}</div>` : ""}
                         <div class="muted explanation-extra">${escapeHtml(skillGapLine)}</div>
@@ -3730,8 +3813,9 @@ async function renderJobs(message = "") {
                         }
                         <a class="button" href="#/jobs/${jobVm.id}">查看详情</a>
                       </div>
-                      <details class="activity-disclosure" style="margin-top:10px;">
-                        <summary class="muted" style="cursor:pointer;">流程追踪 / 反馈 / 候选清单（紧凑）</summary>
+                      <div class="muted" style="margin-top:10px;">执行管理（可选，不影响当前推荐）</div>
+                      <details class="activity-disclosure" style="margin-top:6px;">
+                        <summary class="muted" style="cursor:pointer;">第1步：记录求职进展</summary>
                         <div class="inline-meta" style="margin-top:8px;">
                           <span class="status evaluating">${escapeHtml(trackerStateLabel)}</span>
                         </div>
@@ -3745,7 +3829,8 @@ async function renderJobs(message = "") {
                           <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="rejected">已拒绝</button>
                           <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="offer">录用</button>
                         </div>
-                        <div class="inline-meta" style="margin-top:10px;">
+                        <div class="muted" style="margin-top:10px;">第2步：记录岗位反馈</div>
+                        <div class="inline-meta" style="margin-top:6px;">
                           <span class="status inbox">${escapeHtml(feedbackStateLabel)}</span>
                         </div>
                         <div class="muted explanation-extra">${escapeHtml(feedbackTimelineLine)}</div>
@@ -3754,7 +3839,8 @@ async function renderJobs(message = "") {
                           <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="bad_fit">👎 不匹配</button>
                           <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="misclassified">⚠ 误判</button>
                         </div>
-                        <div class="inline-meta" style="margin-top:10px;">
+                        <div class="muted" style="margin-top:10px;">第3步：加入候选清单</div>
+                        <div class="inline-meta" style="margin-top:6px;">
                           <span class="status saved">${escapeHtml(shortlistStateLabel)}</span>
                         </div>
                         <div class="muted explanation-extra">${escapeHtml(shortlistTimelineLine)}</div>
@@ -3762,8 +3848,8 @@ async function renderJobs(message = "") {
                           <button class="button" type="button" data-action="set-shortlist-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="${escapeHtml(shortlistNextState)}">${escapeHtml(shortlistActionLabel)}</button>
                         </div>
                       </details>
-                      <details class="activity-disclosure" style="margin-top:10px;">
-                        <summary class="muted" style="cursor:pointer;">材料准备（${escapeHtml(resolveMaterialLabel(resumeStatus))} / ${escapeHtml(resolveMaterialLabel(coverLetterStatus))}）</summary>
+                      <details class="activity-disclosure" style="margin-top:6px;">
+                        <summary class="muted" style="cursor:pointer;">高级记录：材料准备（可选）</summary>
                         <div class="muted explanation-extra" style="margin-top:8px;">${escapeHtml(materialsUpdatedLine)}</div>
                         <div class="split" style="margin-top:8px;gap:6px;">
                           <label class="muted">简历
@@ -3810,8 +3896,8 @@ async function renderJobs(message = "") {
                           <button class="button" type="button" data-action="save-materials-prep" data-job-id="${escapeHtml(jobVm.id)}">保存材料记录</button>
                         </div>
                       </details>
-                      <details class="activity-disclosure" style="margin-top:10px;">
-                        <summary class="muted" style="cursor:pointer;">投递记录（${escapeHtml(resolveSubmissionStatusLabel(submissionStatus))}）</summary>
+                      <details class="activity-disclosure" style="margin-top:6px;">
+                        <summary class="muted" style="cursor:pointer;">高级记录：投递状态（可选）</summary>
                         <div class="inline-meta" style="margin-top:10px;">
                           <span class="status applied">${escapeHtml(resolveSubmissionStatusLabel(submissionStatus))}</span>
                           <span class="status inbox">${escapeHtml(resolveSubmissionSourceLabel(submissionSource))}</span>
@@ -3863,8 +3949,8 @@ async function renderJobs(message = "") {
                           <button class="button" type="button" data-action="save-submission-audit" data-job-id="${escapeHtml(jobVm.id)}">保存投递审计</button>
                         </div>
                       </details>
-                      <details class="activity-disclosure" style="margin-top:10px;">
-                        <summary class="muted" style="cursor:pointer;">跟进提醒（${escapeHtml(resolveFollowUpStatusLabel(followUpStatus))}）</summary>
+                      <details class="activity-disclosure" style="margin-top:6px;">
+                        <summary class="muted" style="cursor:pointer;">高级记录：后续提醒（可选）</summary>
                         <div class="inline-meta" style="margin-top:10px;">
                           <span class="status follow_up">${escapeHtml(resolveFollowUpStatusLabel(followUpStatus))}</span>
                           <span class="status inbox">${escapeHtml(resolveFollowUpChannelLabel(followUpChannel))}</span>
@@ -7850,13 +7936,23 @@ async function route() {
   }
 
   const parts = parsedRoute.parts.length > 0 ? parsedRoute.parts : ["dashboard"];
+  const demoModeEntry = isDemoModeEntry();
 
   try {
     const session = await fetchAuthSession();
     if (!session.authenticated) {
-      const demoSession = await ensureDemoSession();
-      if (!demoSession.authenticated) {
-        await renderUnauthenticatedWorkspace("无法创建演示会话，请稍后重试。");
+      if (demoModeEntry) {
+        const demoSession = await ensureDemoSession();
+        if (!demoSession.authenticated) {
+          await renderUnauthenticatedWorkspace("无法创建演示会话，请稍后重试。");
+          return;
+        }
+      } else {
+        renderLoginScreen(
+          "当前为 Internal Beta 访问模式，请使用白名单邮箱登录。",
+          "",
+          []
+        );
         return;
       }
     }
