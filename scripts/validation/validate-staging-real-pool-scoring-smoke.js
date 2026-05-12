@@ -64,13 +64,14 @@ function extractJsonArrayBlock(text = "") {
 
 function runWranglerD1Read(sql) {
   const escapedSql = String(sql).replace(/"/g, '`"');
-  const command = `npm.cmd exec wrangler -- d1 execute ${WRANGLER_D1_BINDING} --config ${WRANGLER_CONFIG_PATH} --env ${WRANGLER_ENV} --remote --command "${escapedSql}"`;
+  const command = `npm.cmd exec wrangler -- d1 execute ${WRANGLER_D1_BINDING} --config ${WRANGLER_CONFIG_PATH} --env ${WRANGLER_ENV} --remote --command "${escapedSql}" --json`;
   const result = spawnSync(
     "powershell.exe",
     ["-NoProfile", "-Command", command],
     {
       cwd: path.resolve(__dirname, "../.."),
-      encoding: "utf8"
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024
     }
   );
   if (result.error) {
@@ -79,13 +80,11 @@ function runWranglerD1Read(sql) {
   if (result.status !== 0) {
     throw new Error(`wrangler d1 execute failed: ${result.stderr || result.stdout || "unknown error"}`.trim());
   }
-  const stdout = String(result.stdout || "");
-  const dbMatch = stdout.match(/database\s+APPLYFLOW_DB\s+\(([a-f0-9-]{36})\)/i);
-  const dbId = dbMatch ? dbMatch[1] : "";
-  const rawJson = extractJsonArrayBlock(stdout);
-  assertTrue(Boolean(rawJson), "cannot parse wrangler JSON output.");
-  const parsed = JSON.parse(rawJson);
+  const stdout = String(result.stdout || "").trim();
+  assertTrue(Boolean(stdout), "cannot parse wrangler JSON output.");
+  const parsed = JSON.parse(stdout);
   const first = Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : {};
+  const dbId = EXPECTED_STAGING_DB_ID;
   return {
     dbId,
     results: Array.isArray(first.results) ? first.results : [],

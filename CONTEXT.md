@@ -1,19 +1,25 @@
 # ApplyFlow Context
 
-当前目标：完成 ApplyFlow Internal Beta Batch UX-1 + UX-2：Profile/Dashboard 信息架构优化，并解除 name/background 对排序入口的阻断。
+当前目标：完成 Full-5000+ real-pool staging 验收收口，并提交只读评分验证脚本兼容性修复。
 
 当前进度：
-- 后端 `/api/profile/save` 已放宽 `name/background` 强校验，支持仅保存排序意图。
-- Dashboard 文案已改为“快速求职意图”，并增加姓名/背景缺失的非阻断提醒。
-- Profile 文案与分组已改为“必填排序意图/加分偏好/排除项/申请材料信息/高级设置”，且明确加分偏好非硬过滤。
-- 排序核心（`userPriorityScore`/`comparator`/acceptance/gate）未改动。
+- staging D1 `staging_real_pool_user` 已完成 Full-5000+ 导入：`jobs=5001`、`sourceLabel=feishu_offline_real_pool=5001`。
+- `demo_user` 全程保持 `jobs=12`，未污染；production 未触碰（仅 `--env staging --remote`）。
+- 4 组画像 Top100 验收：
+  - 产品经理+上海：A10/B90
+  - 数据分析+上海：A14/B86
+  - 算法工程师+上海：A48/B52
+  - 后端开发+上海：A16/B84
+- 四组 `highRoleFitButLowGrade=0`，结论为真实池排序链路正常；PM 旧“无A”源于 demo 小数据/画像，不是评分核心异常。
+- `validate-staging-real-pool-scoring-smoke.js` 已做 Full 数据量兼容修复（`maxBuffer` + `wrangler --json` 解析），不涉及排序核心。
 
 下一步：
-- 运行并归档本轮 UX/Profile flow 验证（含 quick preference flow 新脚本）。
+- 完成 closure commit（仅脚本与文档），保持 sqlite/bak/tmp 不提交。
 - 继续保持 Internal Beta 边界，不进入 production deploy，不触碰排序核心改造。
 
 注意事项：
 - 严禁提交 `data/applyflow.sqlite` 与 `data/*.bak`。
+- 严禁提交 `tmp/` 导入与验收产物。
 - 严禁部署 production。
 - 不允许改排序核心、`userPriorityScore`、`comparator`、`acceptance/gate` 口径。
 - 当前仍不是 Production Auth Ready，也不是 50-user beta ready。
