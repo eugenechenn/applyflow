@@ -441,8 +441,12 @@ async function handleApiRequest(req, res, pathname) {
 
     if (req.method === "POST" && pathname === "/api/profile/save") {
       const body = await readJsonBody(req);
-      validateRequired(["name", "background"], body);
-      ALLOWED_PROFILE_TEXT_FIELDS.forEach((field) => ensureString(body[field], field, { min: 1, max: 12000 }));
+      // 个人材料字段改为非阻断：允许先保存排序意图，再补充姓名/背景。
+      ALLOWED_PROFILE_TEXT_FIELDS.forEach((field) => {
+        if (body[field] !== undefined) {
+          ensureString(body[field], field, { min: 0, max: 12000 });
+        }
+      });
       if (body.autofillProfile !== undefined) {
         assertObject(body.autofillProfile, "autofillProfile");
         if (body.autofillProfile.basic !== undefined) {

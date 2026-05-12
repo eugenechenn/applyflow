@@ -131,3 +131,10 @@
 - 普通路径未登录仍显示 Internal Beta 登录页，不自动 demo。
 - 远端自动 smoke 若受执行环境 workers.dev TLS/网络限制，以人工浏览器验收结果为准。
 - 当前仍不是 Production Auth Ready，也不是 50-user beta ready。
+
+## 11. Batch UX-1 + UX-2（2026-05）
+- Dashboard 定位为“快速求职意图输入”，支持只填“目标岗位 + 地点”先进入排序主链。
+- Profile 定位为“可选高级偏好 + 申请材料信息补充”，与 Dashboard 同步同一 `jobPreferenceProfile` SoT。
+- `name/background` 不再阻断排序主链保存；缺失时仅提示“会影响材料生成与网申自动填充质量”。
+- “偏好行业/偏好公司类型”语义调整为“加分偏好”，明确不是硬过滤；排除项才是更强过滤信号。
+- PM 无 A 档问题保持后续专项，本轮不改排序核心口径。

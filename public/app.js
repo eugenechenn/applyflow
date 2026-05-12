@@ -1698,7 +1698,7 @@ function buildPolicyDelta(label, oldValues, newValues) {
 async function renderDashboard(message = "", errorMessage = "") {
   setActiveNav("#/dashboard");
   title.textContent = "求职工作台";
-  subtitle.textContent = "输入偏好，自动排序岗位，立即进入结构化岗位决策。";
+  subtitle.textContent = "快速输入求职意图，自动排序岗位，立即进入结构化岗位决策。";
   renderLoadingState("加载求职工作台", "正在同步偏好与岗位概览...");
 
   const [profileResult, jobsResult] = await Promise.allSettled([
@@ -1739,6 +1739,9 @@ async function renderDashboard(message = "", errorMessage = "") {
     lightweightProfile: lightweight
   });
   const jobViews = Array.isArray(jobsData.jobWorkspaceViewModels) ? jobsData.jobWorkspaceViewModels : [];
+  const profileName = String(profile?.name || profile?.fullName || "").trim();
+  const profileBackground = String(profile?.background || profile?.headline || "").trim();
+  const needsMaterialsIdentityReminder = !profileName || !profileBackground;
   const recommendationStats = jobViews.reduce(
     (acc, vm) => {
       const recommendation = vm?.decisionView?.recommendation || "skip";
@@ -1765,7 +1768,7 @@ async function renderDashboard(message = "", errorMessage = "") {
         <div class="hero-copy">
           <div class="eyebrow">求职工作台</div>
           <h3 class="hero-title">你的 AI 求职决策面板</h3>
-          <p class="hero-subtitle">输入偏好，自动排序岗位，立即进入结构化岗位决策。</p>
+          <p class="hero-subtitle">快速输入求职意图，自动排序岗位，立即进入结构化岗位决策。</p>
         </div>
         <div class="inline-meta" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
           <span class="status ready_to_apply">推荐投递 ${recommendationStats.apply}</span>
@@ -1777,26 +1780,31 @@ async function renderDashboard(message = "", errorMessage = "") {
       <section class="card">
         <div class="section-head">
           <div>
-            <div class="eyebrow">输入偏好</div>
-            <h3>快速更新求职偏好</h3>
+            <div class="eyebrow">快速输入求职意图</div>
+            <h3>先填目标岗位与地点，立即进入岗位决策</h3>
           </div>
           <div class="toolbar">
             <a class="button" href="#/profile?section=profile-preference-section">更多偏好设置（可选）</a>
           </div>
         </div>
-        <div class="muted">必须条件直接影响过滤；强偏好影响排序；辅助偏好用于补充判断。</div>
+        <div class="muted">这里只填写快速意图；高级偏好和材料信息可在个人资料补充。</div>
+        ${
+          needsMaterialsIdentityReminder
+            ? `<div class="notice info" style="margin-top:8px;">补充姓名和背景可提升材料生成与网申自动填充质量。</div>`
+            : ""
+        }
         <details class="activity-disclosure" style="margin-top:8px;">
           <summary class="muted" style="cursor:pointer;">了解偏好规则（可选）</summary>
-          <div class="muted" style="margin-top:8px;">必须条件：目标岗位、偏好地点、求职类型、排除行业、排除岗位。</div>
-          <div class="muted">强偏好：偏好行业、偏好公司类型。</div>
-          <div class="muted">辅助偏好：技能偏好（可选）与补充项，不会单独决定推荐结果。</div>
+          <div class="muted" style="margin-top:8px;">必填排序意图：目标岗位、地点。</div>
+          <div class="muted">加分偏好：偏好行业、偏好公司类型、技能，会影响排序优先级但不是硬过滤。</div>
+          <div class="muted">排除项：不想看的行业/岗位/公司类型，才会更强地影响过滤与阻断。</div>
         </details>
         <form id="dashboard-preference-form" class="stack" style="margin-top:12px;">
           <div class="split">
             <label>目标岗位
               <input name="targetRoles" value="" placeholder="例如 产品经理, 算法工程师" />
             </label>
-            <label>偏好行业
+            <label>偏好行业（加分）
               <input name="preferredIndustries" value="" placeholder="例如 金融, AI/算法, 游戏" />
             </label>
           </div>
@@ -1820,7 +1828,7 @@ async function renderDashboard(message = "", errorMessage = "") {
             <label>排除行业
               <input name="excludedIndustries" value="" placeholder="例如 教育, 房产中介" />
             </label>
-            <label>公司类型偏好
+            <label>偏好公司类型（加分）
               <input name="companyTypes" value="" placeholder="例如 大厂, 外企, 国企" />
             </label>
               </div>
@@ -7196,7 +7204,7 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
     <div class="panel">
       <form id="profile-form" class="stack">
         <div class="notice info">
-          <strong>页面定位：</strong>本页用于高级偏好设置、材料管理与历史记录查看；日常偏好填写建议从首页工作台进入。
+          <strong>页面定位：</strong>这里会同步工作台偏好，也可补充更细的加分偏好和材料信息。
           <a class="button" style="margin-left:8px;" href="/downloads/applyflow-edge-mvp-v11-semantic-slots.zip" target="_blank" rel="noopener noreferrer">下载插件</a>
           <a class="button" style="margin-left:8px;" href="#/profile?section=profile-preference-section">去填写求职偏好</a>
           <a class="button" style="margin-left:8px;" href="#/profile?section=autofill-materials-section">去填写网申辅助资料</a>
@@ -7210,23 +7218,35 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
           <div class="muted" style="margin-top:8px;">按分区编辑并保存，无需在超长页面中来回滚动。</div>
         </div>
         <div class="panel" id="profile-preference-section" data-profile-tab-panel="preference" style="padding-bottom:84px;">
-          <h4>求职偏好</h4>
-          <div class="muted">用于岗位过滤、优先级排序与五维决策解释；与首页字段含义完全一致。</div>
+          <h4>求职偏好与资料补充（可选）</h4>
+          <div class="muted">与工作台共享同一偏好数据（jobPreferenceProfile），可在此补充更细粒度配置。</div>
           <div class="split" style="margin-top:10px;">
-            <label>姓名<input name="name" value="${escapeHtml(profile.name || profile.fullName || "")}" required /></label>
-            <label>背景简介<input name="background" value="${escapeHtml(profile.background || profile.headline || "")}" required /></label>
+            <label>姓名（材料信息）<input name="name" value="${escapeHtml(profile.name || profile.fullName || "")}" /></label>
+            <label>背景简介（材料信息）<input name="background" value="${escapeHtml(profile.background || profile.headline || "")}" /></label>
           </div>
+          <div class="muted">补充姓名和背景可提升材料生成与网申自动填充质量，不会阻断岗位排序。</div>
           <div class="panel">
-            <h5>必须条件</h5>
-            <div class="muted">这些信息会直接影响过滤：不满足时会被显著降级或阻断。</div>
+            <h5>必填排序意图</h5>
+            <div class="muted">建议至少维护目标岗位与地点，用于排序主链。</div>
             <div class="split">
               <label>目标岗位<input name="targetRoles" value="${escapeHtml(safeJoin(jobPreference.targetRoles, ", "))}" placeholder="例如 产品经理, 后端工程师" /></label>
               <label>偏好地点<input name="targetLocations" value="${escapeHtml(safeJoin(jobPreference.preferredLocations, ", "))}" placeholder="例如 上海, 北京" /></label>
             </div>
+          </div>
+          <div class="panel">
+            <h5>排除项</h5>
+            <div class="muted">排除项会更强地影响过滤/阻断。</div>
             <div class="split">
               <label>不想看的行业<input name="excludedIndustries" value="${escapeHtml(safeJoin(jobPreference.excludedIndustries, ", "))}" placeholder="例如 教育, 房产中介" /></label>
               <label>不想看的岗位<input name="excludedRoles" value="${escapeHtml(safeJoin(jobPreference.excludedRoles, ", "))}" placeholder="例如 销售, 电话客服" /></label>
             </div>
+            <div class="split">
+              <label>不想看的公司类型<input name="avoidCompanyTypes" value="${escapeHtml(safeJoin(jobPreference.avoidCompanyTypes, ", "))}" placeholder="例如 创业公司" /></label>
+              <div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h5>高级设置</h5>
             <div class="split">
               <label>求职阶段
                 <select name="jobTypePreference">
@@ -7240,37 +7260,33 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
               </label>
               <label>学历偏好（可选）<input name="degreePreference" value="${escapeHtml(lightweight.degree || "")}" placeholder="例如 硕士研究生" /></label>
             </div>
-          </div>
-          <div class="panel">
-            <h5>强偏好</h5>
-            <div class="muted">这些信息会影响排序优先级，不会直接删除岗位。</div>
-            <div class="split">
-              <label>偏好行业<input name="targetIndustries" value="${escapeHtml(safeJoin(jobPreference.preferredIndustries, ", "))}" placeholder="例如 金融, AI/算法, 游戏" /></label>
-              <label>偏好公司类型<input name="companyTypes" value="${escapeHtml(safeJoin(jobPreference.companyTypes, ", "))}" placeholder="例如 大厂, 外企, 国企" /></label>
-            </div>
-          </div>
-          <div class="panel">
-            <h5>辅助偏好</h5>
-            <div class="muted">技能偏好属于辅助信号：只用于补充岗位契合度与申请门槛可达性，不会单独决定推荐结果。</div>
-            <div class="split">
-              <label>技能偏好（可选）<input name="strengths" value="${escapeHtml(safeJoin(jobPreference.skills, ", "))}" placeholder="例如 Python, SQL, LLM" /></label>
-              <label>不想看的公司类型<input name="avoidCompanyTypes" value="${escapeHtml(safeJoin(jobPreference.avoidCompanyTypes, ", "))}" placeholder="例如 创业公司" /></label>
-            </div>
             <div class="split">
               <label>工作年限（可选）<input name="yearsOfExperience" type="number" min="0" value="${escapeHtml(profile.yearsOfExperience || 0)}" /></label>
               <div></div>
             </div>
+            <label><input name="acceptsNonTech" type="checkbox" ${lightweight.acceptsNonTech ? "checked" : ""} /> 是否接受非技术岗位</label>
+            <label>限制条件（可选）<textarea name="constraints">${escapeHtml(safeJoin(profile.constraints, ", "))}</textarea></label>
           </div>
-          <label><input name="acceptsNonTech" type="checkbox" ${lightweight.acceptsNonTech ? "checked" : ""} /> 是否接受非技术岗位</label>
-          <label>限制条件（可选）<textarea name="constraints">${escapeHtml(safeJoin(profile.constraints, ", "))}</textarea></label>
+          <div class="panel">
+            <h5>加分偏好</h5>
+            <div class="muted">加分偏好影响排序优先级，不是硬过滤。</div>
+            <div class="split">
+              <label>偏好行业<input name="targetIndustries" value="${escapeHtml(safeJoin(jobPreference.preferredIndustries, ", "))}" placeholder="例如 金融, AI/算法, 游戏" /></label>
+              <label>偏好公司类型<input name="companyTypes" value="${escapeHtml(safeJoin(jobPreference.companyTypes, ", "))}" placeholder="例如 大厂, 外企, 国企" /></label>
+            </div>
+            <div class="split">
+              <label>技能偏好（可选）<input name="strengths" value="${escapeHtml(safeJoin(jobPreference.skills, ", "))}" placeholder="例如 Python, SQL, LLM" /></label>
+              <div></div>
+            </div>
+          </div>
           <div class="toolbar" style="position:sticky; bottom:0; background:var(--panel-bg,#fff); padding-top:8px; margin-top:10px; border-top:1px solid var(--border,#e6e6e6);">
             <button class="button primary" type="submit" data-profile-save-tab="preference">保存高级偏好</button>
             <a class="button" href="#/dashboard">返回工作台</a>
           </div>
         </div>
         <div class="panel" id="autofill-materials-section" data-profile-tab-panel="materials" style="padding-bottom:84px;">
-          <h4>辅助材料（网申）</h4>
-          <div class="muted">这部分用于浏览器插件辅助填写，不影响线索发现/岗位排序主链；与结构化主简历分层管理。</div>
+          <h4>申请材料信息</h4>
+          <div class="muted">这部分用于浏览器插件辅助填写，不影响岗位排序主链；与结构化主简历分层管理。</div>
           <div class="split" style="margin-top:10px;">
             <label>邮箱<input name="email" value="${escapeHtml(autofillProfile.email || "")}" /></label>
             <label>电话<input name="phone" value="${escapeHtml(autofillProfile.phone || "")}" /></label>

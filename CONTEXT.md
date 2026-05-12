@@ -1,20 +1,21 @@
 # ApplyFlow Context
 
-当前目标：完成 Internal Beta Batch 5E Close，提交 staging demo 入口收口修复与文档同步，保持仅 staging 范围。
+当前目标：完成 ApplyFlow Internal Beta Batch UX-1 + UX-2：Profile/Dashboard 信息架构优化，并解除 name/background 对排序入口的阻断。
 
 当前进度：
-- staging 已部署到 `72964f5c-cafa-4adc-80ab-5b178fd0c484`（`https://applyflow-staging.applyflow-eugene.workers.dev`）。
-- 结论确认：staging 下 `/demo` 会 `307 -> /`，当前 canonical demo 入口改为 `/?mode=demo#/dashboard`。
-- 普通路径未登录保持 Internal Beta 登录页，不自动 demo。
-- 当前仍是“3-5 人 Internal Beta 候选可验证状态”，仍不是 Production Auth Ready，也不是 50-user beta ready。
+- 后端 `/api/profile/save` 已放宽 `name/background` 强校验，支持仅保存排序意图。
+- Dashboard 文案已改为“快速求职意图”，并增加姓名/背景缺失的非阻断提醒。
+- Profile 文案与分组已改为“必填排序意图/加分偏好/排除项/申请材料信息/高级设置”，且明确加分偏好非硬过滤。
+- 排序核心（`userPriorityScore`/`comparator`/acceptance/gate）未改动。
 
 下一步：
-- 提交本轮 demo entry 修复（仅允许文件）并由人工完成 staging 手工验收记录。
-- 后续再评估 `/demo` 在 workers.dev 的长期策略（保留 query 入口或切 custom domain）。
+- 运行并归档本轮 UX/Profile flow 验证（含 quick preference flow 新脚本）。
+- 继续保持 Internal Beta 边界，不进入 production deploy，不触碰排序核心改造。
 
 注意事项：
 - 严禁提交 `data/applyflow.sqlite` 与 `data/*.bak`。
 - 严禁部署 production。
 - 不允许改排序核心、`userPriorityScore`、`comparator`、`acceptance/gate` 口径。
+- 当前仍不是 Production Auth Ready，也不是 50-user beta ready。
 
 最后更新时间：2026-05-12

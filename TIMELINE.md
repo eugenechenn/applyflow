@@ -109,3 +109,4 @@
 - 2026-05-09：扩展企业价值文案为“公司画像词典+关键词启发式”并上线，线上抽样显示当前可见岗位说明覆盖率 100%（17/17）。
 - 2026-05-09：完成 Internal Beta Batch 4 最小门禁改造，保留 /demo 面试演示入口并收口白名单 beta 登录、自动 demo 登录、用户枚举与相关验证脚本。
 - 2026-05-09：完成 staging Internal Beta demo 入口收口，暂定 /?mode=demo#/dashboard 为面试演示入口，普通路径保持 Internal Beta 登录页。
+- 2026-05-12：完成 Batch UX-1 + UX-2 最小改造，解除 `/api/profile/save` 对 name/background 的排序入口阻断，并重组 Dashboard/Profile 偏好文案与信息架构。

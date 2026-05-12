@@ -220,3 +220,10 @@
 - 普通路径（`/` 或 `/#/dashboard`）未登录保持 Internal Beta 登录页，不自动 demo 登录。
 - 远端自动 smoke 在部分执行环境可能因 workers.dev TLS/网络不可达失败；此时以人工浏览器验收为准。
 - 当前状态仍不是 Production Auth Ready，仍不是 50-user beta ready。
+
+## 13. UX/Profile Flow 最小收口（Batch UX-1 + UX-2）
+- Dashboard 的角色是“快速输入求职意图”，用于最短路径进入 Jobs/排序决策。
+- Profile 的角色是“高级偏好 + 材料信息补充”，用于提高解释质量与网申自动填充完整度。
+- `name/background` 不再作为 `/api/profile/save` 的强制阻断字段，避免先填偏好后被强制跳 Profile。
+- 缺少 `name/background` 时前端保持非阻断提醒，不把材料完整度误判为已完成。
+- 排序核心合同（`userPriorityScore`、`comparator`、acceptance/gate）在本批次保持冻结。
