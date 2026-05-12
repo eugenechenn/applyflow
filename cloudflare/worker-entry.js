@@ -172,12 +172,17 @@ async function handleApiFetch(request, env) {
 }
 
 async function handleAssetFetch(request, env) {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.pathname === "/demo" || requestUrl.pathname === "/demo/") {
+    return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
+  }
+
   const assetResponse = await env.ASSETS.fetch(request);
   if (assetResponse.status !== 404) {
     return assetResponse;
   }
 
-  const url = new URL(request.url);
+  const url = requestUrl;
   if (url.pathname.startsWith("/api/")) {
     return new Response("Not found", { status: 404 });
   }

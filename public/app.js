@@ -7942,7 +7942,13 @@ async function route() {
     const session = await fetchAuthSession();
     if (!session.authenticated) {
       if (demoModeEntry) {
-        const demoSession = await ensureDemoSession();
+        let demoSession = null;
+        try {
+          demoSession = await ensureDemoSession();
+        } catch (error) {
+          await renderUnauthenticatedWorkspace(`演示模式不可用：${localizeErrorMessage(error.message)}`);
+          return;
+        }
         if (!demoSession.authenticated) {
           await renderUnauthenticatedWorkspace("无法创建演示会话，请稍后重试。");
           return;

@@ -124,3 +124,10 @@
 - 当前仍不是 50-user beta ready。
 - `/api/demo/reset` 仍为 guarded `501`，尚未实现 reset。
 - `user_a fallback / payload.userId` 全量治理后置，需在后续批次专项收口。
+
+## 10. Batch 5E Staging Demo 入口结论（2026-05）
+- staging demo canonical entry：`https://applyflow-staging.applyflow-eugene.workers.dev/?mode=demo#/dashboard`。
+- `/demo` 在 staging 会 `307` 到 `/`，暂不作为面试演示入口。
+- 普通路径未登录仍显示 Internal Beta 登录页，不自动 demo。
+- 远端自动 smoke 若受执行环境 workers.dev TLS/网络限制，以人工浏览器验收结果为准。
+- 当前仍不是 Production Auth Ready，也不是 50-user beta ready。

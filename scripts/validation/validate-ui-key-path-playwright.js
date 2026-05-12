@@ -6,7 +6,7 @@ const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "../..");
 const BASE_URL = process.env.UI_SMOKE_BASE_URL || "http://127.0.0.1:3301";
-const DEMO_ENTRY_URL = process.env.UI_SMOKE_DEMO_URL || `${BASE_URL}/demo#/dashboard`;
+const DEMO_ENTRY_URL = process.env.UI_SMOKE_DEMO_URL || `${BASE_URL}/?mode=demo#/dashboard`;
 const BASE = new URL(BASE_URL);
 
 function sleep(ms) {

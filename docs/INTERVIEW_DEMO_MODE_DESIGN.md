@@ -213,3 +213,10 @@
 - 当前不是 Production Auth Ready，也不是 50-user beta ready。
 - Demo 路径已保留为显式入口，但 `/api/demo/reset` 仍为 guarded `501`（未实现）。
 - `user_a fallback / payload.userId` 仍属后续专项治理，不在本批次关闭范围内。
+
+## 12. Staging Demo 入口收口（Batch 5E）
+- staging（`https://applyflow-staging.applyflow-eugene.workers.dev`）当前 canonical demo 入口为：`/?mode=demo#/dashboard`。
+- staging 上 `/demo` 会出现 `307 -> /`，短期不作为面试演示入口。
+- 普通路径（`/` 或 `/#/dashboard`）未登录保持 Internal Beta 登录页，不自动 demo 登录。
+- 远端自动 smoke 在部分执行环境可能因 workers.dev TLS/网络不可达失败；此时以人工浏览器验收为准。
+- 当前状态仍不是 Production Auth Ready，仍不是 50-user beta ready。

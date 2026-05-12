@@ -1,21 +1,20 @@
 # ApplyFlow Context
 
-当前目标：收口 Internal Beta Batch 4，准备干净 commit（Demo Mode + 白名单 Beta 门禁 + 验证脚本），且不触碰排序核心与生产部署。
+当前目标：完成 Internal Beta Batch 5E Close，提交 staging demo 入口收口修复与文档同步，保持仅 staging 范围。
 
 当前进度：
-- Batch 4 Fix/Close 验证已通过：`lint`、`typecheck`、`build`、`validate:ui-runtime-smoke`、`validate:ui-key-path-playwright`、`validate:job-scoring-derived-view`、`eval:acceptance`、`eval:gate`、以及 5 个 beta/demo 验证脚本。
-- 当前达到“3-5 人 Internal Beta 候选可验证状态”。
-- 明确仍不是 Production Auth Ready，也不是 50-user beta ready。
-- `/api/demo/reset` 仍为 guarded `501`（未实现 reset）。
-- `user_a fallback / payload.userId` 全量治理后置，未在本批次完成。
+- staging 已部署到 `72964f5c-cafa-4adc-80ab-5b178fd0c484`（`https://applyflow-staging.applyflow-eugene.workers.dev`）。
+- 结论确认：staging 下 `/demo` 会 `307 -> /`，当前 canonical demo 入口改为 `/?mode=demo#/dashboard`。
+- 普通路径未登录保持 Internal Beta 登录页，不自动 demo。
+- 当前仍是“3-5 人 Internal Beta 候选可验证状态”，仍不是 Production Auth Ready，也不是 50-user beta ready。
 
 下一步：
-- 完成 Batch 4 Closure commit（仅纳入本批次 auth/demo/beta 与验证脚本改动，排除 sqlite/bak 与无关历史改动）。
-- 进入 Batch 5 二选一：`staging smoke` 或 `user_a/payload.userId` 专项治理。
+- 提交本轮 demo entry 修复（仅允许文件）并由人工完成 staging 手工验收记录。
+- 后续再评估 `/demo` 在 workers.dev 的长期策略（保留 query 入口或切 custom domain）。
 
 注意事项：
 - 严禁提交 `data/applyflow.sqlite` 与 `data/*.bak`。
-- 严禁声明 Production Auth Ready 或 50-user beta ready。
+- 严禁部署 production。
 - 不允许改排序核心、`userPriorityScore`、`comparator`、`acceptance/gate` 口径。
 
 最后更新时间：2026-05-12
