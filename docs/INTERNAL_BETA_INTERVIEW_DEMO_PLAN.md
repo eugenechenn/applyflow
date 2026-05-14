@@ -138,3 +138,18 @@
 - `name/background` 不再阻断排序主链保存；缺失时仅提示“会影响材料生成与网申自动填充质量”。
 - “偏好行业/偏好公司类型”语义调整为“加分偏好”，明确不是硬过滤；排除项才是更强过滤信号。
 - PM 无 A 档问题保持后续专项，本轮不改排序核心口径。
+
+## 12. Staging Final Review（2026-05-14）
+- staging final review 结论：当前可用于“面试演示 + 本人 staging 自测”。
+- real-pool 验收用户 `staging_real_pool_user` 已完成 Full-5000+（`5001`）导入并通过四画像 Top100 验收：
+  - 产品经理+上海：A10/B90
+  - 数据分析+上海：A14/B86
+  - 算法工程师+上海：A48/B52
+  - 后端开发+上海：A16/B84
+  - `highRoleFitButLowGrade=0`（四画像）
+- `demo_user=12` 维持小数据演示池，未被真实池污染。
+- PM 历史“无 A”问题已确认主要来自 demo 小数据/画像，不是评分链异常；不需要改 `userPriorityScore` / comparator / grade 阈值 / opportunityType / acceptance-gate 口径。
+- 3-5 人白名单内测前，建议优先完成：
+  - A/B 用户隔离端到端验证
+  - `user_a fallback / payload.userId` 专项治理
+- 当前仍不是 Production Auth Ready，也不是 50-user beta ready。

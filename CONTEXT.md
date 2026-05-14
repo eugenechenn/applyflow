@@ -1,6 +1,6 @@
 # ApplyFlow Context
 
-当前目标：完成 Full-5000+ real-pool staging 验收收口，并提交只读评分验证脚本兼容性修复。
+当前目标：完成 Internal Beta Staging Final Review 文档收口，明确当前可用边界与 readiness 分级。
 
 当前进度：
 - staging D1 `staging_real_pool_user` 已完成 Full-5000+ 导入：`jobs=5001`、`sourceLabel=feishu_offline_real_pool=5001`。
@@ -12,10 +12,13 @@
   - 后端开发+上海：A16/B84
 - 四组 `highRoleFitButLowGrade=0`，结论为真实池排序链路正常；PM 旧“无A”源于 demo 小数据/画像，不是评分核心异常。
 - `validate-staging-real-pool-scoring-smoke.js` 已做 Full 数据量兼容修复（`maxBuffer` + `wrangler --json` 解析），不涉及排序核心。
+- staging demo canonical entry 继续使用 `https://applyflow-staging.applyflow-eugene.workers.dev/?mode=demo#/dashboard`。
+- 当前可用于“面试演示 + 本人 staging 自测”；仍不声明 Production Auth Ready / 50-user beta ready。
 
 下一步：
-- 完成 closure commit（仅脚本与文档），保持 sqlite/bak/tmp 不提交。
-- 继续保持 Internal Beta 边界，不进入 production deploy，不触碰排序核心改造。
+- 补充手工 demo 验收记录与截图证据。
+- 推进 1 个白名单用户内测验证与 A/B 隔离验证。
+- 进入 `user_a fallback / payload.userId` 专项治理前的范围冻结。
 
 注意事项：
 - 严禁提交 `data/applyflow.sqlite` 与 `data/*.bak`。
@@ -25,3 +28,4 @@
 - 当前仍不是 Production Auth Ready，也不是 50-user beta ready。
 
 最后更新时间：2026-05-12
+最后更新时间：2026-05-14

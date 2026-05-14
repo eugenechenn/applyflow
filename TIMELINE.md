@@ -111,3 +111,4 @@
 - 2026-05-09：完成 staging Internal Beta demo 入口收口，暂定 /?mode=demo#/dashboard 为面试演示入口，普通路径保持 Internal Beta 登录页。
 - 2026-05-12：完成 Batch UX-1 + UX-2 最小改造，解除 `/api/profile/save` 对 name/background 的排序入口阻断，并重组 Dashboard/Profile 偏好文案与信息架构。
 - 2026-05-12：完成 Full-5000+ staging real-pool 验收收口（staging_real_pool_user=5001、demo_user=12未污染），四画像 Top100 均 A/B 覆盖且 highRoleFitButLowGrade=0。
+- 2026-05-14：完成 Internal Beta Staging Final Review，确认当前可用于面试演示与本人 staging 自测，继续不声明 Production Auth Ready / 50-user beta ready。
