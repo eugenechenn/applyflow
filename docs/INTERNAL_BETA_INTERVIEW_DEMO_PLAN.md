@@ -153,3 +153,20 @@
   - A/B 用户隔离端到端验证
   - `user_a fallback / payload.userId` 专项治理
 - 当前仍不是 Production Auth Ready，也不是 50-user beta ready。
+
+## 13. 1-user Whitelist Login Acceptance（2026-05-14）
+- staging 手工验收结论：1 个白名单用户登录链路通过，可进入下一阶段隔离专项。
+- 验收结果：
+  - 白名单邮箱登录：PASS
+  - 进入 Dashboard：PASS
+  - 登录身份不是 `demo_user`：PASS
+  - 快速偏好“产品经理 + 上海”保存：PASS
+  - Jobs / Profile 页面打开：PASS
+  - 退出或清 cookie 后普通路径不自动 demo：PASS
+  - 阻断异常：无
+- 备注：用户提出 1 个“非阻断 UX polish”优化点，后续独立记录与处理，不阻断本轮 acceptance close。
+- 当前状态更新：
+  - 可用于“面试演示 + 本人 staging 自测 + 1 用户白名单登录验证”
+  - 仍不声明 3-5 人 fully ready
+  - 仍不声明 50-user beta ready
+  - 仍不声明 Production Auth Ready
