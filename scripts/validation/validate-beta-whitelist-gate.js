@@ -16,21 +16,33 @@ async function postJson(baseUrl, pathname, payload) {
 async function main() {
   const { baseUrl, cleanup } = await ensureHttpTarget();
   try {
-  const denied = await postJson(baseUrl, "/api/auth/login", { login: betaDeniedLogin });
-  if (![401, 403].includes(denied.status)) {
-    throw new Error(`non-whitelist login expected 401/403, got ${denied.status}`);
-  }
-
-  if (betaAllowedLogin) {
-    const allowed = await postJson(baseUrl, "/api/auth/login", { login: betaAllowedLogin });
-    if (allowed.status >= 400) {
-      throw new Error(`whitelist login expected success, got ${allowed.status}`);
+    const denied = await postJson(baseUrl, "/api/auth/login", { login: betaDeniedLogin });
+    if (![401, 403].includes(denied.status)) {
+      throw new Error(`non-whitelist login expected 401/403, got ${denied.status}`);
     }
-  } else {
-    console.log("[warn] BETA_ALLOWED_LOGIN not provided; skipped positive whitelist login probe.");
-  }
 
-  console.log("[ok] beta whitelist gate behaves as expected.");
+    if (betaAllowedLogin) {
+      const allowed = await postJson(baseUrl, "/api/auth/login", { login: betaAllowedLogin });
+      if (allowed.status >= 400) {
+        throw new Error(`whitelist login expected success, got ${allowed.status}`);
+      }
+      const payload = await allowed.json();
+      const sessionUserId = String(payload?.data?.user?.id || "");
+      if (!sessionUserId) {
+        throw new Error("whitelist login missing session user id.");
+      }
+      if (sessionUserId === "demo_user") {
+        throw new Error("whitelist login should never resolve to demo_user.");
+      }
+      if (sessionUserId === "staging_real_pool_user") {
+        throw new Error("whitelist login should never resolve to staging_real_pool_user.");
+      }
+      console.log(`[ok] whitelist login session user id=${sessionUserId}`);
+    } else {
+      console.log("[warn] BETA_ALLOWED_LOGIN not provided; skipped positive whitelist login probe.");
+    }
+
+    console.log("[ok] beta whitelist gate behaves as expected.");
   } finally {
     await cleanup();
   }

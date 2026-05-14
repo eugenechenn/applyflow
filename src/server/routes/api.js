@@ -229,27 +229,37 @@ async function handleApiRequest(req, res, pathname) {
       const body = await readJsonBody(req);
       validateRequired(["login"], body);
       ensureString(body.login, "login", { min: 1, max: 120 });
-      const user = store.findUserByLogin(body.login);
-      if (!user) {
-        const error = new Error("User not found.");
-        error.code = "AUTH_FAILED";
-        throw error;
-      }
       const authGate = resolveAuthGateConfig();
+      const normalizedLogin = String(body.login || "")
+        .trim()
+        .toLowerCase();
+      const derivedUsername = normalizedLogin.split("@")[0] || normalizedLogin;
+      let user = store.findUserByLogin(normalizedLogin);
       if (authGate.restrictPublicAuthSurfaces) {
-        const normalizedEmail = String(user.email || "")
+        const normalizedEmailCandidate = String(user?.email || normalizedLogin)
           .trim()
           .toLowerCase();
+        if (!normalizedEmailCandidate || !authGate.betaAllowedEmails.has(normalizedEmailCandidate)) {
+          const error = new Error("This account is not in the internal beta allowlist.");
+          error.code = "AUTH_FORBIDDEN";
+          throw error;
+        }
+        // 仅允许白名单邮箱在受限环境中受控补齐用户，不开放公开注册。
+        if (!user) {
+          user = store.ensureUser({
+            email: normalizedEmailCandidate,
+            username: derivedUsername
+          });
+        }
         if (user.id === authGate.demoUserId) {
           const error = new Error("Demo user is only available via /demo.");
           error.code = "AUTH_FORBIDDEN";
           throw error;
         }
-        if (!normalizedEmail || !authGate.betaAllowedEmails.has(normalizedEmail)) {
-          const error = new Error("This account is not in the internal beta allowlist.");
-          error.code = "AUTH_FORBIDDEN";
-          throw error;
-        }
+      } else if (!user) {
+        const error = new Error("User not found.");
+        error.code = "AUTH_FAILED";
+        throw error;
       }
       const session = issueSession(res, user.id);
       return success(res, { authenticated: true, user, sessionId: session.sessionId });
@@ -952,6 +962,8 @@ async function handleApiRequest(req, res, pathname) {
         ? 404
         : error.code === "UNAUTHENTICATED"
           ? 401
+          : error.code === "AUTH_FORBIDDEN"
+            ? 403
           : error.code === "AUTH_FAILED"
             ? 403
             : 400;
