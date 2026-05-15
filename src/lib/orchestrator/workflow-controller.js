@@ -1,4 +1,5 @@
-﻿const store = require("../../server/store");
+const store = require("../../server/store");
+const { getRequestContext } = require("../../server/request-context");
 const { createId, nowIso } = require("../utils/id");
 const jobStatusModule = require("../state/job-status");
 const { updateJob } = require("./shared-state-helpers");
@@ -5727,8 +5728,14 @@ async function admitDiscoveryListingWorkflow(intentId, listingId, payload = {}) 
 
 function createDiscoveryIntentWorkflow(payload = {}) {
   const profile = store.getProfile() || {};
+  const authenticatedUserId = String(getRequestContext().userId || "").trim();
+  if (!authenticatedUserId) {
+    const error = new Error("Authentication required for discovery intent.");
+    error.code = "UNAUTHENTICATED";
+    throw error;
+  }
   const intent = createDiscoveryIntent({
-    userId: payload.userId || profile.id || "user_a",
+    userId: authenticatedUserId,
     keywords: payload.keywords || [],
     city: payload.city || "",
     jobType: payload.jobType || "unknown",
@@ -5743,9 +5750,15 @@ function createDiscoveryIntentWorkflow(payload = {}) {
 
 function importDiscoveryCandidatesWorkflow(intentId, payload = {}) {
   const profile = store.getProfile() || {};
+  const authenticatedUserId = String(getRequestContext().userId || "").trim();
+  if (!authenticatedUserId) {
+    const error = new Error("Authentication required for discovery import.");
+    error.code = "UNAUTHENTICATED";
+    throw error;
+  }
   return importCandidatesToCanonicalListings({
     intentId,
-    userId: profile.id || payload.userId || "user_a",
+    userId: authenticatedUserId,
     candidates: payload.candidates || payload.jobLinks || [],
     profile
   });
@@ -5753,6 +5766,12 @@ function importDiscoveryCandidatesWorkflow(intentId, payload = {}) {
 
 function importDiscoveryFeishuLeadsWorkflow(intentId, payload = {}) {
   const profile = store.getProfile() || {};
+  const authenticatedUserId = String(getRequestContext().userId || "").trim();
+  if (!authenticatedUserId) {
+    const error = new Error("Authentication required for discovery Feishu import.");
+    error.code = "UNAUTHENTICATED";
+    throw error;
+  }
   const leadProcessingResult = ingestFeishuRawLeads({
     leads: payload.leads || [],
     fetchMeta: {
@@ -5765,7 +5784,7 @@ function importDiscoveryFeishuLeadsWorkflow(intentId, payload = {}) {
   const storedLeadProcessingResult = saveLeadProcessingResult(intentId, leadProcessingResult);
   const importResult = importCandidatesToCanonicalListings({
     intentId,
-    userId: profile.id || payload.userId || "user_a",
+    userId: authenticatedUserId,
     candidates: leadProcessingResult.candidateInputs || [],
     profile
   });
@@ -5778,9 +5797,15 @@ function importDiscoveryFeishuLeadsWorkflow(intentId, payload = {}) {
 
 async function syncDiscoveryFeishuBitableWorkflow(intentId, payload = {}) {
   const profile = store.getProfile() || {};
+  const authenticatedUserId = String(getRequestContext().userId || "").trim();
+  if (!authenticatedUserId) {
+    const error = new Error("Authentication required for discovery Feishu sync.");
+    error.code = "UNAUTHENTICATED";
+    throw error;
+  }
   return syncFeishuBitableLeads({
     intentId,
-    userId: profile.id || payload.userId || "user_a",
+    userId: authenticatedUserId,
     profile,
     appToken: payload.appToken || "",
     tableId: payload.tableId || "",
@@ -5797,6 +5822,12 @@ async function syncDiscoveryFeishuBitableWorkflow(intentId, payload = {}) {
 
 async function importDiscoveryOfflineJsonWorkflow(intentId, payload = {}) {
   const profile = store.getProfile() || {};
+  const authenticatedUserId = String(getRequestContext().userId || "").trim();
+  if (!authenticatedUserId) {
+    const error = new Error("Authentication required for discovery offline import.");
+    error.code = "UNAUTHENTICATED";
+    throw error;
+  }
   const lightweightProfile =
     profile.lightweightProfile && typeof profile.lightweightProfile === "object"
       ? profile.lightweightProfile
@@ -5806,7 +5837,7 @@ async function importDiscoveryOfflineJsonWorkflow(intentId, payload = {}) {
   if (!intent) {
     intent = createDiscoveryIntent({
       intentId: effectiveIntentId,
-      userId: profile.id || payload.userId || "user_a",
+      userId: authenticatedUserId,
       keywords: Array.isArray(payload.keywords)
         ? payload.keywords
         : Array.isArray(lightweightProfile.targetRoles)
@@ -5849,7 +5880,7 @@ async function importDiscoveryOfflineJsonWorkflow(intentId, payload = {}) {
   const storedLeadProcessingResult = saveLeadProcessingResult(effectiveIntentId, leadProcessingResult);
   const importResult = importCandidatesToCanonicalListings({
     intentId: effectiveIntentId,
-    userId: profile.id || payload.userId || "user_a",
+    userId: authenticatedUserId,
     candidates: leadProcessingResult.candidateInputs || [],
     profile
   });
@@ -6004,4 +6035,6 @@ module.exports = {
   admitDiscoveryListingWorkflow,
   attachShortlistAdmissionToJobWorkflow
 };
+
+
 

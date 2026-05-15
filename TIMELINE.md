@@ -115,3 +115,4 @@
 - 2026-05-14：完成 1 个白名单用户 staging 手工登录验收（登录非 demo_user、Dashboard/Jobs/Profile/快速偏好保存通过、退出后不自动 demo），记录 1 个非阻断 UX polish 待后续处理。
 - 2026-05-15：完成 2-user（A/B）内测证据与口径收口：手工验收通过、real-pool 5001 与 demo 12 保持稳定，自动脚本受 workers.dev 网络限制待后续补证。
 - 2026-05-15：完成 Demo Dataset Enhancement：仓库 demo seed 升级为 curated 38 条（覆盖一线+新一线与多岗位），新增 `validate-demo-curated-pool-ranking` 并验证多画像排序差异，不改排序核心。
+- 2026-05-15：完成 user_a / payload.userId fallback 治理：beta/staging 写入不再 fallback user_a，API 拒绝 forged payload.userId，discovery/import/sync 改为 authenticated userId，并通过隔离与排序回归验证。

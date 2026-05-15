@@ -219,7 +219,7 @@ async function fetchFeishuBitablePage({
 
 async function syncFeishuBitableLeads({
   intentId = "",
-  userId = "user_a",
+  userId = "",
   profile = {},
   appToken = "",
   tableId = "",
@@ -239,6 +239,12 @@ async function syncFeishuBitableLeads({
   }
   if (!appToken || !tableId || !tenantAccessToken) {
     const error = new Error("appToken, tableId, and tenantAccessToken are required for Feishu sync.");
+    error.code = "VALIDATION_ERROR";
+    throw error;
+  }
+  const resolvedUserId = String(userId || "").trim();
+  if (!resolvedUserId) {
+    const error = new Error("userId is required for Feishu sync.");
     error.code = "VALIDATION_ERROR";
     throw error;
   }
@@ -317,7 +323,7 @@ async function syncFeishuBitableLeads({
   const importResult = candidateInputsToImport.length
     ? importCandidatesToCanonicalListings({
         intentId,
-        userId,
+        userId: resolvedUserId,
         candidates: candidateInputsToImport,
         profile
       })

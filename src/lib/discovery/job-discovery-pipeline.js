@@ -30,6 +30,11 @@ const batchDecisionStore = new Map();
 const rankingStore = new Map();
 const shortlistStore = new Map();
 const admissionStore = new Map();
+const STRICT_DISCOVERY_USER_GUARD =
+  String(process.env.AUTH_PROVIDER || "").trim().toLowerCase() === "internal_beta" ||
+  String(process.env.INTERNAL_BETA_ENABLED || "").trim().toLowerCase() === "true" ||
+  String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+const DISCOVERY_DEV_DEFAULT_USER_ID = STRICT_DISCOVERY_USER_GUARD ? "" : "user_a";
 
 function asText(value = "", max = 220) {
   return cleanLine(value, max);
@@ -389,9 +394,15 @@ function normalizeCandidateInput(candidate = {}) {
 }
 
 function createDiscoveryIntent(input = {}) {
+  const resolvedUserId = String(input.userId || DISCOVERY_DEV_DEFAULT_USER_ID).trim();
+  if (!resolvedUserId) {
+    const error = new Error("userId is required for discovery intent.");
+    error.code = "VALIDATION_ERROR";
+    throw error;
+  }
   const contract = createDiscoveryIntentContract({
     intentId: input.intentId || createId("intent"),
-    userId: input.userId || "user_a",
+    userId: resolvedUserId,
     keywords: input.keywords || [],
     city: input.city || "",
     jobType: input.jobType || "unknown",
@@ -419,10 +430,16 @@ function createDiscoveryIntent(input = {}) {
 
 function importCandidatesToCanonicalListings({
   intentId = "",
-  userId = "user_a",
+  userId = DISCOVERY_DEV_DEFAULT_USER_ID,
   candidates = [],
   profile = {}
 } = {}) {
+  const resolvedUserId = String(userId || "").trim();
+  if (!resolvedUserId) {
+    const error = new Error("userId is required for candidate import.");
+    error.code = "VALIDATION_ERROR";
+    throw error;
+  }
   const intent = intentStore.get(intentId);
   if (!intent) {
     const error = new Error(`Discovery intent ${intentId} not found.`);
@@ -450,7 +467,7 @@ function importCandidatesToCanonicalListings({
       requirements: candidate.requirements || [],
       metadata: {
         ...candidate.metadata,
-        importedBy: candidate.metadata?.importedBy || userId || "system",
+        importedBy: candidate.metadata?.importedBy || resolvedUserId || "system",
         importBatchId: candidate.metadata?.importBatchId || createId("import_batch")
       },
       ingestedAt: nowIso()

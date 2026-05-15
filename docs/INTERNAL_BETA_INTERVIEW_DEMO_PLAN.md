@@ -180,3 +180,13 @@
 - 验证：新增 `scripts/validation/validate-demo-curated-pool-ranking.js`，按多组画像输出 Top20 分布、Top5 结果、机会类型与证据类型分布。
 - 边界：不改 `userPriorityScore` / comparator / grade 阈值 / opportunityType / acceptance-gate；不改 `staging_real_pool_user=5001`。
 - 状态说明：仓库 seed 已升级；staging 线上 demo_user 若仍为历史 12 条，需要 staging deploy + 受控 reseed 后才会生效。
+
+## 15. user_a / payload.userId Fallback 治理（2026-05-15）
+- 范围：仅治理用户归属安全边界，不改排序核心。
+- 关键收敛：
+  - `store` 在 internal beta / staging / prod-like 写入路径不再允许 `user_a` fallback。
+  - API 层对 `payload.userId` 启用 ownership guard：若与 authenticated user 不一致则拒绝（AUTH_FORBIDDEN/guarded reject）。
+  - discovery/import/sync 工作流不再从 `payload.userId` 派生用户归属，统一使用 request context authenticated userId。
+- 验证：
+  - 新增 `validate-auth-forged-userid-rejected.js`，覆盖 profile + shortlist/tracker/feedback forged userId 场景。
+  - 验证结果显示 `demo_user=38`、`staging_real_pool_user=5001` 与 `user_a` 计数稳定，未污染真实池与 demo 池。

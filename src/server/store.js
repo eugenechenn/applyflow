@@ -97,8 +97,32 @@ function sanitizeResumeDocument(resumeDocument = {}) {
   };
 }
 
-function getActiveUserId() {
-  return getRequestContext().userId || DEFAULT_USER_ID;
+function isStrictUserOwnershipMode() {
+  const authProvider = String(process.env.AUTH_PROVIDER || "")
+    .trim()
+    .toLowerCase();
+  const internalBetaEnabled = String(process.env.INTERNAL_BETA_ENABLED || "")
+    .trim()
+    .toLowerCase();
+  const nodeEnv = String(process.env.NODE_ENV || "")
+    .trim()
+    .toLowerCase();
+  return authProvider === "internal_beta" || internalBetaEnabled === "true" || nodeEnv === "production";
+}
+
+function buildMissingUserContextError() {
+  const error = new Error("Authenticated user context required.");
+  error.code = "UNAUTHENTICATED";
+  return error;
+}
+
+function getActiveUserId(options = {}) {
+  const contextUserId = String(getRequestContext().userId || "").trim();
+  if (contextUserId) return contextUserId;
+  if (options.requireAuthenticated || isStrictUserOwnershipMode()) {
+    throw buildMissingUserContextError();
+  }
+  return DEFAULT_USER_ID;
 }
 
 function getOverrideStore() {
@@ -244,7 +268,8 @@ function getProfile() {
 function saveProfile(profile) {
   const override = getOverrideStore();
   if (override?.saveProfile) return override.saveProfile(profile);
-  return getRepository().saveProfile(getActiveUserId(), { ...profile, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveProfile(userId, { ...profile, userId });
 }
 
 function getMasterResume() {
@@ -291,9 +316,10 @@ function getLatestResumeDocument() {
 function saveResumeDocument(resumeDocument) {
   const override = getOverrideStore();
   if (override?.saveResumeDocument) return override.saveResumeDocument(resumeDocument);
-  return getRepository().saveResumeDocument(getActiveUserId(), {
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveResumeDocument(userId, {
     ...sanitizeResumeDocument(resumeDocument),
-    userId: getActiveUserId()
+    userId
   });
 }
 
@@ -306,7 +332,8 @@ function getStrategyProfile() {
 function saveStrategyProfile(strategyProfile) {
   const override = getOverrideStore();
   if (override?.saveStrategyProfile) return override.saveStrategyProfile(strategyProfile);
-  return getRepository().saveStrategyProfile(getActiveUserId(), { ...strategyProfile, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveStrategyProfile(userId, { ...strategyProfile, userId });
 }
 
 function getGlobalStrategyPolicy() {
@@ -318,9 +345,10 @@ function getGlobalStrategyPolicy() {
 function saveGlobalStrategyPolicy(globalStrategyPolicy) {
   const override = getOverrideStore();
   if (override?.saveGlobalStrategyPolicy) return override.saveGlobalStrategyPolicy(globalStrategyPolicy);
-  return getRepository().saveGlobalStrategyPolicy(getActiveUserId(), {
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveGlobalStrategyPolicy(userId, {
     ...globalStrategyPolicy,
-    userId: getActiveUserId()
+    userId
   });
 }
 
@@ -333,7 +361,8 @@ function listPolicyHistory() {
 function savePolicyHistoryEntry(entry) {
   const override = getOverrideStore();
   if (override?.savePolicyHistoryEntry) return override.savePolicyHistoryEntry(entry);
-  return getRepository().savePolicyHistoryEntry(getActiveUserId(), { ...entry, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().savePolicyHistoryEntry(userId, { ...entry, userId });
 }
 
 function listPolicyProposals() {
@@ -351,7 +380,8 @@ function getPolicyProposal(proposalId) {
 function savePolicyProposal(proposal) {
   const override = getOverrideStore();
   if (override?.savePolicyProposal) return override.savePolicyProposal(proposal);
-  return getRepository().savePolicyProposal(getActiveUserId(), { ...proposal, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().savePolicyProposal(userId, { ...proposal, userId });
 }
 
 function listPolicyAuditLogs() {
@@ -363,7 +393,8 @@ function listPolicyAuditLogs() {
 function savePolicyAuditLog(entry) {
   const override = getOverrideStore();
   if (override?.savePolicyAuditLog) return override.savePolicyAuditLog(entry);
-  return getRepository().savePolicyAuditLog(getActiveUserId(), { ...entry, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().savePolicyAuditLog(userId, { ...entry, userId });
 }
 
 function listJobs() {
@@ -381,7 +412,8 @@ function getJob(jobId) {
 function saveJob(job) {
   const override = getOverrideStore();
   if (override?.saveJob) return override.saveJob(job);
-  return getRepository().saveJob(getActiveUserId(), { ...job, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveJob(userId, { ...job, userId });
 }
 
 function listFitAssessments() {
@@ -399,7 +431,8 @@ function getFitAssessmentByJobId(jobId) {
 function saveFitAssessment(assessment) {
   const override = getOverrideStore();
   if (override?.saveFitAssessment) return override.saveFitAssessment(assessment);
-  return getRepository().saveFitAssessment(getActiveUserId(), { ...assessment, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveFitAssessment(userId, { ...assessment, userId });
 }
 
 function getApplicationPrepByJobId(jobId) {
@@ -411,7 +444,8 @@ function getApplicationPrepByJobId(jobId) {
 function saveApplicationPrep(prep) {
   const override = getOverrideStore();
   if (override?.saveApplicationPrep) return override.saveApplicationPrep(prep);
-  return getRepository().saveApplicationPrep(getActiveUserId(), { ...prep, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveApplicationPrep(userId, { ...prep, userId });
 }
 
 function listTailoringOutputs() {
@@ -429,7 +463,8 @@ function getTailoringOutputByJobId(jobId) {
 function saveTailoringOutput(output) {
   const override = getOverrideStore();
   if (override?.saveTailoringOutput) return override.saveTailoringOutput(output);
-  return getRepository().saveTailoringOutput(getActiveUserId(), { ...output, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveTailoringOutput(userId, { ...output, userId });
 }
 
 function listTasksByJobId(jobId) {
@@ -447,7 +482,8 @@ function listTasks() {
 function saveTask(task) {
   const override = getOverrideStore();
   if (override?.saveTask) return override.saveTask(task);
-  return getRepository().saveTask(getActiveUserId(), { ...task, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveTask(userId, { ...task, userId });
 }
 
 function getInterviewReflectionByJobId(jobId) {
@@ -459,7 +495,8 @@ function getInterviewReflectionByJobId(jobId) {
 function saveInterviewReflection(reflection) {
   const override = getOverrideStore();
   if (override?.saveInterviewReflection) return override.saveInterviewReflection(reflection);
-  return getRepository().saveInterviewReflection(getActiveUserId(), { ...reflection, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveInterviewReflection(userId, { ...reflection, userId });
 }
 
 function listActivityLogsByJobId(jobId) {
@@ -477,7 +514,8 @@ function listActivityLogs() {
 function saveActivityLog(log) {
   const override = getOverrideStore();
   if (override?.saveActivityLog) return override.saveActivityLog(log);
-  return getRepository().saveActivityLog(getActiveUserId(), { ...log, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveActivityLog(userId, { ...log, userId });
 }
 
 function listBadCases() {
@@ -495,13 +533,15 @@ function getBadCaseByJobId(jobId) {
 function saveBadCase(badCase) {
   const override = getOverrideStore();
   if (override?.saveBadCase) return override.saveBadCase(badCase);
-  return getRepository().saveBadCase(getActiveUserId(), { ...badCase, userId: getActiveUserId() });
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().saveBadCase(userId, { ...badCase, userId });
 }
 
 function removeBadCase(jobId) {
   const override = getOverrideStore();
   if (override?.removeBadCase) return override.removeBadCase(jobId);
-  return getRepository().removeBadCase(getActiveUserId(), jobId);
+  const userId = getActiveUserId({ requireAuthenticated: true });
+  return getRepository().removeBadCase(userId, jobId);
 }
 
 module.exports = {

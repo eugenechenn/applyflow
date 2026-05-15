@@ -296,6 +296,7 @@ Codex 禁止事项：
   - 风险：导入、发现或流程元数据可能错绑用户
   - 后续修复方向：所有用户态写入从 authenticated request context 派生 `user_id`，不信任 `payload.userId`
   - 验证脚本：`validate-auth-forged-userid-rejected.js`
+  - 状态更新（2026-05-15）：beta/staging 写路径已完成第一阶段治理，forged `payload.userId` 拒绝与 `user_a` fallback 收口已通过脚本验证。
 
 - `/api/auth/users` 用户枚举接口
   - 位置：`src/server/routes/api.js`
@@ -329,8 +330,8 @@ Codex 禁止事项：
 - [ ] `x-dev-user` 不可能在 production 生效
 - [ ] `/api/auth/users` 不再公开暴露用户列表
 - [ ] 所有私有 API 未登录返回 `401`
-- [ ] 所有用户态写入不信任前端 `userId`
-- [ ] `user_a fallback` 不再用于真实用户生产写入
+- [x] 所有用户态写入不信任前端 `userId`（beta/staging 已完成并验证）
+- [x] `user_a fallback` 不再用于真实用户生产写入（beta/staging 写路径已完成并验证）
 - [ ] demo/test 数据与真实用户数据隔离
 - [ ] sqlite/bak 文件不会被误提交
 - [ ] 正式域名、CORS、Auth callback/logout URL 已定版

@@ -168,6 +168,26 @@ async function readJsonBody(req) {
   try {
     const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     assertObject(parsed, "request body");
+    const context = getRequestContext();
+    const pathname = String(context?.pathname || "");
+    const contextUserId = String(context?.userId || "").trim();
+    const hasUserId = Object.prototype.hasOwnProperty.call(parsed, "userId");
+    const guardExemptPaths = new Set(["/api/auth/login", "/api/login", "/api/demo/session", "/api/demo/reset"]);
+    if (hasUserId && !guardExemptPaths.has(pathname)) {
+      const payloadUserId = String(parsed.userId || "").trim();
+      if (!contextUserId) {
+        const authError = new Error("Authentication required.");
+        authError.code = "UNAUTHENTICATED";
+        throw authError;
+      }
+      if (payloadUserId && payloadUserId !== contextUserId) {
+        const forgedError = new Error("Payload userId does not match authenticated user.");
+        forgedError.code = "AUTH_FORBIDDEN";
+        throw forgedError;
+      }
+      // 用户态请求统一以后端 authenticated user 为准，不信任前端 userId。
+      delete parsed.userId;
+    }
     return parsed;
   } catch (error) {
     if (error.code === "VALIDATION_ERROR") {

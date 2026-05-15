@@ -4,6 +4,7 @@ process.env.ENABLE_LLM_JOB_SCORING = "false";
 
 const orchestrator = require("../../src/lib/orchestrator/workflow-controller");
 const { buildJobScoringViewModel } = require("../../src/lib/jobs/job-scoring-view-model");
+const { runWithRequestContext } = require("../../src/server/request-context");
 
 function assertTrue(condition, message) {
   if (!condition) throw new Error(message);
@@ -123,24 +124,25 @@ async function seedJobsIfNeeded() {
 async function main() {
   validateSyntheticOpportunityBoundaries();
 
-  await seedJobsIfNeeded();
+  await runWithRequestContext({ userId: "demo_user" }, async () => {
+    await seedJobsIfNeeded();
 
-  await orchestrator.saveProfile({
-    targetRoles: "工程师",
-    strengths: "Python,Node.js",
-    targetLocations: "上海",
-    lightweightProfile: {
-      targetRoles: ["工程师"],
-      skills: ["Python", "Node.js"],
-      preferredLocations: ["上海"],
-      degree: "",
-      acceptsNonTech: false
-    }
-  });
+    await orchestrator.saveProfile({
+      targetRoles: "工程师",
+      strengths: "Python,Node.js",
+      targetLocations: "上海",
+      lightweightProfile: {
+        targetRoles: ["工程师"],
+        skills: ["Python", "Node.js"],
+        preferredLocations: ["上海"],
+        degree: "",
+        acceptsNonTech: false
+      }
+    });
 
-  const scored = await orchestrator.getJobWorkspaceList();
-  const scoredJobs = Array.isArray(scored?.jobWorkspaceViewModels) ? scored.jobWorkspaceViewModels : [];
-  assertTrue(scoredJobs.length > 0, "job workspace list should not be empty");
+    const scored = await orchestrator.getJobWorkspaceList();
+    const scoredJobs = Array.isArray(scored?.jobWorkspaceViewModels) ? scored.jobWorkspaceViewModels : [];
+    assertTrue(scoredJobs.length > 0, "job workspace list should not be empty");
 
   scoredJobs.forEach((jobVm) => {
     const jdStructure = String(jobVm?.scoringView?.jobFeaturesView?.jdBlockStructureType || "").trim().toLowerCase();
@@ -180,35 +182,36 @@ async function main() {
     }
   });
 
-  const engineerIndex = scoredJobs.findIndex((jobVm) => isEngineerRole(jobVm?.jobSummary?.title));
-  const nonEngineerIndex = scoredJobs.findIndex((jobVm) => !isEngineerRole(jobVm?.jobSummary?.title));
-  assertTrue(engineerIndex >= 0, "should contain at least one engineer job");
-  assertTrue(nonEngineerIndex >= 0, "should contain at least one non-engineer job");
+    const engineerIndex = scoredJobs.findIndex((jobVm) => isEngineerRole(jobVm?.jobSummary?.title));
+    const nonEngineerIndex = scoredJobs.findIndex((jobVm) => !isEngineerRole(jobVm?.jobSummary?.title));
+    assertTrue(engineerIndex >= 0, "should contain at least one engineer job");
+    assertTrue(nonEngineerIndex >= 0, "should contain at least one non-engineer job");
 
-  for (let index = 0; index < scoredJobs.length - 1; index += 1) {
-    const currentScore = Number(scoredJobs[index]?.scoringView?.score || 0);
-    const nextScore = Number(scoredJobs[index + 1]?.scoringView?.score || 0);
-    assertTrue(currentScore >= nextScore, "jobs should be sorted by score desc when preference exists");
-  }
-
-  await orchestrator.saveProfile({
-    lightweightProfile: {
-      targetRoles: [],
-      skills: [],
-      preferredLocations: [],
-      degree: "",
-      acceptsNonTech: false
+    for (let index = 0; index < scoredJobs.length - 1; index += 1) {
+      const currentScore = Number(scoredJobs[index]?.scoringView?.score || 0);
+      const nextScore = Number(scoredJobs[index + 1]?.scoringView?.score || 0);
+      assertTrue(currentScore >= nextScore, "jobs should be sorted by score desc when preference exists");
     }
-  });
-  const fallback = await orchestrator.getJobWorkspaceList();
-  const fallbackJobs = Array.isArray(fallback?.jobWorkspaceViewModels) ? fallback.jobWorkspaceViewModels : [];
-  assertTrue(fallbackJobs.length > 0, "fallback job list should still be available");
-  assertTrue(
-    fallbackJobs.every((jobVm) => String(jobVm?.scoringView?.explanation || "").trim().length > 0),
-    "fallback mode should still provide explanation without throwing"
-  );
 
-  console.log(`validate-job-scoring-derived-view: checked ${scoredJobs.length} jobs with scoring and fallback mode.`);
+    await orchestrator.saveProfile({
+      lightweightProfile: {
+        targetRoles: [],
+        skills: [],
+        preferredLocations: [],
+        degree: "",
+        acceptsNonTech: false
+      }
+    });
+    const fallback = await orchestrator.getJobWorkspaceList();
+    const fallbackJobs = Array.isArray(fallback?.jobWorkspaceViewModels) ? fallback.jobWorkspaceViewModels : [];
+    assertTrue(fallbackJobs.length > 0, "fallback job list should still be available");
+    assertTrue(
+      fallbackJobs.every((jobVm) => String(jobVm?.scoringView?.explanation || "").trim().length > 0),
+      "fallback mode should still provide explanation without throwing"
+    );
+
+    console.log(`validate-job-scoring-derived-view: checked ${scoredJobs.length} jobs with scoring and fallback mode.`);
+  });
 }
 
 main().catch((error) => {

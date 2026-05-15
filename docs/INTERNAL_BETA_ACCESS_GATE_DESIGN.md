@@ -265,3 +265,13 @@
 - 当前仍不是 50-user beta ready。
 - `/api/demo/reset` 已加双门禁，但仍返回 guarded `501`，reset 实现后置。
 - `user_a fallback / payload.userId` 全量治理未完成，需在后续批次单独治理并补齐验证。
+
+## 13. Ownership Guard Close（2026-05-15）
+- 已完成 `user_a / payload.userId` 关键风险收敛：
+  - beta/staging/prod-like 用户态写入不再 fallback `user_a`
+  - API 不再信任前端 `payload.userId`（与 authenticated user 不一致时拒绝）
+  - discovery/import/sync 用户归属改为服务端 request context 派生
+- 新增验证：`validate-auth-forged-userid-rejected.js`
+  - 覆盖 forged `payload.userId -> B/demo_user/staging_real_pool_user`
+  - 覆盖缺失 payload.userId 时写入归属
+  - 覆盖 `user_a` 计数不漂移与 demo/real-pool 计数稳定
