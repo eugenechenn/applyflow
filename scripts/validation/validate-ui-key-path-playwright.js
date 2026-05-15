@@ -168,7 +168,7 @@ async function main() {
     await page.waitForURL(/#\/jobs/);
     await page.waitForTimeout(1500);
 
-    // 5. 点击一键网申（兼容可执行与已阻断两种状态）
+    // 5. 点击投递链接确认层（兼容有投递链接与无投递链接两种状态）
     const applyButtons = page.locator('[data-action="open-apply-modal"]');
     const applyCount = await applyButtons.count();
     if (applyCount > 0) {
@@ -189,14 +189,11 @@ async function main() {
         return Boolean(modalEl && modalEl.classList.contains("hidden"));
       });
     } else {
-      const blockedApply = page.getByRole("button", { name: /一键网申/ }).first();
-      assert(await blockedApply.isVisible(), "ui-key-path-smoke: no one-click apply entry found on jobs page");
-      if (await blockedApply.isEnabled()) {
-        await blockedApply.click();
-      }
+      const addListButton = page.getByRole("button", { name: /加入投递清单/ }).first();
+      assert(await addListButton.isVisible(), "ui-key-path-smoke: no apply handoff or add-list entry found on jobs page");
     }
 
-    // 7. 跳转 profile（优先弹窗入口，缺失时回退侧栏入口）
+    // 7. 跳转 profile（投递确认层不再承担资料完善入口，回退侧栏入口）
     let toProfileLink = page.locator('#jobs-apply-modal a[href="#/profile"]');
     if (!(await toProfileLink.count()) || !(await toProfileLink.first().isVisible())) {
       toProfileLink = page.locator('a[href="#/profile"]').first();

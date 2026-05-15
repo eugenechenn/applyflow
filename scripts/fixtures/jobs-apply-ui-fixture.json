@@ -3,16 +3,17 @@
     "data-action=\"open-apply-modal\"",
     "id=\"jobs-apply-modal\"",
     "id=\"jobs-apply-manual-link\"",
-    "下载并安装插件",
-    "去完善资料",
-    "先手动申请",
+    "id=\"jobs-apply-add-list\"",
+    "id=\"jobs-apply-mark-applied\"",
+    "打开投递链接",
+    "加入投递清单",
     "资料状态：",
     "插件状态：未安装或未启用",
     "buildScoringSummary"
   ],
   "requiredProfileHintTokens": [
     "页面定位：",
-    "本页用于高级偏好设置、材料管理与历史记录查看；日常偏好填写建议从首页工作台进入。",
+    "这里会同步工作台偏好，也可补充更细的加分偏好和材料信息。",
     "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"
   ],
   "requiredStyleTokens": [

@@ -2644,7 +2644,7 @@ async function renderGovernance(message = "", errorMessage = "") {
 async function renderJobs(message = "") {
   setActiveNav("#/jobs");
   title.textContent = "岗位";
-  subtitle.textContent = "集中查看岗位优先级、解释依据与一键网申入口。";
+  subtitle.textContent = "先判断岗位优先级，再把准备投递的机会加入投递清单。";
   renderLoadingState("加载岗位列表", "正在刷新岗位队列与最新评估结果...");
   const [jobsResult, profileResult] = await Promise.allSettled([
     apiWithTimeout("/api/jobs"),
@@ -2683,18 +2683,12 @@ async function renderJobs(message = "") {
   const followUpStatuses = ["none", "planned", "done", "skipped"];
   const followUpChannels = ["email", "phone", "linkedin", "other"];
   const trackerFilterOptions = [
-    { value: "all", label: "全部流程状态" },
-    { value: "saved", label: "已收藏" },
-    { value: "prep", label: "准备中" },
-    { value: "tailored", label: "已定制材料" },
+    { value: "all", label: "全部投递进展" },
+    { value: "saved", label: "投递清单" },
     { value: "applied", label: "已投递" },
     { value: "interview", label: "面试中" },
-    { value: "rejected", label: "已拒绝" },
-    { value: "offer", label: "录用" }
-  ];
-  const shortlistFilterOptions = [
-    { value: "all", label: "全部岗位" },
-    { value: "shortlisted", label: "候选清单" }
+    { value: "rejected", label: "已结束" },
+    { value: "offer", label: "Offer" }
   ];
   const resolveTrackerState = (value = "") => {
     const normalized = String(value || "").trim().toLowerCase();
@@ -2704,9 +2698,9 @@ async function renderJobs(message = "") {
     const normalized = resolveTrackerState(value);
     const map = {
       none: "未设置",
-      saved: "已收藏",
-      prep: "准备中",
-      tailored: "已定制材料",
+      saved: "投递清单",
+      prep: "准备材料",
+      tailored: "材料已准备",
       applied: "已投递",
       interview: "面试中",
       rejected: "已拒绝",
@@ -2828,7 +2822,7 @@ async function renderJobs(message = "") {
   };
   const resolveShortlistLabel = (value = "") => {
     const normalized = resolveShortlistState(value);
-    return normalized === "shortlisted" ? "候选清单" : "未加入";
+    return normalized === "shortlisted" ? "投递清单" : "未加入";
   };
   const resolveShortlistTimelineLine = (shortlistView = {}) => {
     const timeline = Array.isArray(shortlistView.timeline) ? shortlistView.timeline : [];
@@ -2843,18 +2837,12 @@ async function renderJobs(message = "") {
   const parsedTrackerFilter = trackerFilterOptions.some((item) => item.value === trackerFilterRaw)
     ? trackerFilterRaw
     : "all";
-  const shortlistFilterRaw = String(localStorage.getItem(JOBS_SHORTLIST_FILTER_LOCAL_KEY) || "all")
-    .trim()
-    .toLowerCase();
-  const parsedShortlistFilter = shortlistFilterOptions.some((item) => item.value === shortlistFilterRaw)
-    ? shortlistFilterRaw
-    : "all";
   const hasAppliedJobsEntryGuard = readSessionFlag(JOBS_FIRST_ENTRY_GUARD_SESSION_KEY) === "1";
   let activeTrackerFilter = parsedTrackerFilter;
-  let activeShortlistFilter = parsedShortlistFilter;
+  const activeShortlistFilter = "all";
+  localStorage.setItem(JOBS_SHORTLIST_FILTER_LOCAL_KEY, "all");
   if (!hasAppliedJobsEntryGuard) {
     activeTrackerFilter = "all";
-    activeShortlistFilter = "all";
     localStorage.setItem(JOBS_TRACKER_FILTER_LOCAL_KEY, "all");
     localStorage.setItem(JOBS_SHORTLIST_FILTER_LOCAL_KEY, "all");
     writeSessionFlag(JOBS_FIRST_ENTRY_GUARD_SESSION_KEY, "1");
@@ -3544,7 +3532,7 @@ async function renderJobs(message = "") {
             <div class="eyebrow">队列</div>
             <h3>按优先级排序的岗位列表</h3>
           </div>
-        <div class="muted">按优先级和最近更新时间排序（默认显示核心信息，详细流程可展开）</div>
+        <div class="muted">先判断值不值得投；点击投递链接后，可一键加入你的投递清单。</div>
         </div>
         <div class="toolbar" style="margin-bottom:10px;">
           ${trackerFilterOptions
@@ -3554,20 +3542,6 @@ async function renderJobs(message = "") {
               class="button ${activeTrackerFilter === option.value ? "primary" : ""}"
               type="button"
               data-action="filter-tracker-state"
-              data-state="${escapeHtml(option.value)}"
-            >${escapeHtml(option.label)}</button>
-          `
-            )
-            .join("")}
-        </div>
-        <div class="toolbar" style="margin-bottom:10px;">
-          ${shortlistFilterOptions
-            .map(
-              (option) => `
-            <button
-              class="button ${activeShortlistFilter === option.value ? "primary" : ""}"
-              type="button"
-              data-action="filter-shortlist-state"
               data-state="${escapeHtml(option.value)}"
             >${escapeHtml(option.label)}</button>
           `
@@ -3750,8 +3724,6 @@ async function renderJobs(message = "") {
                     : "未更新";
                   const applyPriority = resolveApplyPriority(scoring);
                   const shortlistNextState = shortlistState === "shortlisted" ? "none" : "shortlisted";
-                  const shortlistActionLabel = shortlistState === "shortlisted" ? "移出候选清单" : "加入候选清单";
-                  const isDecisionBlocked = String(decisionVerdict.verdict || "").trim().toLowerCase() === "no_go" || verdictHardBlockers.length > 0;
 
                   return `
                     <article class="card jobs-item-card">
@@ -3801,13 +3773,7 @@ async function renderJobs(message = "") {
                       <div class="toolbar" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;">
                         ${
                           originalUrl
-                            ? `<a class="button" href="${escapeHtml(originalUrl)}" target="_blank" rel="noopener noreferrer">原始链接 / 投递链接</a>`
-                            : `<span class="muted">投递链接：需处理</span>`
-                        }
-                        ${
-                          isDecisionBlocked
-                            ? `<button class="button" type="button" disabled title="命中阻断项，当前不可执行网申">一键网申（已阻断）</button>`
-                            : `<button
+                            ? `<button
                                 class="button primary"
                                 type="button"
                                 data-action="open-apply-modal"
@@ -3815,201 +3781,22 @@ async function renderJobs(message = "") {
                                 data-job-title="${escapeHtml(job.title || "未命名岗位")}"
                                 data-job-company="${escapeHtml(job.company || "未知公司")}"
                                 data-job-url="${escapeHtml(originalUrl)}"
-                              >
-                                一键网申
-                              </button>`
+                              >打开投递链接</button>`
+                            : `<span class="muted">投递链接：需补充来源</span>`
                         }
-                        <a class="button" href="#/jobs/${jobVm.id}">查看详情</a>
+                        <button class="button" type="button" data-action="set-shortlist-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="${escapeHtml(shortlistNextState)}">${shortlistState === "shortlisted" ? "移出投递清单" : "加入投递清单"}</button>
+                        <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="applied">标记已投递</button>
+                        <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="bad_fit">不匹配</button>
+                        <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="misclassified">误判</button>
                       </div>
-                      <div class="muted" style="margin-top:10px;">执行管理（可选，不影响当前推荐）</div>
-                      <details class="activity-disclosure" style="margin-top:6px;">
-                        <summary class="muted" style="cursor:pointer;">第1步：记录求职进展</summary>
-                        <div class="inline-meta" style="margin-top:8px;">
-                          <span class="status evaluating">${escapeHtml(trackerStateLabel)}</span>
-                        </div>
-                        <div class="muted explanation-extra">${escapeHtml(trackerTimelineLine)}</div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="saved">已收藏</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="prep">准备中</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="tailored">已定制材料</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="applied">已投递</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="interview">面试中</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="rejected">已拒绝</button>
-                          <button class="button" type="button" data-action="set-tracker-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="offer">录用</button>
-                        </div>
-                        <div class="muted" style="margin-top:10px;">第2步：记录岗位反馈</div>
-                        <div class="inline-meta" style="margin-top:6px;">
-                          <span class="status inbox">${escapeHtml(feedbackStateLabel)}</span>
-                        </div>
-                        <div class="muted explanation-extra">${escapeHtml(feedbackTimelineLine)}</div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
-                          <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="good_fit">👍 好岗位</button>
-                          <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="bad_fit">👎 不匹配</button>
-                          <button class="button" type="button" data-action="set-feedback-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="misclassified">⚠ 误判</button>
-                        </div>
-                        <div class="muted" style="margin-top:10px;">第3步：加入候选清单</div>
-                        <div class="inline-meta" style="margin-top:6px;">
-                          <span class="status saved">${escapeHtml(shortlistStateLabel)}</span>
-                        </div>
-                        <div class="muted explanation-extra">${escapeHtml(shortlistTimelineLine)}</div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
-                          <button class="button" type="button" data-action="set-shortlist-state" data-job-id="${escapeHtml(jobVm.id)}" data-next-state="${escapeHtml(shortlistNextState)}">${escapeHtml(shortlistActionLabel)}</button>
-                        </div>
-                      </details>
-                      <details class="activity-disclosure" style="margin-top:6px;">
-                        <summary class="muted" style="cursor:pointer;">高级记录：材料准备（可选）</summary>
-                        <div class="muted explanation-extra" style="margin-top:8px;">${escapeHtml(materialsUpdatedLine)}</div>
-                        <div class="split" style="margin-top:8px;gap:6px;">
-                          <label class="muted">简历
-                            <select data-material-field="resumeStatus" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${materialResumeStates
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${resumeStatus === state ? "selected" : ""}>${escapeHtml(resolveMaterialLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                          <label class="muted">求职信
-                            <select data-material-field="coverLetterStatus" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${materialCoverLetterStates
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${coverLetterStatus === state ? "selected" : ""}>${escapeHtml(resolveMaterialLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                          <label class="muted">面试准备
-                            <select data-material-field="interviewPrepStatus" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${materialInterviewPrepStates
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${interviewPrepStatus === state ? "selected" : ""}>${escapeHtml(resolveMaterialLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                        </div>
-                        <div style="margin-top:8px;">
-                          <input
-                            data-material-field="notes"
-                            data-job-id="${escapeHtml(jobVm.id)}"
-                            maxlength="2000"
-                            placeholder="材料备注（仅用于记录）"
-                            value="${escapeHtml(materialsNotes)}"
-                          />
-                        </div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-                          <button class="button" type="button" data-action="save-materials-prep" data-job-id="${escapeHtml(jobVm.id)}">保存材料记录</button>
-                        </div>
-                      </details>
-                      <details class="activity-disclosure" style="margin-top:6px;">
-                        <summary class="muted" style="cursor:pointer;">高级记录：投递状态（可选）</summary>
-                        <div class="inline-meta" style="margin-top:10px;">
-                          <span class="status applied">${escapeHtml(resolveSubmissionStatusLabel(submissionStatus))}</span>
-                          <span class="status inbox">${escapeHtml(resolveSubmissionSourceLabel(submissionSource))}</span>
-                        </div>
-                        <div class="muted explanation-extra">提交时间：${escapeHtml(submissionSubmittedAt)}</div>
-                        <div class="muted explanation-extra">最近尝试：${escapeHtml(submissionLastAttemptAt)} · 尝试次数=${escapeHtml(String(submissionAttemptCount))}</div>
-                        ${submissionLastError ? `<div class="muted explanation-extra">错误：${escapeHtml(submissionLastError)}</div>` : ""}
-                        <div class="split" style="margin-top:8px;gap:6px;">
-                          <label class="muted">投递状态
-                            <select data-submission-field="status" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${submissionAuditStatuses
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${submissionStatus === state ? "selected" : ""}>${escapeHtml(resolveSubmissionStatusLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                          <label class="muted">来源
-                            <select data-submission-field="source" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${submissionAuditSources
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${submissionSource === state ? "selected" : ""}>${escapeHtml(resolveSubmissionSourceLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                        </div>
-                        <div style="margin-top:8px;">
-                          <input
-                            data-submission-field="lastError"
-                            data-job-id="${escapeHtml(jobVm.id)}"
-                            maxlength="2000"
-                            placeholder="提交错误（可选）"
-                            value="${escapeHtml(submissionLastError)}"
-                          />
-                        </div>
-                        <div style="margin-top:8px;">
-                          <input
-                            data-submission-field="notes"
-                            data-job-id="${escapeHtml(jobVm.id)}"
-                            maxlength="2000"
-                            placeholder="投递审计备注（仅用于记录）"
-                            value="${escapeHtml(submissionNotes)}"
-                          />
-                        </div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-                          <button class="button" type="button" data-action="save-submission-audit" data-job-id="${escapeHtml(jobVm.id)}">保存投递审计</button>
-                        </div>
-                      </details>
-                      <details class="activity-disclosure" style="margin-top:6px;">
-                        <summary class="muted" style="cursor:pointer;">高级记录：后续提醒（可选）</summary>
-                        <div class="inline-meta" style="margin-top:10px;">
-                          <span class="status follow_up">${escapeHtml(resolveFollowUpStatusLabel(followUpStatus))}</span>
-                          <span class="status inbox">${escapeHtml(resolveFollowUpChannelLabel(followUpChannel))}</span>
-                        </div>
-                        <div class="muted explanation-extra">跟进时间：${escapeHtml(followUpDueAtLabel)}</div>
-                        <div class="muted explanation-extra">更新时间：${escapeHtml(followUpUpdatedAtLabel)}</div>
-                        <div class="split" style="margin-top:8px;gap:6px;">
-                          <label class="muted">跟进状态
-                            <select data-followup-field="status" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${followUpStatuses
-                                .map(
-                                  (state) =>
-                                    `<option value="${escapeHtml(state)}" ${followUpStatus === state ? "selected" : ""}>${escapeHtml(resolveFollowUpStatusLabel(state))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                          <label class="muted">沟通渠道
-                            <select data-followup-field="channel" data-job-id="${escapeHtml(jobVm.id)}">
-                              ${followUpChannels
-                                .map(
-                                  (channel) =>
-                                    `<option value="${escapeHtml(channel)}" ${followUpChannel === channel ? "selected" : ""}>${escapeHtml(resolveFollowUpChannelLabel(channel))}</option>`
-                                )
-                                .join("")}
-                            </select>
-                          </label>
-                        </div>
-                        <div style="margin-top:8px;">
-                          <label class="muted">跟进时间
-                            <input
-                              type="datetime-local"
-                              data-followup-field="dueAt"
-                              data-job-id="${escapeHtml(jobVm.id)}"
-                              value="${escapeHtml(followUpDueAtInputValue)}"
-                            />
-                          </label>
-                        </div>
-                        <div style="margin-top:8px;">
-                          <input
-                            data-followup-field="notes"
-                            data-job-id="${escapeHtml(jobVm.id)}"
-                            maxlength="2000"
-                            placeholder="跟进备注（仅用于记录）"
-                            value="${escapeHtml(followUpNotes)}"
-                          />
-                        </div>
-                        <div class="toolbar" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-                          <button class="button" type="button" data-action="save-follow-up" data-job-id="${escapeHtml(jobVm.id)}">保存跟进提醒</button>
-                        </div>
-                      </details>
+                      <div class="inline-meta" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">
+                        <span class="status saved">投递清单：${escapeHtml(shortlistStateLabel)}</span>
+                        <span class="status evaluating">投递进展：${escapeHtml(trackerStateLabel)}</span>
+                        <span class="status inbox">反馈：${escapeHtml(feedbackStateLabel)}</span>
+                      </div>
+                      <div class="muted explanation-extra" style="margin-top:6px;">
+                        用户点击投递链接后，可把岗位加入投递清单；回来只需要记录“已投递/不匹配/误判”等关键结果。
+                      </div>
                     </article>
                   `;
                 })
@@ -4074,13 +3861,13 @@ async function renderJobs(message = "") {
           <summary class="section-head" style="cursor:pointer;">
             <div>
               <div class="eyebrow">批量对比</div>
-              <h3>候选清单对比面板</h3>
-            </div>
-            <div class="muted">仅展示已加入候选清单的岗位</div>
+            <h3>投递清单对比面板</h3>
+          </div>
+            <div class="muted">仅展示你准备继续投递的岗位</div>
           </summary>
           ${
             shortlistedJobs.length === 0
-              ? `<div class="muted">当前暂无候选清单岗位，请先在岗位卡片中点击“加入候选清单”。</div>`
+              ? `<div class="muted">当前暂无投递清单岗位，请先在岗位卡片中点击“加入投递清单”。</div>`
               : `
                 <div class="stack">
                   ${shortlistedJobs
@@ -4159,19 +3946,12 @@ async function renderJobs(message = "") {
     <div id="jobs-apply-modal" class="apply-modal hidden" role="dialog" aria-modal="true" aria-labelledby="jobs-apply-modal-title">
       <div class="apply-modal-backdrop" data-action="close-apply-modal"></div>
       <div class="apply-modal-card">
-        <h4 id="jobs-apply-modal-title">一键网申辅助</h4>
+        <h4 id="jobs-apply-modal-title">打开投递链接后，是否加入投递清单？</h4>
         <div id="jobs-apply-modal-body" class="stack"></div>
         <div class="toolbar">
-          <a
-            class="button"
-            href="/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            下载并安装插件
-          </a>
-          <a class="button" href="#/profile">去完善资料</a>
-          <a class="button primary" id="jobs-apply-manual-link" target="_blank" rel="noopener noreferrer">先手动申请</a>
+          <a class="button primary" id="jobs-apply-manual-link" target="_blank" rel="noopener noreferrer">打开投递链接</a>
+          <button class="button" type="button" id="jobs-apply-add-list">加入投递清单</button>
+          <button class="button" type="button" id="jobs-apply-mark-applied">已投递</button>
           <button class="button" type="button" data-action="close-apply-modal">关闭</button>
         </div>
       </div>
@@ -4201,19 +3981,24 @@ async function renderJobs(message = "") {
   const modal = document.getElementById("jobs-apply-modal");
   const modalBody = document.getElementById("jobs-apply-modal-body");
   const manualLink = document.getElementById("jobs-apply-manual-link");
+  const addListButton = document.getElementById("jobs-apply-add-list");
+  const markAppliedButton = document.getElementById("jobs-apply-mark-applied");
+  let activeApplyModalJobId = "";
 
   const closeModal = () => {
     modal?.classList.add("hidden");
+    activeApplyModalJobId = "";
     if (manualLink) {
       manualLink.removeAttribute("href");
       manualLink.classList.add("is-disabled");
     }
   };
 
-  const openModal = ({ company = "", title: jobTitle = "", url = "" } = {}) => {
+  const openModal = ({ jobId = "", company = "", title: jobTitle = "", url = "" } = {}) => {
+    activeApplyModalJobId = String(jobId || "").trim();
     const profileStatusText =
       readinessStatus === "ready"
-        ? "资料状态：已完善。可直接使用插件进行网页预填。"
+        ? "资料状态：已完善。"
         : readinessStatus === "partial"
           ? `资料状态：部分缺失。建议先补全：${missingFields.map((item) => item.label).join(" / ")}。`
           : `资料状态：未完善。建议先补全：${missingFields.map((item) => item.label).join(" / ")}。`;
@@ -4221,23 +4006,15 @@ async function renderJobs(message = "") {
       pluginStatus === "ready"
         ? `插件状态：已检测到最近同步（${formatDateTime(lastPluginSyncAt)}）。`
         : "插件状态：未安装或未启用。请先下载插件并在 Edge 扩展页加载。";
-    const nextActionText =
-      readinessStatus !== "ready"
-        ? "下一步：先去个人资料补全网申辅助资料，再回到岗位列表点击一键网申。"
-        : pluginStatus !== "ready"
-          ? "下一步：先安装并启用插件，然后打开岗位投递链接执行辅助填写。"
-          : "下一步：可直接打开投递链接，使用插件辅助填写；也可继续手动申请。";
-
     modalBody.innerHTML = `
       <div class="notice info">岗位：${escapeHtml(company)} · ${escapeHtml(jobTitle)}</div>
-      <div class="muted">一键网申依赖 Edge 插件执行网页预填，这不是强制步骤，你始终可以继续手动申请。</div>
+      <div class="muted">投递会在招聘官网完成。打开链接后，建议把这个岗位加入投递清单，回来只记录关键结果。</div>
       <div class="muted">${escapeHtml(profileStatusText)}</div>
       <div class="muted">${escapeHtml(pluginStatusText)}</div>
-      <div class="muted">${escapeHtml(nextActionText)}</div>
       ${
         url
-          ? `<div class="muted">你也可以直接打开投递链接继续手动申请。</div>`
-          : `<div class="notice warning">该岗位暂无投递链接，建议先进入详情页补充来源链接。</div>`
+          ? `<div class="muted">建议动作：打开投递链接 → 加入投递清单 → 投完后标记已投递。</div>`
+          : `<div class="notice warning">该岗位暂无投递链接，暂时只能先加入投递清单，后续补充来源。</div>`
       }
     `;
     if (manualLink) {
@@ -4255,6 +4032,7 @@ async function renderJobs(message = "") {
   document.querySelectorAll("[data-action='open-apply-modal']").forEach((button) => {
     button.addEventListener("click", () => {
       openModal({
+        jobId: button.dataset.jobId || "",
         company: button.dataset.jobCompany || "",
         title: button.dataset.jobTitle || "",
         url: button.dataset.jobUrl || ""
@@ -4262,18 +4040,42 @@ async function renderJobs(message = "") {
     });
   });
 
+  addListButton?.addEventListener("click", async () => {
+    if (!activeApplyModalJobId) return;
+    try {
+      setButtonPending(addListButton, true, "加入中...");
+      await api(`/api/jobs/${activeApplyModalJobId}/shortlist-state`, {
+        method: "POST",
+        body: JSON.stringify({ nextState: "shortlisted" })
+      });
+      closeModal();
+      renderJobs("已加入投递清单。");
+    } catch (error) {
+      setButtonPending(addListButton, false);
+      renderJobs(`加入投递清单失败：${error.message}`);
+    }
+  });
+
+  markAppliedButton?.addEventListener("click", async () => {
+    if (!activeApplyModalJobId) return;
+    try {
+      setButtonPending(markAppliedButton, true, "记录中...");
+      await api(`/api/jobs/${activeApplyModalJobId}/tracker-state`, {
+        method: "POST",
+        body: JSON.stringify({ nextState: "applied" })
+      });
+      closeModal();
+      renderJobs("已记录为已投递。");
+    } catch (error) {
+      setButtonPending(markAppliedButton, false);
+      renderJobs(`记录投递状态失败：${error.message}`);
+    }
+  });
+
   document.querySelectorAll("[data-action='filter-tracker-state']").forEach((button) => {
     button.addEventListener("click", () => {
       const state = String(button.dataset.state || "all").trim().toLowerCase();
       localStorage.setItem(JOBS_TRACKER_FILTER_LOCAL_KEY, state);
-      renderJobs(message);
-    });
-  });
-
-  document.querySelectorAll("[data-action='filter-shortlist-state']").forEach((button) => {
-    button.addEventListener("click", () => {
-      const state = String(button.dataset.state || "all").trim().toLowerCase();
-      localStorage.setItem(JOBS_SHORTLIST_FILTER_LOCAL_KEY, state);
       renderJobs(message);
     });
   });
@@ -4327,10 +4129,10 @@ async function renderJobs(message = "") {
           method: "POST",
           body: JSON.stringify({ nextState })
         });
-        renderJobs("候选清单已更新。");
+        renderJobs("投递清单已更新。");
       } catch (error) {
         setButtonPending(button, false);
-        renderJobs(`候选清单更新失败：${error.message}`);
+        renderJobs(`投递清单更新失败：${error.message}`);
       }
     });
   });
@@ -7462,7 +7264,7 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
           <div class="info-grid" style="margin-top:10px;">
             <div class="panel">
               <strong>流程追踪</strong>
-              <div class="muted">查看 已收藏/准备中/已定制材料/已投递/面试中/已拒绝/已拿 Offer 阶段。</div>
+              <div class="muted">查看投递清单、已投递、面试中、已结束和 Offer 阶段。</div>
             </div>
             <div class="panel">
               <strong>投递审计</strong>

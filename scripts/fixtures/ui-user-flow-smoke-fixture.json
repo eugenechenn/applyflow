@@ -9,7 +9,8 @@
     "id=\"jobs-apply-modal\"",
     "data-action=\"close-apply-modal\"",
     "id=\"jobs-apply-manual-link\"",
-    "href=\"#/profile\">去完善资料</a>"
+    "id=\"jobs-apply-add-list\"",
+    "加入投递清单"
   ],
   "requiredProfileGuideTokens": [
     "页面定位：",
