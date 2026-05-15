@@ -116,3 +116,12 @@
 - 2026-05-15：完成 2-user（A/B）内测证据与口径收口：手工验收通过、real-pool 5001 与 demo 12 保持稳定，自动脚本受 workers.dev 网络限制待后续补证。
 - 2026-05-15：完成 Demo Dataset Enhancement：仓库 demo seed 升级为 curated 38 条（覆盖一线+新一线与多岗位），新增 `validate-demo-curated-pool-ranking` 并验证多画像排序差异，不改排序核心。
 - 2026-05-15：完成 user_a / payload.userId fallback 治理：beta/staging 写入不再 fallback user_a，API 拒绝 forged payload.userId，discovery/import/sync 改为 authenticated userId，并通过隔离与排序回归验证。
+- 2026-05-15：生成 ApplyFlow AI 面试作品集复习手册，收口项目叙事、优势不足、深挖问答、演示路径与面试自审。
+- 2026-05-15：补充面试手册的线上 dogfooding 证据采集、RAG/eval harness/benchmark 回答与场景题应答框架。
+- 2026-05-15：完成简历 PDF 初审，新增 ApplyFlow 简历修改方案与面试官阅读版 one-pager。
+- 2026-05-15：新增作品集 one-pager、内测证据 Log 模板和飞书结构，并统一移除“简历改写已落地”口径。
+- 2026-05-15：将内测证据 Log 的任务记录调整为按用户体验全流程采集功能完成、耗时、卡点、反馈与漏斗指标。
+- 2026-05-15：按 U1-U5 五个画像预填内测 Evidence Log 代测草稿，并记录本地 UI/shortlist 验证与认证上下文边界。
+- 2026-05-15：用 Playwright 生成作品集内测截图并补齐 Evidence Log 的截图路径、模拟耗时与模拟用户原话。
+- 2026-05-15：根据线上体验反馈收敛岗位卡片投递主路径，改为投递链接确认、投递清单、已投递与轻量反馈，并写入迭代记录。
+- 2026-05-15：完成投递主路径 Focused Review，修复隐藏 shortlist localStorage 筛选残留问题并重新部署 staging。
