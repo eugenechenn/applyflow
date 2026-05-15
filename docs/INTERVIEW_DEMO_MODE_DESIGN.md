@@ -227,3 +227,20 @@
 - `name/background` 不再作为 `/api/profile/save` 的强制阻断字段，避免先填偏好后被强制跳 Profile。
 - 缺少 `name/background` 时前端保持非阻断提醒，不把材料完整度误判为已完成。
 - 排序核心合同（`userPriorityScore`、`comparator`、acceptance/gate）在本批次保持冻结。
+
+## 14. Demo Curated Pool 设计补充（2026-05-15）
+- Demo 数据目标从“最小样例”升级为“面试友好小而完整样例池”：
+  - 总量约 30-40 条（当前为 38）
+  - 覆盖一线 + 新一线城市
+  - 覆盖 PM/数据/算法/后端/运营与少量入口型岗位
+- 演示意图：
+  - 输入不同岗位 + 城市偏好时，Top5/Top20 明显变化
+  - 保留 A/B/C/D/F 分层，不做人为 UI 造假
+  - 评分仍完全走 `scoringView.decisionVerdict.grade`
+- 数据边界：
+  - `demo_user` curated pool 与 `staging_real_pool_user=5001` 严格隔离
+  - 不写真实 beta 用户数据
+  - 不改排序核心口径
+- 验证脚本：
+  - `validate-demo-curated-pool-ranking.js`（多画像 Top20/Top5 分布与 highRoleFitButLowGrade 检查）
+  - 同时回归 real-pool 脚本，确认 demo 增强不影响 Full-5000+ 验收链路

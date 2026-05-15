@@ -170,3 +170,13 @@
   - 仍不声明 3-5 人 fully ready
   - 仍不声明 50-user beta ready
   - 仍不声明 Production Auth Ready
+
+## 14. Demo Dataset Enhancement（2026-05-15）
+- 目标：将 `demo_user` 演示池从 12 条小样本升级为“可重复、可解释、可展示偏好差异”的 curated pool（约 30-40 条）。
+- 实施方式：优先改 repo 内 demo seed（`src/mock/applyflow-demo-data.js` + curated jobs 文件），不改排序核心，不写真实池用户。
+- curated pool 覆盖：
+  - 城市：上海/北京/深圳/广州 + 杭州/成都/南京/苏州/武汉/西安
+  - 岗位：产品经理、数据分析、算法工程师、后端开发/软件工程师、运营/商业分析、少量入口型岗位
+- 验证：新增 `scripts/validation/validate-demo-curated-pool-ranking.js`，按多组画像输出 Top20 分布、Top5 结果、机会类型与证据类型分布。
+- 边界：不改 `userPriorityScore` / comparator / grade 阈值 / opportunityType / acceptance-gate；不改 `staging_real_pool_user=5001`。
+- 状态说明：仓库 seed 已升级；staging 线上 demo_user 若仍为历史 12 条，需要 staging deploy + 受控 reseed 后才会生效。
