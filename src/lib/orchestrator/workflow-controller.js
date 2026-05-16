@@ -697,6 +697,53 @@ function getMetricsSummary() {
   };
 }
 
+function normalizeCandidateSearchText(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getJobCandidateSearchText(job = {}) {
+  return normalizeCandidateSearchText(
+    [
+      job.title,
+      job.company,
+      job.location,
+      job.description,
+      job.responsibilities,
+      job.requirements,
+      job.rawText,
+      job.jdRaw,
+      job.sourceLabel
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function buildRuntimeCandidateJobs(jobs = [], jobPreferenceProfile = {}, candidateLimit = null) {
+  const limit = Number(candidateLimit);
+  if (!Number.isFinite(limit) || limit <= 0 || jobs.length <= limit) return jobs;
+
+  const roleTokens = ensureArray(jobPreferenceProfile.targetRoles)
+    .map((item) => normalizeCandidateSearchText(item))
+    .filter(Boolean);
+  const locationTokens = ensureArray(jobPreferenceProfile.preferredLocations)
+    .map((item) => normalizeCandidateSearchText(item))
+    .filter(Boolean);
+  const scored = jobs.map((job, index) => {
+    const text = getJobCandidateSearchText(job);
+    const roleHit = roleTokens.some((token) => text.includes(token));
+    const locationHit = locationTokens.some((token) => text.includes(token));
+    const score = (roleHit ? 100 : 0) + (locationHit ? 20 : 0);
+    return { job, index, score };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
+  });
+  return scored.slice(0, Math.floor(limit)).map((entry) => entry.job);
+}
+
 async function ingestJob(payload) {
   const ingestionStage = await runAgentStage(
     {
@@ -3602,7 +3649,7 @@ async function getJobWorkspaceList(options = {}) {
   const rawLimit = Number(options?.limit);
   const hasLimit = Number.isFinite(rawLimit) && rawLimit > 0;
   const limit = hasLimit ? Math.max(1, Math.min(500, Math.floor(rawLimit))) : null;
-  const selectedJobs = normalizedJobs;
+  const selectedJobs = buildRuntimeCandidateJobs(normalizedJobs, jobPreferenceProfile, options?.candidateLimit);
   stageMark("normalize_jobs_ms", normalizeStart);
 
   const prefetchStart = Date.now();
