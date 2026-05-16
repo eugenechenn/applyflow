@@ -33,7 +33,7 @@ function resolveWorkspaceScope(pathname, method) {
   if (normalizedMethod === "GET" && pathname === "/api/jobs") {
     return {
       keys: ["profile", "jobs", "fitAssessments", "activityLogs"],
-      jobCandidateLimit: 800
+      jobCandidateLimit: 300
     };
   }
 
