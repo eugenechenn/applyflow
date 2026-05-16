@@ -12,6 +12,13 @@ const { createWorkerOverrideStore } = d1RuntimeStoreModule;
 
 function resolveWorkspaceScope(pathname, method) {
   const normalizedMethod = String(method || "").trim().toUpperCase();
+  if (normalizedMethod === "GET" && pathname === "/api/jobs") {
+    return {
+      keys: ["profile", "jobs", "fitAssessments", "activityLogs"],
+      jobCandidateLimit: 800
+    };
+  }
+
   if (normalizedMethod !== "POST") {
     return null;
   }

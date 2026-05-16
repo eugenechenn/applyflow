@@ -47,6 +47,60 @@ async function selectJsonRow(db, sql, params = []) {
   return row ? JSON.parse(row.json_text) : null;
 }
 
+function normalizeSearchToken(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function toSearchTokenList(value = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeSearchToken(item)).filter(Boolean);
+  }
+  return String(value || "")
+    .split(",")
+    .map((item) => normalizeSearchToken(item))
+    .filter(Boolean);
+}
+
+function getProfileSearchTokens(profile = {}) {
+  const lightweight = profile?.lightweightProfile && typeof profile.lightweightProfile === "object" ? profile.lightweightProfile : {};
+  const preference =
+    profile?.jobPreferenceProfile && typeof profile.jobPreferenceProfile === "object" ? profile.jobPreferenceProfile : {};
+  return {
+    roleTokens: toSearchTokenList(preference.targetRoles || lightweight.targetRoles || profile.targetRoles).slice(0, 4),
+    locationTokens: toSearchTokenList(
+      preference.preferredLocations || lightweight.preferredLocations || profile.preferredLocations || profile.targetLocations
+    ).slice(0, 4)
+  };
+}
+
+async function selectScopedJobRows(db, userId, profile, scope = null) {
+  const limit = Number(scope?.jobCandidateLimit);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return selectJsonRows(db, "SELECT json_text FROM jobs WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
+  }
+
+  const safeLimit = Math.max(1, Math.min(1200, Math.floor(limit)));
+  const { roleTokens, locationTokens } = getProfileSearchTokens(profile || {});
+  const rankingClauses = [];
+  const params = [userId];
+  roleTokens.forEach((token) => {
+    rankingClauses.push("CASE WHEN lower(json_text) LIKE ? THEN 100 ELSE 0 END");
+    params.push(`%${token}%`);
+  });
+  locationTokens.forEach((token) => {
+    rankingClauses.push("CASE WHEN lower(json_text) LIKE ? THEN 20 ELSE 0 END");
+    params.push(`%${token}%`);
+  });
+  params.push(safeLimit);
+
+  const rankingSql = rankingClauses.length ? rankingClauses.join(" + ") : "0";
+  return selectJsonRows(
+    db,
+    `SELECT json_text FROM jobs WHERE user_id = ? ORDER BY (${rankingSql}) DESC, updated_at DESC LIMIT ?`,
+    params
+  );
+}
+
 async function loadUsers(db) {
   return selectJsonRows(db, "SELECT json_text FROM users ORDER BY created_at ASC");
 }
@@ -145,7 +199,7 @@ async function loadWorkspaceState(db, userId, scope = null) {
       const job = await selectJsonRow(db, "SELECT json_text FROM jobs WHERE user_id = ? AND id = ? LIMIT 1", [userId, scope.jobId]);
       state.jobs = job ? [job] : [];
     } else {
-      state.jobs = await selectJsonRows(db, "SELECT json_text FROM jobs WHERE user_id = ? ORDER BY updated_at DESC", [userId]);
+      state.jobs = await selectScopedJobRows(db, userId, state.profile, scope);
     }
   }
   if (shouldLoadWorkspaceKey(scope, "fitAssessments")) {
