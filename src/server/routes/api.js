@@ -255,11 +255,12 @@ async function handleApiRequest(req, res, pathname) {
         .toLowerCase();
       const derivedUsername = normalizedLogin.split("@")[0] || normalizedLogin;
       let user = store.findUserByLogin(normalizedLogin);
+      const normalizedEmailCandidate = String(user?.email || normalizedLogin)
+        .trim()
+        .toLowerCase();
+      const isWhitelisted = Boolean(normalizedEmailCandidate) && authGate.betaAllowedEmails.has(normalizedEmailCandidate);
       if (authGate.restrictPublicAuthSurfaces) {
-        const normalizedEmailCandidate = String(user?.email || normalizedLogin)
-          .trim()
-          .toLowerCase();
-        if (!normalizedEmailCandidate || !authGate.betaAllowedEmails.has(normalizedEmailCandidate)) {
+        if (!isWhitelisted) {
           const error = new Error("This account is not in the internal beta allowlist.");
           error.code = "AUTH_FORBIDDEN";
           throw error;
@@ -277,9 +278,17 @@ async function handleApiRequest(req, res, pathname) {
           throw error;
         }
       } else if (!user) {
-        const error = new Error("User not found.");
-        error.code = "AUTH_FAILED";
-        throw error;
+        if (authGate.betaAllowedEmails.size > 0 && !isWhitelisted) {
+          const error = new Error("User not found.");
+          error.code = "AUTH_FAILED";
+          throw error;
+        }
+        // 非受限环境保持与 /api/login 一致：允许创建普通测试/线上体验用户。
+        // 一旦配置 BETA_ALLOWED_EMAILS，则仍只允许白名单邮箱自动补齐。
+        user = store.ensureUser({
+          email: normalizedEmailCandidate.includes("@") ? normalizedEmailCandidate : "",
+          username: derivedUsername
+        });
       }
       const session = issueSession(res, user.id);
       return success(res, { authenticated: true, user, sessionId: session.sessionId });
