@@ -719,16 +719,22 @@ function getJobCandidateSearchText(job = {}) {
   );
 }
 
+function normalizeCandidateTokenList(value = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCandidateSearchText(item)).filter(Boolean);
+  }
+  return String(value || "")
+    .split(",")
+    .map((item) => normalizeCandidateSearchText(item))
+    .filter(Boolean);
+}
+
 function buildRuntimeCandidateJobs(jobs = [], jobPreferenceProfile = {}, candidateLimit = null) {
   const limit = Number(candidateLimit);
   if (!Number.isFinite(limit) || limit <= 0 || jobs.length <= limit) return jobs;
 
-  const roleTokens = ensureArray(jobPreferenceProfile.targetRoles)
-    .map((item) => normalizeCandidateSearchText(item))
-    .filter(Boolean);
-  const locationTokens = ensureArray(jobPreferenceProfile.preferredLocations)
-    .map((item) => normalizeCandidateSearchText(item))
-    .filter(Boolean);
+  const roleTokens = normalizeCandidateTokenList(jobPreferenceProfile.targetRoles);
+  const locationTokens = normalizeCandidateTokenList(jobPreferenceProfile.preferredLocations);
   const scored = jobs.map((job, index) => {
     const text = getJobCandidateSearchText(job);
     const roleHit = roleTokens.some((token) => text.includes(token));
