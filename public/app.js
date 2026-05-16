@@ -1738,7 +1738,7 @@ async function renderDashboard(message = "", errorMessage = "") {
     ...profile,
     lightweightProfile: lightweight
   });
-  const jobViews = Array.isArray(jobsData.jobWorkspaceViewModels) ? jobsData.jobWorkspaceViewModels : [];
+  const jobViews = Array.isArray(jobsData?.jobWorkspaceViewModels) ? jobsData.jobWorkspaceViewModels : [];
   const profileName = String(profile?.name || profile?.fullName || "").trim();
   const profileBackground = String(profile?.background || profile?.headline || "").trim();
   const needsMaterialsIdentityReminder = !profileName || !profileBackground;
@@ -6637,7 +6637,7 @@ async function renderInterviews() {
   title.textContent = "面试复盘";
   subtitle.textContent = "记录面试问题、复盘改进点，并把洞察回流到求职策略。";
   const jobs = await api("/api/jobs");
-  const jobOptions = Array.isArray(jobs.jobWorkspaceViewModels) ? jobs.jobWorkspaceViewModels : [];
+  const jobOptions = Array.isArray(jobs?.jobWorkspaceViewModels) ? jobs.jobWorkspaceViewModels : [];
 
   app.innerHTML = `
     <div class="panel">
