@@ -54,10 +54,31 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
   }
 
   const safeLimit = Math.max(1, Math.min(1200, Math.floor(limit)));
-  return selectJsonRows(db, "SELECT json_text FROM jobs WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?", [
-    userId,
-    safeLimit
-  ]);
+  const profile = _profile && typeof _profile === "object" ? _profile : {};
+  const lightweight = profile.lightweightProfile && typeof profile.lightweightProfile === "object" ? profile.lightweightProfile : {};
+  const preference = profile.jobPreferenceProfile && typeof profile.jobPreferenceProfile === "object" ? profile.jobPreferenceProfile : {};
+  const tokenList = (value = []) =>
+    (Array.isArray(value) ? value : String(value || "").split(","))
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 4);
+  const roleTokens = tokenList(preference.targetRoles || lightweight.targetRoles || profile.targetRoles);
+  const locationTokens = tokenList(
+    preference.preferredLocations || lightweight.preferredLocations || profile.preferredLocations || profile.targetLocations
+  );
+  const clauses = [];
+  const params = [userId];
+  roleTokens.forEach((token) => {
+    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 100 ELSE 0 END");
+    params.push(`%${token}%`);
+  });
+  locationTokens.forEach((token) => {
+    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 20 ELSE 0 END");
+    params.push(`%${token}%`);
+  });
+  params.push(safeLimit);
+  const orderSql = clauses.length ? `(${clauses.join(" + ")}) DESC, updated_at DESC` : "updated_at DESC";
+  return selectJsonRows(db, `SELECT json_text FROM jobs WHERE user_id = ? ORDER BY ${orderSql} LIMIT ?`, params);
 }
 
 async function loadUsers(db) {
