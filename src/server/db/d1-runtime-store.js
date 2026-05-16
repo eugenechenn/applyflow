@@ -144,7 +144,7 @@ function createEmptyWorkspaceState() {
 }
 
 function shouldLoadWorkspaceKey(scope = null, key = "") {
-  if (!scope || !Array.isArray(scope.keys) || scope.keys.length === 0) {
+  if (!scope || !Array.isArray(scope.keys)) {
     return true;
   }
   return scope.keys.includes(key);

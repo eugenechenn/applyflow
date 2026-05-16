@@ -12,6 +12,24 @@ const { createWorkerOverrideStore } = d1RuntimeStoreModule;
 
 function resolveWorkspaceScope(pathname, method) {
   const normalizedMethod = String(method || "").trim().toUpperCase();
+  if (
+    pathname === "/api/auth/session" ||
+    pathname === "/api/auth/login" ||
+    pathname === "/api/auth/logout" ||
+    pathname === "/api/login" ||
+    pathname === "/api/demo/session"
+  ) {
+    return { keys: [] };
+  }
+
+  if (normalizedMethod === "GET" && pathname === "/api/profile") {
+    return { keys: ["profile"] };
+  }
+
+  if (normalizedMethod === "POST" && (pathname === "/api/profile/save" || pathname === "/api/profile/onboarding")) {
+    return { keys: ["profile"] };
+  }
+
   if (normalizedMethod === "GET" && pathname === "/api/jobs") {
     return {
       keys: ["profile", "jobs", "fitAssessments", "activityLogs"],
