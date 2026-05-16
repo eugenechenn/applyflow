@@ -81,7 +81,8 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
     params.push(`%${token}%`);
   });
   params.push(safeLimit);
-  const orderSql = clauses.length ? `(${clauses.join(" + ")}) DESC, updated_at DESC` : "updated_at DESC";
+  const titleLengthSql = "length(coalesce(json_extract(json_text, '$.title'), '')) ASC";
+  const orderSql = clauses.length ? `(${clauses.join(" + ")}) DESC, ${titleLengthSql}, updated_at DESC` : "updated_at DESC";
   return selectJsonRows(db, `SELECT json_text FROM jobs WHERE user_id = ? ORDER BY ${orderSql} LIMIT ?`, params);
 }
 
