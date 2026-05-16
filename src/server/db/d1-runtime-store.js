@@ -69,10 +69,14 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
   const clauses = [];
   const params = [userId];
   roleTokens.forEach((token) => {
-    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 100 ELSE 0 END");
+    clauses.push("CASE WHEN lower(coalesce(json_extract(json_text, '$.title'), '')) LIKE ? THEN 250 ELSE 0 END");
+    params.push(`%${token}%`);
+    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 50 ELSE 0 END");
     params.push(`%${token}%`);
   });
   locationTokens.forEach((token) => {
+    clauses.push("CASE WHEN lower(coalesce(json_extract(json_text, '$.location'), '')) LIKE ? THEN 120 ELSE 0 END");
+    params.push(`%${token}%`);
     clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 20 ELSE 0 END");
     params.push(`%${token}%`);
   });
