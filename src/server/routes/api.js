@@ -549,14 +549,16 @@ async function handleApiRequest(req, res, pathname) {
 
     if (req.method === "GET" && pathname === "/api/jobs") {
       const requestUrl = new URL(req.url, "http://localhost");
-      const limitParam = Number(requestUrl.searchParams.get("limit") || "100");
       const context = getRequestContext();
-      const runtimeCandidateLimit = String(context?.env?.APPLYFLOW_RUNTIME || "").trim().toLowerCase() === "cloudflare" ? 150 : null;
+      const isCloudflareRuntime = String(context?.env?.APPLYFLOW_RUNTIME || "").trim().toLowerCase() === "cloudflare";
+      const defaultLimit = isCloudflareRuntime ? 50 : 100;
+      const limitParam = Number(requestUrl.searchParams.get("limit") || String(defaultLimit));
+      const runtimeCandidateLimit = isCloudflareRuntime ? 100 : null;
       const profileParam = String(requestUrl.searchParams.get("profile") || "").trim().toLowerCase();
       return success(
         res,
         await orchestrator.getJobWorkspaceList({
-          limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
+          limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : defaultLimit,
           candidateLimit: runtimeCandidateLimit,
           includeProfiling: profileParam === "1" || profileParam === "true"
         })
