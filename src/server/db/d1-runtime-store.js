@@ -54,36 +54,63 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
   }
 
   const safeLimit = Math.max(1, Math.min(1200, Math.floor(limit)));
+  const scanLimit = Math.max(safeLimit, Math.min(1200, safeLimit * 10));
   const profile = _profile && typeof _profile === "object" ? _profile : {};
   const lightweight = profile.lightweightProfile && typeof profile.lightweightProfile === "object" ? profile.lightweightProfile : {};
   const preference = profile.jobPreferenceProfile && typeof profile.jobPreferenceProfile === "object" ? profile.jobPreferenceProfile : {};
-  const tokenList = (value = []) =>
-    (Array.isArray(value) ? value : String(value || "").split(","))
-      .map((item) => String(item || "").trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 4);
-  const roleTokens = tokenList(preference.targetRoles || lightweight.targetRoles || profile.targetRoles);
-  const locationTokens = tokenList(
-    preference.preferredLocations || lightweight.preferredLocations || profile.preferredLocations || profile.targetLocations
-  );
+  const roleTokens = (Array.isArray(preference.targetRoles)
+    ? preference.targetRoles
+    : Array.isArray(lightweight.targetRoles)
+      ? lightweight.targetRoles
+      : Array.isArray(profile.targetRoles)
+        ? profile.targetRoles
+        : String(preference.targetRoles || lightweight.targetRoles || profile.targetRoles || "").split(",")
+  )
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 4);
+  const locationTokens = (Array.isArray(preference.preferredLocations)
+    ? preference.preferredLocations
+    : Array.isArray(lightweight.preferredLocations)
+      ? lightweight.preferredLocations
+      : Array.isArray(profile.preferredLocations)
+        ? profile.preferredLocations
+        : Array.isArray(profile.targetLocations)
+          ? profile.targetLocations
+          : String(preference.preferredLocations || lightweight.preferredLocations || profile.preferredLocations || profile.targetLocations || "")
+              .split(",")
+  )
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 4);
   const clauses = [];
   const params = [userId];
+  const titleExpr = "lower(coalesce(json_extract(json_text, '$.title'), ''))";
+  const locationExpr = "lower(coalesce(json_extract(json_text, '$.location'), ''))";
+  const jobIdExpr = "lower(coalesce(json_extract(json_text, '$.id'), ''))";
+
+  clauses.push(`CASE WHEN length(trim(${titleExpr})) = 0 THEN -1000 ELSE 0 END`);
+  clauses.push(`CASE WHEN length(trim(${jobIdExpr})) = 0 THEN -800 ELSE 0 END`);
   roleTokens.forEach((token) => {
-    clauses.push("CASE WHEN lower(coalesce(json_extract(json_text, '$.title'), '')) LIKE ? THEN 250 ELSE 0 END");
+    clauses.push(`CASE WHEN ${titleExpr} LIKE ? THEN 220 ELSE 0 END`);
     params.push(`%${token}%`);
-    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 50 ELSE 0 END");
+    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 30 ELSE 0 END");
     params.push(`%${token}%`);
   });
   locationTokens.forEach((token) => {
-    clauses.push("CASE WHEN lower(coalesce(json_extract(json_text, '$.location'), '')) LIKE ? THEN 120 ELSE 0 END");
+    clauses.push(`CASE WHEN ${locationExpr} LIKE ? THEN 120 ELSE 0 END`);
     params.push(`%${token}%`);
     clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 20 ELSE 0 END");
     params.push(`%${token}%`);
   });
-  params.push(safeLimit);
   const titleLengthSql = "length(coalesce(json_extract(json_text, '$.title'), '')) ASC";
   const orderSql = clauses.length ? `(${clauses.join(" + ")}) DESC, ${titleLengthSql}, updated_at DESC` : "updated_at DESC";
-  return selectJsonRows(db, `SELECT json_text FROM jobs WHERE user_id = ? ORDER BY ${orderSql} LIMIT ?`, params);
+  params.push(scanLimit);
+  return selectJsonRows(
+    db,
+    `SELECT json_text FROM jobs WHERE user_id = ? AND length(trim(${titleExpr})) > 0 AND length(trim(${jobIdExpr})) > 0 ORDER BY ${orderSql} LIMIT ?`,
+    params
+  );
 }
 
 async function loadUsers(db) {

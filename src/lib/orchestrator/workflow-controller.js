@@ -701,6 +701,106 @@ function normalizeCandidateSearchText(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+const CANDIDATE_ROLE_ALIAS_GROUPS = [
+  {
+    aliases: ["产品经理", "product manager", "product analyst", "数据产品经理", "增长产品经理", "ai产品经理", "产品策划"],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生", "运营"]
+  },
+  {
+    aliases: ["数据分析", "数据分析师", "data analyst", "business analyst", "商业分析", "商业智能", "strategy analyst", "growth analyst", "bi"],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生", "运营"]
+  },
+  {
+    aliases: [
+      "算法工程师",
+      "algorithm engineer",
+      "machine learning engineer",
+      "ml engineer",
+      "ai engineer",
+      "机器学习",
+      "深度学习",
+      "推荐算法",
+      "搜索算法",
+      "大模型",
+      "nlp",
+      "cv"
+    ],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生", "产品经理", "运营", "测试"]
+  },
+  {
+    aliases: [
+      "后端开发",
+      "后端开发工程师",
+      "后端研发工程师",
+      "后端工程师",
+      "服务端开发",
+      "服务端工程师",
+      "服务端研发",
+      "java开发",
+      "java开发工程师",
+      "go开发",
+      "go开发工程师",
+      "golang开发工程师",
+      "c++开发工程师",
+      "c/c++开发工程师",
+      "python开发工程师",
+      "node.js开发工程师",
+      "nodejs开发工程师",
+      "软件工程师",
+      "研发工程师"
+    ],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生", "产品经理", "运营", "测试", "前端"]
+  },
+  {
+    aliases: [
+      "前端开发",
+      "前端开发工程师",
+      "前端研发工程师",
+      "前端工程师",
+      "web前端开发工程师",
+      "web前端",
+      "大前端",
+      "javascript开发工程师",
+      "js开发工程师",
+      "react开发工程师",
+      "vue开发工程师",
+      "软件工程师",
+      "研发工程师"
+    ],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生", "产品经理", "运营", "测试", "后端"]
+  },
+  {
+    aliases: ["运营", "用户运营", "内容运营", "活动运营", "增长运营", "growth operations", "商业运营"],
+    mixedPenaltyTokens: ["销售", "客服", "管培", "管理培训生"]
+  }
+];
+const CANDIDATE_MIXED_TITLE_SPLITTER = /[\/|、，,；;]/;
+const CANDIDATE_GENERIC_NEGATIVE_TOKENS = ["管培", "管理培训生", "培训生", "销售", "客服", "行政"];
+
+function buildCandidateRoleQuery(roleTokens = []) {
+  const normalizedTokens = [...new Set((Array.isArray(roleTokens) ? roleTokens : []).map((item) => normalizeCandidateSearchText(item)).filter(Boolean))];
+  const expandedTokens = new Set(normalizedTokens);
+  const negativeTokens = new Set(CANDIDATE_GENERIC_NEGATIVE_TOKENS);
+
+  normalizedTokens.forEach((rawToken) => {
+    const matchedGroup = CANDIDATE_ROLE_ALIAS_GROUPS.find((group) =>
+      group.aliases.some((alias) => {
+        const normalizedAlias = normalizeCandidateSearchText(alias);
+        return normalizedAlias === rawToken || normalizedAlias.includes(rawToken) || rawToken.includes(normalizedAlias);
+      })
+    );
+    if (!matchedGroup) return;
+    matchedGroup.aliases.forEach((alias) => expandedTokens.add(normalizeCandidateSearchText(alias)));
+    matchedGroup.mixedPenaltyTokens.forEach((token) => negativeTokens.add(normalizeCandidateSearchText(token)));
+  });
+
+  return {
+    rawTokens: normalizedTokens,
+    expandedTokens: [...expandedTokens].filter(Boolean),
+    negativeTokens: [...negativeTokens].filter(Boolean)
+  };
+}
+
 function getJobCandidateSearchText(job = {}) {
   return normalizeCandidateSearchText(
     [
@@ -733,13 +833,24 @@ function buildRuntimeCandidateJobs(jobs = [], jobPreferenceProfile = {}, candida
   const limit = Number(candidateLimit);
   if (!Number.isFinite(limit) || limit <= 0 || jobs.length <= limit) return jobs;
 
-  const roleTokens = normalizeCandidateTokenList(jobPreferenceProfile.targetRoles);
+  const roleQuery = buildCandidateRoleQuery(normalizeCandidateTokenList(jobPreferenceProfile.targetRoles));
   const locationTokens = normalizeCandidateTokenList(jobPreferenceProfile.preferredLocations);
   const scored = jobs.map((job, index) => {
     const text = getJobCandidateSearchText(job);
-    const roleHit = roleTokens.some((token) => text.includes(token));
+    const titleText = normalizeCandidateSearchText(job?.title || "");
+    const rawRoleHit = roleQuery.rawTokens.some((token) => text.includes(token));
+    const expandedRoleHit = roleQuery.expandedTokens.some((token) => text.includes(token));
+    const titleRoleHit = roleQuery.expandedTokens.some((token) => titleText.includes(token));
     const locationHit = locationTokens.some((token) => text.includes(token));
-    const score = (roleHit ? 100 : 0) + (locationHit ? 20 : 0);
+    const mixedNegativeHit =
+      CANDIDATE_MIXED_TITLE_SPLITTER.test(String(job?.title || "")) &&
+      roleQuery.negativeTokens.some((token) => titleText.includes(token));
+    const score =
+      (rawRoleHit ? 180 : 0) +
+      (titleRoleHit ? 120 : 0) +
+      (expandedRoleHit ? 80 : 0) +
+      (locationHit ? 35 : 0) -
+      (mixedNegativeHit ? 120 : 0);
     return { job, index, score };
   });
 

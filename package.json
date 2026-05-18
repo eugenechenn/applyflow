@@ -28,6 +28,7 @@
     "validate:ui-runtime-smoke": "node scripts/validation/validate-ui-runtime-smoke.js",
     "validate:ui-key-path-playwright": "node scripts/validation/validate-ui-key-path-playwright.js",
     "validate:ui-user-flow-smoke": "node scripts/validation/validate-ui-user-flow-smoke.js",
+    "validate:production-online-smoke": "node scripts/validation/validate-production-online-smoke.js",
     "validate:discovery-contracts": "node scripts/validation/validate-discovery-contracts.js",
     "validate:discovery-lead-ingestion": "node scripts/validation/validate-discovery-lead-ingestion.js",
     "validate:discovery-feishu-adapter": "node scripts/validation/validate-discovery-feishu-adapter.js",
