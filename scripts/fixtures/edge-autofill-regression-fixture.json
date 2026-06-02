@@ -3,11 +3,6 @@
     "gender",
     "first_school_name",
     "first_major",
-    "birth_date",
-    "bachelor_start_date",
-    "bachelor_end_date",
-    "master_start_date",
-    "master_end_date",
     "language_exam_language",
     "language_exam_level",
     "english_score",
@@ -42,7 +37,10 @@
     "const dialogFilled = await fillViaDialogFallback",
     "expandFieldValues(",
     "normalizeToken(",
-    "const desiredValues = expandFieldValues(field, value)"
+    "const desiredValues = expandFieldValues(field, value)",
+    "findModuleSectionRoots(",
+    "ensureModuleRowCapacity(",
+    "findModuleAddButton("
   ],
   "forbiddenTokens": [
     "hint: candidate?.hint",

@@ -75,6 +75,21 @@ fixture.requiredDateFieldDefinitions.forEach((entry) => {
   );
 });
 
+(fixture.requiredHiddenDateFields || []).forEach((entry) => {
+  const hiddenDateRegex = new RegExp(`key:\\s*"${entry.key}"[\\s\\S]{0,120}hidden:\\s*true`);
+  assertTrue(
+    hiddenDateRegex.test(source),
+    `Profile module date field ${entry.key} for ${entry.module} should remain hidden in UI`
+  );
+});
+
+(fixture.forbiddenTopLevelFieldNames || []).forEach((fieldName) => {
+  assertTrue(
+    !source.includes(`name="${fieldName}"`),
+    `Profile autofill UI should not render top-level time field: ${fieldName}`
+  );
+});
+
 assertTrue(
   source.includes("payload.autofillProfile = {") || source.includes("autofillProfile: {"),
   "Profile submit flow must build payload.autofillProfile."

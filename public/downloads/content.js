@@ -12,11 +12,6 @@ const TARGET_FIELDS = [
   "degree",
   "major",
   "first_major",
-  "birth_date",
-  "bachelor_start_date",
-  "bachelor_end_date",
-  "master_start_date",
-  "master_end_date",
   "language_exam_language",
   "language_exam_level",
   "language_name",
@@ -150,6 +145,54 @@ const FIELD_TO_SEMANTIC_SLOT = Object.entries(SEMANTIC_SLOT_TO_FIELD).reduce((ac
   acc[field] = slot;
   return acc;
 }, {});
+
+const PASSIVE_ARRAY_MODULES = {
+  education: {
+    dataKey: "education",
+    rowAnchorKey: "school_name",
+    addButtonPatterns: [/\u6dfb\u52a0\u6559\u80b2\u7ecf\u5386/i, /\u65b0\u589e\u6559\u80b2\u7ecf\u5386/i, /add.?education/i],
+    sectionPatterns: [/\u6559\u80b2\u7ecf\u5386/i, /education/i, /\u5b66\u5386/i, /\u5b66\u4f4d/i],
+    fields: [
+      { key: "school_name", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u5b66\u6821/i, /\u9662\u6821/i, /\u6bd5\u4e1a\u9662\u6821/i, /school/i, /university/i, /college/i] },
+      { key: "major", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u4e13\u4e1a/i, /major/i, /specialty/i] },
+      { key: "degree", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u5b66\u5386/i, /\u5b66\u4f4d/i, /\u6700\u9ad8\u5b66\u5386/i, /\u6700\u9ad8\u5b66\u4f4d/i, /degree/i, /education/i] }
+    ]
+  },
+  work_experience: {
+    dataKey: "work_experience",
+    rowAnchorKey: "company_name",
+    addButtonPatterns: [/\u6dfb\u52a0\u5de5\u4f5c\u7ecf\u5386/i, /\u65b0\u589e\u5de5\u4f5c\u7ecf\u5386/i, /add.?work/i],
+    sectionPatterns: [/\u5de5\u4f5c\u7ecf\u5386/i, /work/i, /employment/i, /\u804c\u4e1a/i],
+    fields: [
+      { key: "company_name", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u516c\u53f8/i, /\u5355\u4f4d/i, /company/i, /employer/i] },
+      { key: "job_title", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u5c97\u4f4d/i, /\u804c\u4f4d/i, /\u804c\u52a1/i, /title/i, /position/i, /role/i] },
+      { key: "work_description", sourceKeys: ["work_description", "description"], controlTypes: ["textarea", "plain_input"], patterns: [/\u5de5\u4f5c\u5185\u5bb9/i, /\u804c\u8d23/i, /\u63cf\u8ff0/i, /description/i, /responsibilit/i] }
+    ]
+  },
+  project_experience: {
+    dataKey: "project_experience",
+    rowAnchorKey: "project_name",
+    addButtonPatterns: [/\u6dfb\u52a0\u9879\u76ee\u7ecf\u5386/i, /\u65b0\u589e\u9879\u76ee\u7ecf\u5386/i, /add.?project/i],
+    sectionPatterns: [/\u9879\u76ee\u7ecf\u5386/i, /project/i],
+    fields: [
+      { key: "project_name", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u9879\u76ee\u540d\u79f0/i, /\u9879\u76ee/i, /project/i] },
+      { key: "role", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u89d2\u8272/i, /\u804c\u8d23/i, /role/i, /position/i] },
+      { key: "project_description", sourceKeys: ["project_description", "description"], controlTypes: ["textarea", "plain_input"], patterns: [/\u63cf\u8ff0/i, /\u9879\u76ee\u7b80\u4ecb/i, /description/i, /summary/i] }
+    ]
+  },
+  family: {
+    dataKey: "family",
+    rowAnchorKey: "name",
+    addButtonPatterns: [/\u6dfb\u52a0\u5bb6\u5ead/i, /\u65b0\u589e\u5bb6\u5ead/i, /add.?family/i],
+    sectionPatterns: [/\u5bb6\u5ead/i, /family/i],
+    fields: [
+      { key: "name", controlTypes: ["plain_input"], patterns: [/\u59d3\u540d/i, /name/i] },
+      { key: "relation", controlTypes: ["searchable_select", "plain_input"], patterns: [/\u5173\u7cfb/i, /relation/i] },
+      { key: "employer", controlTypes: ["plain_input"], patterns: [/\u5de5\u4f5c\u5355\u4f4d/i, /\u5355\u4f4d/i, /employer/i, /company/i] },
+      { key: "position", controlTypes: ["plain_input"], patterns: [/\u804c\u4f4d/i, /\u804c\u52a1/i, /position/i, /title/i] }
+    ]
+  }
+};
 
 function isApplyFlowHost(hostname = "") {
   return APPLYFLOW_HOST_PATTERNS.some((pattern) => pattern.test(hostname || ""));
@@ -409,6 +452,42 @@ function computeSupportLevel(recognizedFieldCount, fillTargetCount) {
   if (recognizedFieldCount >= 4 && fillTargetCount >= 4) return "high";
   if (recognizedFieldCount >= 2 && fillTargetCount >= 2) return "medium";
   return "low";
+}
+
+function isTopLevelFrame() {
+  try {
+    return window.top === window;
+  } catch (_error) {
+    return true;
+  }
+}
+
+function buildFrameCandidateSummary(candidatesByField = {}) {
+  const fieldDetections = buildFieldDetectionResults(candidatesByField);
+  const recognizedFieldCount = fieldDetections.filter((item) => item.found).length;
+  const fillTargetCount = Object.values(candidatesByField).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+  return {
+    fieldDetections,
+    recognizedFieldCount,
+    fillTargetCount
+  };
+}
+
+function resolveFrameResponseDelay({ recognizedFieldCount = 0, fillTargetCount = 0 } = {}) {
+  if (recognizedFieldCount > 0 || fillTargetCount > 0) {
+    return 0;
+  }
+  return isTopLevelFrame() ? 120 : 220;
+}
+
+function respondWithFramePriority(sendResponse, payload, candidateSummary = {}) {
+  const delayMs = resolveFrameResponseDelay(candidateSummary);
+  if (delayMs <= 0) {
+    sendResponse(payload);
+    return false;
+  }
+  setTimeout(() => sendResponse(payload), delayMs);
+  return true;
 }
 
 function triggerInputEvents(el) {
@@ -777,11 +856,13 @@ function clickConfirmButton(dialogNode) {
   return true;
 }
 
-async function fillViaDialogFallback(triggerEl, value, field = "") {
+async function fillViaDialogFallback(triggerEl, value, field = "", options = {}) {
   const desiredValues = expandFieldValues(field, value);
   if (!desiredValues.length) return false;
   const trigger = resolveSearchInput(triggerEl) || triggerEl;
-  trigger.scrollIntoView?.({ block: "center", inline: "nearest" });
+  if (options.allowScroll !== false) {
+    trigger.scrollIntoView?.({ block: "center", inline: "nearest" });
+  }
   trigger.focus?.();
   clickElement(trigger);
   await sleep(120);
@@ -886,7 +967,7 @@ function readCurrentControlText(el) {
   return textOf(el);
 }
 
-async function fillSelectLike(el, value, field = "") {
+async function fillSelectLike(el, value, field = "", options = {}) {
   if (!value) return false;
   const desiredValues = expandFieldValues(field, value);
   if (!desiredValues.length) return false;
@@ -901,7 +982,9 @@ async function fillSelectLike(el, value, field = "") {
   }
 
   const queryInput = resolveSearchInput(el) || el;
-  queryInput.scrollIntoView?.({ block: "center", inline: "nearest" });
+  if (options.allowScroll !== false) {
+    queryInput.scrollIntoView?.({ block: "center", inline: "nearest" });
+  }
   queryInput.focus?.();
   openSelectLikeTrigger(queryInput);
   clickElement(queryInput);
@@ -936,7 +1019,7 @@ async function fillSelectLike(el, value, field = "") {
   }
 
   if (!selectedText) {
-    const dialogFilled = await fillViaDialogFallback(el, value, field);
+    const dialogFilled = await fillViaDialogFallback(el, value, field, options);
     if (dialogFilled) {
       selectedText = desiredValues[0];
     }
@@ -1017,6 +1100,312 @@ function findFieldCandidateByKeyword(field = "") {
   return bestScore > 0 ? best : null;
 }
 
+function getFormElementDomOrderMap() {
+  const selector =
+    "input:not([type='hidden']):not([type='checkbox']), textarea, select, [role='combobox'], [contenteditable='true']";
+  const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible);
+  const orderMap = new Map();
+  elements.forEach((el, index) => orderMap.set(el, index));
+  return orderMap;
+}
+
+function scoreHintByPatterns(hint = "", patterns = []) {
+  const text = normalizeForMatch(hint);
+  if (!text) return 0;
+  let score = 0;
+  patterns.forEach((pattern) => {
+    if (pattern.test(text)) score += 10;
+  });
+  return score;
+}
+
+function getModuleValueFromRow(row = {}, fieldDef = {}) {
+  const sourceKeys = Array.isArray(fieldDef.sourceKeys) && fieldDef.sourceKeys.length ? fieldDef.sourceKeys : [fieldDef.key];
+  for (const key of sourceKeys) {
+    const value = asText(row?.[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function getScopeControls(root = document) {
+  const selector =
+    "input:not([type='hidden']):not([type='checkbox']), textarea, select, [role='combobox'], [contenteditable='true']";
+  return Array.from(root.querySelectorAll(selector)).filter(isVisible);
+}
+
+// 按分区标题定位重复区块，避免把教育/工作/项目的同名字段互相串填。
+function findModuleSectionRoots(moduleDef) {
+  const selector = "h1, h2, h3, h4, h5, h6, legend, strong, label, div, span, p";
+  const roots = [];
+  Array.from(document.querySelectorAll(selector))
+    .filter(isVisible)
+    .forEach((node) => {
+      const text = compactText(textOf(node), 60);
+      if (!text) return;
+      const score = scoreHintByPatterns(text, moduleDef.sectionPatterns || []);
+      if (!score) return;
+      let current = node;
+      let bestRoot = null;
+      while (current && current !== document.body) {
+        const controlCount = getScopeControls(current).length;
+        if (controlCount >= 2 && controlCount <= 80) {
+          bestRoot = current;
+          break;
+        }
+        current = current.parentElement;
+      }
+      roots.push({ root: bestRoot || node.parentElement || document, score });
+    });
+  const deduped = [];
+  const seen = new Set();
+  roots
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .forEach((item) => {
+      if (!item.root || seen.has(item.root)) return;
+      seen.add(item.root);
+      deduped.push(item.root);
+    });
+  return deduped.length ? deduped : [document];
+}
+
+function collectModuleFieldCandidatesInScope(root, moduleDef, fieldDef, orderMap) {
+  const elements = getScopeControls(root);
+  const candidates = [];
+  elements.forEach((el) => {
+    const hint = getElementHints(el);
+    const fieldScore = scoreHintByPatterns(hint, fieldDef.patterns || []);
+    if (!fieldScore) return;
+    const sectionScore = scoreHintByPatterns(hint, moduleDef.sectionPatterns || []);
+    const controlType = classifyControlType(el);
+    const controlBonus = (fieldDef.controlTypes || []).includes(controlType) ? 5 : 0;
+    candidates.push({
+      element: el,
+      controlType,
+      hint,
+      matchScore: fieldScore + sectionScore + controlBonus,
+      domOrder: orderMap.get(el) ?? Number.MAX_SAFE_INTEGER
+    });
+  });
+  return candidates
+    .sort((a, b) => {
+      if (a.domOrder !== b.domOrder) return a.domOrder - b.domOrder;
+      return Number(b.matchScore || 0) - Number(a.matchScore || 0);
+    })
+    .filter((candidate, index, array) => array.findIndex((item) => item.element === candidate.element) === index);
+}
+
+function findModuleAddButton(moduleRoot, moduleDef) {
+  const scopes = [moduleRoot, moduleRoot?.parentElement].filter(Boolean);
+  const selector = "button, a, [role='button'], span, div";
+  let best = null;
+  let bestScore = 0;
+  scopes.forEach((scope) => {
+    Array.from(scope.querySelectorAll(selector))
+      .filter(isVisible)
+      .forEach((node) => {
+        const text = compactText(textOf(node), 40);
+        const score = scoreHintByPatterns(text, moduleDef.addButtonPatterns || []);
+        if (score > bestScore) {
+          best = node;
+          bestScore = score;
+        }
+      });
+  });
+  return bestScore ? best : null;
+}
+
+async function ensureModuleRowCapacity(moduleRoot, moduleDef, rowsNeeded, orderMap) {
+  const anchorFieldDef = moduleDef.fields.find((fieldDef) => fieldDef.key === moduleDef.rowAnchorKey) || moduleDef.fields[0];
+  if (!anchorFieldDef) return;
+  let anchorCandidates = collectModuleFieldCandidatesInScope(moduleRoot, moduleDef, anchorFieldDef, orderMap);
+  if (anchorCandidates.length >= rowsNeeded) return;
+  const addButton = findModuleAddButton(moduleRoot, moduleDef);
+  if (!addButton) return;
+  const maxAttempts = Math.min(4, Math.max(0, rowsNeeded - anchorCandidates.length));
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    addButton.click?.();
+    addButton.dispatchEvent?.(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    anchorCandidates = collectModuleFieldCandidatesInScope(moduleRoot, moduleDef, anchorFieldDef, orderMap);
+    if (anchorCandidates.length >= rowsNeeded) return;
+  }
+}
+
+function collectModuleFieldCandidates(moduleDef, fieldDef, orderMap) {
+  const selector =
+    "input:not([type='hidden']):not([type='checkbox']), textarea, select, [role='combobox'], [contenteditable='true']";
+  const elements = Array.from(document.querySelectorAll(selector)).filter(isVisible);
+  const candidates = [];
+  elements.forEach((el) => {
+    const hint = getElementHints(el);
+    const fieldScore = scoreHintByPatterns(hint, fieldDef.patterns || []);
+    if (!fieldScore) return;
+    const sectionScore = scoreHintByPatterns(hint, moduleDef.sectionPatterns || []);
+    const controlType = classifyControlType(el);
+    const controlBonus = (fieldDef.controlTypes || []).includes(controlType) ? 5 : 0;
+    candidates.push({
+      element: el,
+      controlType,
+      hint,
+      matchScore: fieldScore + sectionScore + controlBonus,
+      domOrder: orderMap.get(el) ?? Number.MAX_SAFE_INTEGER
+    });
+  });
+  return candidates
+    .sort((a, b) => {
+      if (a.domOrder !== b.domOrder) return a.domOrder - b.domOrder;
+      return Number(b.matchScore || 0) - Number(a.matchScore || 0);
+    })
+    .filter((candidate, index, array) => array.findIndex((item) => item.element === candidate.element) === index);
+}
+
+async function fillByCandidateControl(candidate = null, field = "", value = "", options = {}) {
+  const candidateHint = candidate?.hint || "";
+  if (!candidate?.element) {
+    return { filled: false, controlType: "not_found", supported: false, status: "not_found", reason: "not_found", hint: "" };
+  }
+  const controlType = candidate.controlType || "not_found";
+  if (!SUPPORTED_CONTROL_TYPES.has(controlType)) {
+    return {
+      filled: false,
+      controlType,
+      supported: false,
+      status: "unsupported_control",
+      reason: "unsupported_control",
+      hint: candidateHint
+    };
+  }
+
+  if (controlType === "plain_input" || controlType === "textarea") {
+    let ok = fillPlainInput(candidate.element, value);
+    if (!ok && controlType === "plain_input") {
+      const selectFallbackOk = await fillSelectLike(candidate.element, value, field, options);
+      ok = selectFallbackOk;
+      if (ok) {
+        return { filled: true, controlType: "searchable_select", supported: true, status: "filled", reason: "ok", hint: candidateHint };
+      }
+    }
+    return {
+      filled: ok,
+      controlType,
+      supported: true,
+      status: ok ? "filled" : "selector_mismatch",
+      reason: ok ? "ok" : "not_filled_yet",
+      hint: candidateHint
+    };
+  }
+
+  if (controlType === "searchable_select") {
+    let ok = await fillSelectLike(candidate.element, value, field, options);
+    if (!ok) {
+      ok = fillPlainInput(candidate.element, value);
+    }
+    return {
+      filled: ok,
+      controlType,
+      supported: true,
+      status: ok ? "filled" : "selector_mismatch",
+      reason: ok ? "ok" : "not_filled_yet",
+      hint: candidateHint
+    };
+  }
+
+  if (controlType === "date_picker") {
+    const dateResult = fillDateLike(candidate.element, value, field);
+    return {
+      filled: Boolean(dateResult?.ok),
+      controlType,
+      supported: dateResult?.status !== "unsupported_control" && dateResult?.status !== "partial_not_supported",
+      status: dateResult?.ok ? "filled" : dateResult?.status || "selector_mismatch",
+      reason: dateResult?.ok ? "ok" : dateResult?.reason || "not_filled_yet",
+      hint: candidateHint
+    };
+  }
+
+  if (controlType === "radio_group") {
+    const radioResult = fillRadioGroup(candidate.element, value);
+    return {
+      filled: Boolean(radioResult?.ok),
+      controlType,
+      supported: radioResult?.status !== "unsupported_control" && radioResult?.status !== "partial_not_supported",
+      status: radioResult?.ok ? "filled" : radioResult?.status || "selector_mismatch",
+      reason: radioResult?.ok ? "ok" : radioResult?.reason || "not_filled_yet",
+      hint: candidateHint
+    };
+  }
+
+  return {
+    filled: false,
+    controlType,
+    supported: false,
+    status: "unsupported_control",
+    reason: "unsupported_control",
+    hint: candidateHint
+  };
+}
+
+async function fillArraySectionsPassive(profile = {}) {
+  const orderMap = getFormElementDomOrderMap();
+  const fieldResults = [];
+  let filledCount = 0;
+  let unsupportedCount = 0;
+  let unfilledCount = 0;
+
+  for (const [moduleKey, moduleDef] of Object.entries(PASSIVE_ARRAY_MODULES)) {
+    const rows = parseArray(profile[moduleDef.dataKey]).filter((row) => row && typeof row === "object");
+    if (!rows.length) continue;
+    const moduleRoot = findModuleSectionRoots(moduleDef)[0] || document;
+    await ensureModuleRowCapacity(moduleRoot, moduleDef, rows.length, orderMap);
+
+    const fieldCandidates = {};
+    moduleDef.fields.forEach((fieldDef) => {
+      fieldCandidates[fieldDef.key] = collectModuleFieldCandidatesInScope(moduleRoot, moduleDef, fieldDef, orderMap);
+    });
+
+    for (const fieldDef of moduleDef.fields) {
+      const candidates = fieldCandidates[fieldDef.key] || [];
+      const max = Math.min(rows.length, candidates.length || rows.length);
+      for (let index = 0; index < max; index += 1) {
+        const value = getModuleValueFromRow(rows[index], fieldDef);
+        const resultFieldName = `${moduleKey}[${index}].${fieldDef.key}`;
+        if (!value) {
+          fieldResults.push({
+            field: resultFieldName,
+            profileValuePresent: false,
+            controlType: candidates[index]?.controlType || "not_found",
+            supported: Boolean(candidates[index] && SUPPORTED_CONTROL_TYPES.has(candidates[index].controlType || "")),
+            status: "empty_profile_value",
+            reason: "empty_profile_value",
+            hint: candidates[index]?.hint || ""
+          });
+          continue;
+        }
+        const candidate = candidates[index] || null;
+        const fillResult = await fillByCandidateControl(candidate, fieldDef.key, value, { allowScroll: false });
+        fieldResults.push({
+          field: resultFieldName,
+          profileValuePresent: true,
+          controlType: fillResult.controlType,
+          supported: fillResult.supported,
+          status: fillResult.status,
+          reason: fillResult.reason,
+          hint: fillResult.hint || ""
+        });
+        if (fillResult.status === "filled") filledCount += 1;
+        else {
+          unfilledCount += 1;
+          if (fillResult.status === "unsupported_control" || fillResult.status === "partial_not_supported") {
+            unsupportedCount += 1;
+          }
+        }
+      }
+    }
+  }
+
+  return { filledCount, unsupportedCount, unfilledCount, fieldResults };
+}
+
 async function fillFields(profile = {}) {
   const candidatesByField = collectFieldCandidates();
   const fieldResults = [];
@@ -1090,76 +1479,15 @@ async function fillFields(profile = {}) {
       let filled = false;
 
       for (const candidate of dedupCandidates) {
-        const candidateControlType = candidate?.controlType || "not_found";
-        if (!SUPPORTED_CONTROL_TYPES.has(candidateControlType)) continue;
-
-        finalControlType = candidateControlType;
-        finalHint = candidate?.hint || finalHint;
-
-        if (candidateControlType === "plain_input" || candidateControlType === "textarea") {
-          const ok = fillPlainInput(candidate.element, value);
-          if (ok) {
-            filled = true;
-            finalStatus = "filled";
-            finalReason = "ok";
-            break;
-          }
-          if (candidateControlType === "plain_input") {
-            const selectFallbackOk = await fillSelectLike(candidate.element, value, field);
-            if (selectFallbackOk) {
-              filled = true;
-              finalControlType = "searchable_select";
-              finalStatus = "filled";
-              finalReason = "ok";
-              break;
-            }
-          }
-          finalStatus = "selector_mismatch";
-          finalReason = "not_filled_yet";
-          continue;
-        }
-
-        if (candidateControlType === "searchable_select") {
-          let ok = await fillSelectLike(candidate.element, value, field);
-          if (!ok) {
-            ok = fillPlainInput(candidate.element, value);
-          }
-          if (ok) {
-            filled = true;
-            finalStatus = "filled";
-            finalReason = "ok";
-            break;
-          }
-          finalStatus = "selector_mismatch";
-          finalReason = "not_filled_yet";
-          continue;
-        }
-
-        if (candidateControlType === "date_picker") {
-          const dateResult = fillDateLike(candidate.element, value, field);
-          if (dateResult?.ok) {
-            filled = true;
-            finalStatus = "filled";
-            finalReason = "ok";
-            break;
-          }
-          finalStatus = dateResult?.status || "selector_mismatch";
-          finalReason = dateResult?.reason || "not_filled_yet";
-          finalSupported = finalStatus !== "unsupported_control" && finalStatus !== "partial_not_supported";
-          continue;
-        }
-
-        if (candidateControlType === "radio_group") {
-          const radioResult = fillRadioGroup(candidate.element, value);
-          if (radioResult?.ok) {
-            filled = true;
-            finalStatus = "filled";
-            finalReason = "ok";
-            break;
-          }
-          finalStatus = radioResult?.status || "selector_mismatch";
-          finalReason = radioResult?.reason || "not_filled_yet";
-          finalSupported = finalStatus !== "unsupported_control" && finalStatus !== "partial_not_supported";
+        const fillResult = await fillByCandidateControl(candidate, field, value, { allowScroll: true });
+        finalControlType = fillResult.controlType;
+        finalHint = fillResult.hint || finalHint;
+        finalSupported = fillResult.supported;
+        finalStatus = fillResult.status;
+        finalReason = fillResult.reason;
+        if (fillResult.filled) {
+          filled = true;
+          break;
         }
       }
 
@@ -1190,12 +1518,14 @@ async function fillFields(profile = {}) {
     (item) => item.status === "unsupported_control" || item.status === "partial_not_supported"
   ).length;
   const unfilledCount = fieldResults.filter((item) => item.status !== "filled").length;
+  const moduleFillSummary = await fillArraySectionsPassive(profile);
+  const mergedFieldResults = [...fieldResults, ...(moduleFillSummary.fieldResults || [])];
   return {
-    filledCount,
-    unsupportedCount,
-    unfilledCount,
-    fieldResults,
-    details: fieldResults
+    filledCount: filledCount + Number(moduleFillSummary.filledCount || 0),
+    unsupportedCount: unsupportedCount + Number(moduleFillSummary.unsupportedCount || 0),
+    unfilledCount: unfilledCount + Number(moduleFillSummary.unfilledCount || 0),
+    fieldResults: mergedFieldResults,
+    details: mergedFieldResults
   };
 }
 
@@ -1336,6 +1666,37 @@ function buildProfileBundle(profile = {}, masterResumeEditDto = {}, masterResume
     { value: profile.headline, source: "profile.headline" }
   ]);
 
+  const toArrayOfObjects = (value) => (Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : []);
+  const educationRows = toArrayOfObjects(autofillProfile.education).map((item) => ({
+    level: asText(item.level),
+    school_name: asText(item.school_name),
+    major: asText(item.major),
+    degree: asText(item.degree),
+    start_date: asText(item.start_date),
+    end_date: asText(item.end_date)
+  }));
+  const workRows = toArrayOfObjects(autofillProfile.work_experience).map((item) => ({
+    company_name: asText(item.company_name),
+    department: asText(item.department),
+    job_title: asText(item.job_title),
+    work_description: asText(item.work_description || item.description),
+    start_date: asText(item.start_date),
+    end_date: asText(item.end_date)
+  }));
+  const projectRows = toArrayOfObjects(autofillProfile.project_experience).map((item) => ({
+    project_name: asText(item.project_name),
+    role: asText(item.role),
+    project_description: asText(item.project_description || item.description),
+    start_date: asText(item.start_date),
+    end_date: asText(item.end_date)
+  }));
+  const familyRows = toArrayOfObjects(autofillProfile.family).map((item) => ({
+    name: asText(item.name),
+    relation: asText(item.relation),
+    employer: asText(item.employer),
+    position: asText(item.position)
+  }));
+
   return {
     profile: {
       full_name: fullName.value,
@@ -1359,7 +1720,11 @@ function buildProfileBundle(profile = {}, masterResumeEditDto = {}, masterResume
       english_score: englishScore.value,
       certificate_name: certificateName.value,
       achievement_score: achievementScore.value,
-      summary: summary.value
+      summary: summary.value,
+      education: educationRows,
+      work_experience: workRows,
+      project_experience: projectRows,
+      family: familyRows
     },
     updatedAt: new Date().toISOString(),
     source: "applyflow_local_profile_resume",
@@ -1446,14 +1811,134 @@ function buildSyncErrorBundle(errorMessage = "sync_failed") {
   };
 }
 
+function readFormControlValue(form, selector) {
+  const field = form?.querySelector?.(selector);
+  if (!field) return "";
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+    return asText(field.value || "");
+  }
+  return asText(field.textContent || "");
+}
+
+function readRadioValue(form, name) {
+  const checked = form?.querySelector?.(`input[name="${name}"]:checked`);
+  return asText(checked?.value || "");
+}
+
+function readStructuredRows(form, moduleKey) {
+  return Array.from(form?.querySelectorAll?.(`[data-module-row="${moduleKey}"]`) || [])
+    .map((rowEl) => {
+      const row = {};
+      rowEl.querySelectorAll("[data-module-field]").forEach((fieldEl) => {
+        const key = asText(fieldEl?.dataset?.moduleField || "", 80);
+        if (!key) return;
+        row[key] = asText(fieldEl.value || "");
+      });
+      return row;
+    })
+    .filter((row) => Object.values(row).some((value) => asText(value)));
+}
+
+function buildProfileBundleFromProfileForm(form) {
+  if (!form) return null;
+
+  const profile = {
+    name: readFormControlValue(form, 'input[name="name"]'),
+    fullName: readFormControlValue(form, 'input[name="name"]'),
+    background: readFormControlValue(form, 'input[name="background"]'),
+    summary: readFormControlValue(form, 'textarea[name="autofill_summary"]') || readFormControlValue(form, 'input[name="background"]'),
+    autofillProfile: {
+      full_name: readFormControlValue(form, 'input[name="name"]'),
+      email: readFormControlValue(form, 'input[name="email"]'),
+      phone: readFormControlValue(form, 'input[name="phone"]'),
+      gender: readRadioValue(form, "gender"),
+      school_name: readFormControlValue(form, 'input[name="school_name"]'),
+      first_school_name: readFormControlValue(form, 'input[name="first_school_name"]'),
+      degree: readFormControlValue(form, 'input[name="degree"]'),
+      major: readFormControlValue(form, 'input[name="major"]'),
+      first_major: readFormControlValue(form, 'input[name="first_major"]'),
+      birth_date: readFormControlValue(form, 'input[name="birth_date"]'),
+      bachelor_start_date: readFormControlValue(form, 'input[name="bachelor_start_date"]'),
+      bachelor_end_date: readFormControlValue(form, 'input[name="bachelor_end_date"]'),
+      master_start_date: readFormControlValue(form, 'input[name="master_start_date"]'),
+      master_end_date: readFormControlValue(form, 'input[name="master_end_date"]'),
+      language_exam_language: readFormControlValue(form, 'select[name="language_exam_language"]'),
+      language_exam_level: readFormControlValue(form, 'select[name="language_exam_level"]'),
+      language_name: readFormControlValue(form, 'input[name="language_name"]'),
+      english_proficiency: readFormControlValue(form, 'input[name="english_proficiency"]'),
+      english_score: readFormControlValue(form, 'input[name="english_score"]'),
+      certificate_name: readFormControlValue(form, 'input[name="certificate_name"]'),
+      achievement_score: readFormControlValue(form, 'input[name="achievement_score"]'),
+      summary: readFormControlValue(form, 'textarea[name="autofill_summary"]'),
+      education: readStructuredRows(form, "education"),
+      work_experience: readStructuredRows(form, "work_experience"),
+      project_experience: readStructuredRows(form, "project_experience"),
+      family: readStructuredRows(form, "family"),
+      pluginMeta: {
+        lastSyncedAt: new Date().toISOString(),
+        source: "profile_form_dom"
+      }
+    }
+  };
+
+  const hasAnyValue = Object.values(profile.autofillProfile).some((value) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object") return Object.keys(value).length > 0;
+    return Boolean(asText(value));
+  });
+
+  if (!hasAnyValue && !asText(profile.name) && !asText(profile.background)) {
+    return null;
+  }
+
+  const bundle = buildProfileBundle(profile, {}, {});
+  bundle.updatedAt = new Date().toISOString();
+  bundle.source = "applyflow_profile_form";
+  bundle.debug = {
+    ...bundle.debug,
+    syncStatus: "ok_dom_fallback",
+    syncError: "",
+    sourceSummary: {
+      ...(bundle.debug?.sourceSummary || {}),
+      profileApi: "skipped_or_failed",
+      masterResumeEditDto: "skipped_or_failed",
+      masterResumeViewModel: "skipped_or_failed",
+      profileForm: "present",
+      storage: "chrome.storage.local"
+    }
+  };
+  return bundle;
+}
+
 async function trySyncFromApplyFlowPage() {
   if (!isApplyFlowHost(window.location.hostname)) return;
+  const profileForm = document.getElementById("profile-form");
   try {
     const [profileRes, masterRes] = await Promise.all([
       fetch("/api/profile", { credentials: "include" }),
       fetch("/api/master-resume", { credentials: "include" })
     ]);
     if (!profileRes.ok || !masterRes.ok) {
+      const domFallbackBundle = buildProfileBundleFromProfileForm(profileForm);
+      if (domFallbackBundle) {
+        const profileStatus = profileRes?.status || "profile";
+        const masterStatus = masterRes?.status || "master";
+        domFallbackBundle.debug = {
+          ...domFallbackBundle.debug,
+          syncStatus: "ok_dom_fallback",
+          syncError: `http_error:${profileStatus}:${masterStatus}`,
+          sourceSummary: {
+            ...(domFallbackBundle.debug?.sourceSummary || {}),
+            profileApi: profileRes.ok ? "present" : "failed",
+            masterResumeEditDto: masterRes.ok ? "present" : "failed",
+            masterResumeViewModel: masterRes.ok ? "present" : "failed",
+            profileForm: "present",
+            storage: "chrome.storage.local"
+          }
+        };
+        await chrome.storage.local.set({ [PROFILE_KEY]: domFallbackBundle });
+        return;
+      }
       await chrome.storage.local.set({
         [PROFILE_KEY]: buildSyncErrorBundle(`http_error:${profileRes.status || "profile"}:${masterRes.status || "master"}`)
       });
@@ -1472,6 +1957,24 @@ async function trySyncFromApplyFlowPage() {
       [PROFILE_KEY]: buildProfileBundle(profile, masterResumeEditDto, masterResumeViewModel)
     });
   } catch (error) {
+    const domFallbackBundle = buildProfileBundleFromProfileForm(profileForm);
+    if (domFallbackBundle) {
+      domFallbackBundle.debug = {
+        ...domFallbackBundle.debug,
+        syncStatus: "ok_dom_fallback",
+        syncError: asText(error?.message || "sync_exception", 240),
+        sourceSummary: {
+          ...(domFallbackBundle.debug?.sourceSummary || {}),
+          profileApi: "failed",
+          masterResumeEditDto: "failed",
+          masterResumeViewModel: "failed",
+          profileForm: "present",
+          storage: "chrome.storage.local"
+        }
+      };
+      await chrome.storage.local.set({ [PROFILE_KEY]: domFallbackBundle });
+      return;
+    }
     await chrome.storage.local.set({ [PROFILE_KEY]: buildSyncErrorBundle(error?.message || "sync_exception") });
   }
 }
@@ -1490,33 +1993,37 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "AF_EDGE_ANALYZE") {
     const candidatesByField = collectFieldCandidates();
-    const fieldDetections = buildFieldDetectionResults(candidatesByField);
-    const recognizedFieldCount = fieldDetections.filter((item) => item.found).length;
-    const fillTargetCount = Object.values(candidatesByField).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
-    sendResponse({
+    const candidateSummary = buildFrameCandidateSummary(candidatesByField);
+    return respondWithFramePriority(sendResponse, {
       ok: true,
-      recognizedCount: recognizedFieldCount,
-      fillTargetCount,
-      supportLevel: computeSupportLevel(recognizedFieldCount, fillTargetCount),
-      fieldDetections
-    });
-    return false;
+      recognizedCount: candidateSummary.recognizedFieldCount,
+      fillTargetCount: candidateSummary.fillTargetCount,
+      supportLevel: computeSupportLevel(candidateSummary.recognizedFieldCount, candidateSummary.fillTargetCount),
+      fieldDetections: candidateSummary.fieldDetections,
+      frameUrl: window.location.href
+    }, candidateSummary);
   }
 
   if (message?.type === "AF_EDGE_FILL") {
     const payload = message?.payload && typeof message.payload === "object" ? message.payload : {};
+    const candidateSummary = buildFrameCandidateSummary(collectFieldCandidates());
     fillFields(payload)
       .then((result) => {
         const recognizedCount = result.fieldResults.filter((item) => item.controlType !== "not_found").length;
-        sendResponse({
+        respondWithFramePriority(sendResponse, {
           ok: true,
           ...result,
-          supportLevel: computeSupportLevel(recognizedCount, result.fieldResults.length)
-        });
+          supportLevel: computeSupportLevel(recognizedCount, result.fieldResults.length),
+          frameUrl: window.location.href
+        }, candidateSummary);
         showToast(`ApplyFlow filled ${result.filledCount}, unresolved ${result.unfilledCount}.`);
       })
       .catch((error) => {
-        sendResponse({ ok: false, code: "FILL_RUNTIME_ERROR", message: error?.message || "fill_failed" });
+        respondWithFramePriority(
+          sendResponse,
+          { ok: false, code: "FILL_RUNTIME_ERROR", message: error?.message || "fill_failed", frameUrl: window.location.href },
+          candidateSummary
+        );
       });
     return true;
   }
@@ -1526,7 +2033,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({
         ok: false,
         code: "NOT_APPLYFLOW_PAGE",
-        message: "Please open ApplyFlow Profile/Resume page to sync profile bundle."
+        message: "Please open ApplyFlow materials page to sync profile bundle."
       });
       return false;
     }

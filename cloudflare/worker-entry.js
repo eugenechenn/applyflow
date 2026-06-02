@@ -9,6 +9,35 @@ const { runWithRequestContext } = requestContextModule;
 const { SESSION_COOKIE_NAME } = authModule;
 const logger = loggerModule;
 const { createWorkerOverrideStore } = d1RuntimeStoreModule;
+const EXTENSION_DOWNLOAD_ROUTES = new Map([
+  ["/downloads/applyflow-edge-mvp-v11-semantic-slots", "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"],
+  ["/downloads/applyflow-edge-mvp-latest-v11", "/downloads/applyflow-edge-mvp-latest-v11.zip"]
+]);
+
+// 为插件分发包补齐明确下载头，避免浏览器把 ZIP 误当普通静态资源处理。
+async function buildExtensionDownloadResponse(assetResponse, assetPath) {
+  const fileName = assetPath.split("/").pop() || "applyflow-edge-mvp.zip";
+  const payload = await assetResponse.arrayBuffer();
+  const headers = new Headers();
+  headers.set("Content-Type", "application/zip");
+  headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Cache-Control", "public, max-age=300, immutable");
+  headers.set("Content-Length", String(payload.byteLength));
+  return new Response(payload, {
+    status: assetResponse.status,
+    headers
+  });
+}
+
+async function handleExtensionDownloadFetch(request, env, assetPath) {
+  const assetRequest = new Request(new URL(assetPath, request.url), request);
+  const assetResponse = await env.ASSETS.fetch(assetRequest);
+  if (assetResponse.status === 404) {
+    return new Response("Not found", { status: 404 });
+  }
+  return buildExtensionDownloadResponse(assetResponse, assetPath);
+}
 
 function resolveWorkspaceScope(pathname, method) {
   const normalizedMethod = String(method || "").trim().toUpperCase();
@@ -221,6 +250,18 @@ export default {
     const pathname = new URL(request.url).pathname;
 
     try {
+      if (EXTENSION_DOWNLOAD_ROUTES.has(pathname)) {
+        const response = await handleExtensionDownloadFetch(request, env, EXTENSION_DOWNLOAD_ROUTES.get(pathname));
+        logger.info("worker.download_request", {
+          pathname,
+          method: request.method,
+          statusCode: response.status,
+          durationMs: Date.now() - startedAt,
+          runtime: "cloudflare"
+        });
+        return response;
+      }
+
       if (pathname.startsWith("/api/")) {
         const response = await handleApiFetch(request, env, ctx);
         logger.info("worker.request", {

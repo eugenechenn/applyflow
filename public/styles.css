@@ -1568,6 +1568,8 @@ textarea {
   position: relative;
   width: min(640px, calc(100vw - 32px));
   margin: 10vh auto 0;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
   background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 18px;

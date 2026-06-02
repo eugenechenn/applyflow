@@ -55,6 +55,7 @@ mustInclude(contentJs, "fillRadioGroup(", "content.js radio fill handler");
 mustInclude(contentJs, "getFallbackFieldCandidates(", "content.js fallback candidate strategy");
 mustInclude(contentJs, "const selectFallbackOk = await fillSelectLike", "content.js plain->select fallback");
 mustInclude(contentJs, "ok = fillPlainInput(candidate.element, value);", "content.js select->plain fallback");
+mustInclude(contentJs, "for (const fieldDef of moduleDef.fields)", "content.js passive array async loop");
 mustInclude(appJs, "name=\"certificate_name\"", "Profile autofill form");
 mustInclude(appJs, "name=\"achievement_score\"", "Profile autofill form");
 

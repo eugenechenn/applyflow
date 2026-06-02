@@ -18,7 +18,7 @@
     "id=\"autofill-materials-section\"",
     "href=\"#/profile?section=profile-preference-section\"",
     "href=\"#/profile?section=autofill-materials-section\"",
-    "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"
+    "/downloads/applyflow-edge-mvp-v11-semantic-slots"
   ],
   "requiredOnboardingFlowTokens": [
     "保存并进入岗位推荐",

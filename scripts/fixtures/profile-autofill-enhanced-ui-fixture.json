@@ -1,11 +1,11 @@
 ﻿{
-  "requiredAuxiliaryTitle": "辅助材料（网申）",
+  "requiredAuxiliaryTitle": "网申辅助资料与插件同步",
   "requiredAuxiliarySectionId": "autofill-materials-section",
   "requiredJobsCtaId": "profile-jobs-cta",
   "requiredSaveScrollTrigger": "scrollToJobsCta",
   "requiredProfileSectionTitles": [
-    "求职偏好",
-    "辅助材料（网申）",
+    "求职偏好与资料补充（可选）",
+    "网申辅助资料与插件同步",
     "可选简历导入"
   ],
   "requiredSectionTitles": [
@@ -20,12 +20,20 @@
     "project_experience",
     "family"
   ],
-  "requiredDateFieldDefinitions": [
-    { "module": "education", "fieldPrefix": "education", "key": "start_date", "type": "month" },
-    { "module": "education", "fieldPrefix": "education", "key": "end_date", "type": "month" },
-    { "module": "work_experience", "fieldPrefix": "work", "key": "start_date", "type": "month" },
-    { "module": "work_experience", "fieldPrefix": "work", "key": "end_date", "type": "month" },
-    { "module": "project_experience", "fieldPrefix": "project", "key": "start_date", "type": "month" },
-    { "module": "project_experience", "fieldPrefix": "project", "key": "end_date", "type": "month" }
+  "requiredDateFieldDefinitions": [],
+  "requiredHiddenDateFields": [
+    { "module": "education", "key": "start_date" },
+    { "module": "education", "key": "end_date" },
+    { "module": "work_experience", "key": "start_date" },
+    { "module": "work_experience", "key": "end_date" },
+    { "module": "project_experience", "key": "start_date" },
+    { "module": "project_experience", "key": "end_date" }
+  ],
+  "forbiddenTopLevelFieldNames": [
+    "birth_date",
+    "bachelor_start_date",
+    "bachelor_end_date",
+    "master_start_date",
+    "master_end_date"
   ]
 }

@@ -3946,10 +3946,12 @@ async function renderJobs(message = "") {
     <div id="jobs-apply-modal" class="apply-modal hidden" role="dialog" aria-modal="true" aria-labelledby="jobs-apply-modal-title">
       <div class="apply-modal-backdrop" data-action="close-apply-modal"></div>
       <div class="apply-modal-card">
-        <h4 id="jobs-apply-modal-title">打开投递链接后，是否加入投递清单？</h4>
+        <h4 id="jobs-apply-modal-title">打开官网投递链接前，先确认是否启用插件辅助填写</h4>
         <div id="jobs-apply-modal-body" class="stack"></div>
         <div class="toolbar">
           <a class="button primary" id="jobs-apply-manual-link" target="_blank" rel="noopener noreferrer">打开投递链接</a>
+          <a class="button" id="jobs-apply-plugin-download" href="/downloads/applyflow-edge-mvp-v11-semantic-slots" target="_blank" rel="noopener noreferrer">下载插件</a>
+          <a class="button" id="jobs-apply-profile-link" href="#/profile?section=autofill-materials-section">填写网申资料</a>
           <button class="button" type="button" id="jobs-apply-add-list">加入投递清单</button>
           <button class="button" type="button" id="jobs-apply-mark-applied">已投递</button>
           <button class="button" type="button" data-action="close-apply-modal">关闭</button>
@@ -4004,16 +4006,27 @@ async function renderJobs(message = "") {
           : `资料状态：未完善。建议先补全：${missingFields.map((item) => item.label).join(" / ")}。`;
     const pluginStatusText =
       pluginStatus === "ready"
-        ? `插件状态：已检测到最近同步（${formatDateTime(lastPluginSyncAt)}）。`
-        : "插件状态：未安装或未启用。请先下载插件并在 Edge 扩展页加载。";
+        ? `插件状态：已检测到最近同步（${formatDateTime(lastPluginSyncAt)}）。可在招聘官网点击插件，自动预填可识别字段。`
+        : "插件状态：未安装或未启用。请先下载插件、在 Edge 扩展页手动加载，再打开 ApplyFlow Profile 页面同步资料。";
     modalBody.innerHTML = `
       <div class="notice info">岗位：${escapeHtml(company)} · ${escapeHtml(jobTitle)}</div>
-      <div class="muted">投递会在招聘官网完成。打开链接后，建议把这个岗位加入投递清单，回来只记录关键结果。</div>
+      <div class="muted">真实投递会在企业官网完成。ApplyFlow 负责帮你排序、准备资料，并通过插件自动预填可识别字段。</div>
       <div class="muted">${escapeHtml(profileStatusText)}</div>
       <div class="muted">${escapeHtml(pluginStatusText)}</div>
+      <div class="muted">插件能力边界：仅辅助填写可识别字段，不会自动提交，也不保证覆盖全部问题、附件上传或多步骤流程。</div>
       ${
         url
-          ? `<div class="muted">建议动作：打开投递链接 → 加入投递清单 → 投完后标记已投递。</div>`
+          ? `
+            <div class="panel" style="margin-top:8px;">
+              <strong>推荐操作顺序</strong>
+              <ol class="list list-tight" style="margin-top:6px;">
+                <li>1. 如需辅助填写，先下载插件并在 Edge 扩展页手动加载。</li>
+                <li>2. 去个人资料页补齐“网申辅助资料”，确保姓名、邮箱、电话、学校等基础字段完整。</li>
+                <li>3. 打开企业官网投递页，点击插件执行一键预填；无法识别或不支持的字段继续手动补充。</li>
+                <li>4. 投递完成后回到 ApplyFlow，把岗位加入投递清单或标记为已投递。</li>
+              </ol>
+            </div>
+          `
           : `<div class="notice warning">该岗位暂无投递链接，暂时只能先加入投递清单，后续补充来源。</div>`
       }
     `;
@@ -4548,7 +4561,7 @@ function renderBrowserApplySession(session = {}, executionSession = {}) {
         </ul>
         <div class="muted">当前推荐版本：<span class="mono">applyflow-edge-mvp-v11-semantic-slots.zip</span>（仅使用这一个版本）。</div>
         <div class="toolbar" style="margin-top:8px;">
-          <a class="button" href="/downloads/applyflow-edge-mvp-v11-semantic-slots.zip" target="_blank" rel="noopener noreferrer">下载 Edge 插件 ZIP（v11-semantic-slots）</a>
+          <a class="button" href="/downloads/applyflow-edge-mvp-v11-semantic-slots" target="_blank" rel="noopener noreferrer">下载 Edge 插件 ZIP（v11-semantic-slots）</a>
           <a class="button" href="#/profile">前往资料中心</a>
         </div>
       </div>
@@ -6976,11 +6989,6 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
     lightweightProfile: lightweight
   });
   const autofillProfile = profile.autofillProfile && typeof profile.autofillProfile === "object" ? profile.autofillProfile : {};
-  const normalizedBirthDate = normalizeDateInputValue(autofillProfile.birth_date || "");
-  const normalizedBachelorStartDate = normalizeMonthInputValue(autofillProfile.bachelor_start_date || "");
-  const normalizedBachelorEndDate = normalizeMonthInputValue(autofillProfile.bachelor_end_date || "");
-  const normalizedMasterStartDate = normalizeMonthInputValue(autofillProfile.master_start_date || "");
-  const normalizedMasterEndDate = normalizeMonthInputValue(autofillProfile.master_end_date || "");
   const resumeVm = createResumeViewModel(resumeData.resumeViewModel || null);
   const resolveProfileTabFromSection = (sectionId = "") => {
     const safeSection = String(sectionId || "").trim();
@@ -7007,7 +7015,8 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
       <form id="profile-form" class="stack">
         <div class="notice info">
           <strong>页面定位：</strong>这里会同步工作台偏好，也可补充更细的加分偏好和材料信息。
-          <a class="button" style="margin-left:8px;" href="/downloads/applyflow-edge-mvp-v11-semantic-slots.zip" target="_blank" rel="noopener noreferrer">下载插件</a>
+          <div class="muted" style="margin-top:6px;">如果你希望在企业官网用插件自动填写个人资料，请先补齐“网申辅助资料”，再下载 Edge 插件到招聘网页手动触发一键预填。</div>
+          <a class="button" style="margin-left:8px;" href="/downloads/applyflow-edge-mvp-v11-semantic-slots" target="_blank" rel="noopener noreferrer">下载插件</a>
           <a class="button" style="margin-left:8px;" href="#/profile?section=profile-preference-section">去填写求职偏好</a>
           <a class="button" style="margin-left:8px;" href="#/profile?section=autofill-materials-section">去填写网申辅助资料</a>
         </div>
@@ -7087,8 +7096,19 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
           </div>
         </div>
         <div class="panel" id="autofill-materials-section" data-profile-tab-panel="materials" style="padding-bottom:84px;">
-          <h4>申请材料信息</h4>
-          <div class="muted">这部分用于浏览器插件辅助填写，不影响岗位排序主链；与结构化主简历分层管理。</div>
+          <h4>网申辅助资料与插件同步</h4>
+          <div class="muted">这部分专门服务于企业官网网申辅助填写：插件会读取这里的资料，在招聘网页中自动预填可识别字段；它不影响岗位排序主链，并与结构化主简历分层管理。</div>
+          <div class="panel" style="margin-top:10px;">
+            <strong>推荐使用方式</strong>
+            <ol class="list list-tight" style="margin-top:6px;">
+              <li>1. 先填写这里的基础资料、教育/经历模块与网申摘要。</li>
+              <li>2. 下载 Edge 插件并在扩展页手动加载。</li>
+              <li>3. 回到 ApplyFlow Profile 页面让插件同步资料，再打开企业官网投递页执行一键预填。</li>
+              <li>4. 无法识别或不支持的字段继续手动填写，投完后回 ApplyFlow 记录结果。</li>
+            </ol>
+            <div class="muted">边界说明：当前插件不会自动提交，也不保证覆盖附件上传、验证码或复杂多步骤表单。</div>
+            <div class="muted">当前已主动放弃时间类字段自动填写：出生日期、教育/工作/项目起止时间请在企业官网手动填写。</div>
+          </div>
           <div class="split" style="margin-top:10px;">
             <label>邮箱<input name="email" value="${escapeHtml(autofillProfile.email || "")}" /></label>
             <label>电话<input name="phone" value="${escapeHtml(autofillProfile.phone || "")}" /></label>
@@ -7107,7 +7127,7 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
                 </label>
               </div>
             </div>
-            <label>出生日期<input name="birth_date" type="date" value="${escapeHtml(normalizedBirthDate)}" /></label>
+            <div></div>
           </div>
           <div class="split">
             <label>学校<input name="school_name" value="${escapeHtml(autofillProfile.school_name || "")}" /></label>
@@ -7119,14 +7139,6 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
           </div>
           <div class="split">
             <label>第一学历专业<input name="first_major" value="${escapeHtml(autofillProfile.first_major || "")}" /></label>
-            <label>本科开始时间（年月）<input name="bachelor_start_date" type="month" value="${escapeHtml(normalizedBachelorStartDate)}" /></label>
-          </div>
-          <div class="split">
-            <label>本科结束时间（年月）<input name="bachelor_end_date" type="month" value="${escapeHtml(normalizedBachelorEndDate)}" /></label>
-            <label>研究生开始时间（年月）<input name="master_start_date" type="month" value="${escapeHtml(normalizedMasterStartDate)}" /></label>
-          </div>
-          <div class="split">
-            <label>研究生结束时间（年月）<input name="master_end_date" type="month" value="${escapeHtml(normalizedMasterEndDate)}" /></label>
             <label>语言等级语种
               <select name="language_exam_language">
                 <option value="" ${!(autofillProfile.language_exam_language || "") ? "selected" : ""}>请选择</option>
@@ -7323,8 +7335,8 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
         { key: "school_name", label: "学校名称" },
         { key: "major", label: "专业" },
         { key: "degree", label: "学位" },
-        { key: "start_date", label: "开始日期", type: "month" },
-        { key: "end_date", label: "结束日期", type: "month" }
+        { key: "start_date", label: "开始日期", type: "month", hidden: true },
+        { key: "end_date", label: "结束日期", type: "month", hidden: true }
       ]
     },
     work_experience: {
@@ -7335,8 +7347,8 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
         { key: "company_name", label: "公司名称" },
         { key: "department", label: "部门" },
         { key: "job_title", label: "岗位名称" },
-        { key: "start_date", label: "开始日期", type: "month" },
-        { key: "end_date", label: "结束日期", type: "month" },
+        { key: "start_date", label: "开始日期", type: "month", hidden: true },
+        { key: "end_date", label: "结束日期", type: "month", hidden: true },
         { key: "description", label: "描述", type: "textarea" }
       ]
     },
@@ -7347,8 +7359,8 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
       fields: [
         { key: "project_name", label: "项目名称" },
         { key: "role", label: "角色" },
-        { key: "start_date", label: "开始日期", type: "month" },
-        { key: "end_date", label: "结束日期", type: "month" },
+        { key: "start_date", label: "开始日期", type: "month", hidden: true },
+        { key: "end_date", label: "结束日期", type: "month", hidden: true },
         { key: "description", label: "描述", type: "textarea" }
       ]
     },
@@ -7407,6 +7419,7 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
     container.innerHTML = rows
       .map((row, index) => {
         const fieldsHtml = definition.fields
+          .filter((field) => !field.hidden)
           .map((field) => {
             const fieldName = `${definition.fieldPrefix}_${field.key}[]`;
             const rawValue = String(row[field.key] || "");
@@ -7437,8 +7450,9 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
 
   const syncAutofillStateFromDom = () => {
     Object.keys(autofillModuleDefinitions).forEach((moduleKey) => {
-      const rows = Array.from(document.querySelectorAll(`[data-module-row="${moduleKey}"]`)).map((rowEl) => {
-        const row = {};
+      const existingRows = Array.isArray(autofillModuleState[moduleKey]) ? autofillModuleState[moduleKey] : [];
+      const rows = Array.from(document.querySelectorAll(`[data-module-row="${moduleKey}"]`)).map((rowEl, index) => {
+        const row = { ...(existingRows[index] || {}) };
         rowEl.querySelectorAll("[data-module-field]").forEach((fieldEl) => {
           row[fieldEl.dataset.moduleField] = String(fieldEl.value || "").trim();
         });
@@ -7551,10 +7565,10 @@ async function renderProfile(message = "", errorMessage = "", options = {}) {
             certificate_name: raw.certificate_name || "",
             achievement_score: raw.achievement_score || "",
             summary: raw.autofill_summary || "",
-            education: collectRowsFromFormData("education", autofillModuleDefinitions.education.fields),
-            work_experience: collectRowsFromFormData("work", autofillModuleDefinitions.work_experience.fields),
-            project_experience: collectRowsFromFormData("project", autofillModuleDefinitions.project_experience.fields),
-            family: collectRowsFromFormData("family", autofillModuleDefinitions.family.fields)
+            education: (autofillModuleState.education || []).map((row) => ({ ...row })),
+            work_experience: (autofillModuleState.work_experience || []).map((row) => ({ ...row })),
+            project_experience: (autofillModuleState.project_experience || []).map((row) => ({ ...row })),
+            family: (autofillModuleState.family || []).map((row) => ({ ...row }))
           }
         };
       } else if (saveTab === "preference") {

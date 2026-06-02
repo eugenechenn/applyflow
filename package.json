@@ -71,6 +71,7 @@
     "validate:profile-autofill-enhanced-ui": "node scripts/validation/validate-profile-autofill-enhanced-ui.js",
     "validate:layout-ia": "node scripts/validation/validate-layout-ia.js",
     "validate:edge-extension-mvp": "node scripts/validation/validate-edge-extension-mvp.js",
+    "validate:extension-download-route": "node scripts/validation/validate-extension-download-route.js",
     "validate:edge-semantic-slots": "node scripts/validation/validate-edge-semantic-slots.js",
     "validate:edge-autofill-regression": "node scripts/validation/validate-edge-autofill-regression.js",
     "validate:edge-multi-segment-passive": "node scripts/validation/validate-edge-multi-segment-passive.js",
