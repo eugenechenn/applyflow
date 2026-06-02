@@ -36,6 +36,7 @@
     "validate:discovery-offline-json-adapter": "node scripts/validation/validate-discovery-offline-json-adapter.js",
     "validate:discovery-offline-json-jobs-seed": "node scripts/validation/validate-discovery-offline-json-jobs-seed.js",
     "validate:job-scoring-derived-view": "node scripts/validation/validate-job-scoring-derived-view.js",
+    "eval:location-contract-l2": "node scripts/validation/run-location-contract-l2-eval.js",
     "validate:real-pool-role-matrix": "node scripts/validation/validate-real-pool-role-matrix.js",
     "validate:legacy-explainability-payload-compat": "node scripts/validation/validate-legacy-explainability-payload-compat.js",
     "validate:job-preference-eval-seed": "node scripts/validate-job-preference-eval-seed.js",
