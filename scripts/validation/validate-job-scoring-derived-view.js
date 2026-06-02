@@ -15,13 +15,13 @@ function isEngineerRole(title = "") {
   return text.includes("工程师") || text.includes("engineer");
 }
 
-function buildSyntheticScoring({ id, title, description, profile, baseScoringView = null }) {
+function buildSyntheticScoring({ id, title, description, location = "上海", profile, baseScoringView = null }) {
   return buildJobScoringViewModel({
     job: {
       id,
       title,
       description,
-      location: "上海",
+      location,
       company: "Synthetic Co"
     },
     lightweightProfile: profile,
@@ -33,6 +33,52 @@ function buildSyntheticScoring({ id, title, description, profile, baseScoringVie
     preferenceSource: "jobPreferenceProfile",
     baseScoringView
   });
+}
+
+function validateLocationOutputContract() {
+  const baseProfile = { targetRoles: ["数据分析"], skills: ["SQL"], preferredLocations: ["上海"] };
+  const baseJob = {
+    title: "数据分析师",
+    description: "负责业务数据分析、SQL取数、指标体系建设和报表分析。",
+    profile: baseProfile
+  };
+  const matched = buildSyntheticScoring({
+    id: "synthetic_location_contract_matched",
+    ...baseJob,
+    location: "上海"
+  });
+  const mismatched = buildSyntheticScoring({
+    id: "synthetic_location_contract_mismatched",
+    ...baseJob,
+    location: "北京"
+  });
+  const unknown = buildSyntheticScoring({
+    id: "synthetic_location_contract_unknown",
+    ...baseJob,
+    location: "地点未说明"
+  });
+
+  assertTrue(matched.locationConstraint?.state === "match", "matched location should be marked as match");
+  assertTrue(["A", "B"].includes(String(matched.decisionVerdict?.grade || "")), "matched location can keep A/B grade");
+  assertTrue(String(matched.decisionVerdict?.verdict || "") === "go", "matched location can remain go");
+
+  assertTrue(mismatched.locationConstraint?.state === "mismatch", "mismatched location should be marked as mismatch");
+  assertTrue(Number(mismatched.score) <= 68, "mismatched location should cap score below A/B");
+  assertTrue(String(mismatched.decisionVerdict?.grade || "") === "C", "mismatched location should downgrade to C");
+  assertTrue(String(mismatched.decisionVerdict?.verdict || "") === "review", "mismatched location should require review");
+  assertTrue(
+    String(mismatched.decisionVerdict?.nextAction || "").includes("确认地点"),
+    "mismatched location should expose confirm location nextAction"
+  );
+
+  assertTrue(unknown.locationConstraint?.state === "unknown", "unknown location should be marked as unknown");
+  assertTrue(unknown.locationFit === null, "unknown location should not be treated as zero score");
+  assertTrue(Number(unknown.score) <= 74, "unknown location should cap score below A/B");
+  assertTrue(String(unknown.decisionVerdict?.grade || "") === "C", "unknown location should downgrade to C");
+  assertTrue(
+    String(unknown.decisionVerdict?.nextAction || "").includes("确认岗位地点"),
+    "unknown location should expose confirm location nextAction"
+  );
 }
 
 function validateSyntheticOpportunityBoundaries() {
@@ -122,6 +168,7 @@ async function seedJobsIfNeeded() {
 }
 
 async function main() {
+  validateLocationOutputContract();
   validateSyntheticOpportunityBoundaries();
 
   await runWithRequestContext({ userId: "demo_user" }, async () => {

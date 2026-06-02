@@ -16,6 +16,22 @@ const USER_PRIORITY_DEFAULT_WEIGHTS = Object.freeze({
   company: 10,
   accessibility: 10
 });
+const LOCATION_UNKNOWN_PATTERNS = /^(地点未说明|未说明|暂无|无|不限|待定|-|—|--|unknown|n\/a)$/i;
+const LOCATION_BROAD_SCOPE_PATTERNS = /(全国|多地|多个城市|base可选|地点可选|远程|remote|hybrid|全国可投)/i;
+const LOCATION_ALIAS_GROUPS = [
+  ["上海", "shanghai", "上海市", "沪"],
+  ["北京", "beijing", "北京市", "京"],
+  ["深圳", "shenzhen", "深圳市", "深"],
+  ["广州", "guangzhou", "广州市", "穗"],
+  ["杭州", "hangzhou", "杭州市"],
+  ["成都", "chengdu", "成都市"],
+  ["南京", "nanjing", "南京市"],
+  ["苏州", "suzhou", "苏州市"],
+  ["武汉", "wuhan", "武汉市"],
+  ["西安", "xian", "xi'an", "西安市"],
+  ["天津", "tianjin", "天津市"],
+  ["重庆", "chongqing", "重庆市"]
+];
 const CROSS_INDUSTRY_SAFE_ROLES = ["数据分析", "产品经理", "算法工程师", "研发工程师", "后端开发工程师", "前端开发工程师", "AI工程师"];
 const MIXED_ROLE_SOFT_SCORE_PENALTY = 0.5;
 const ROLE_FAMILY_ALIASES = [
@@ -285,7 +301,8 @@ function buildJobScoringViewModel({
     evidenceType: String(roleFitEvaluated?.evidenceType || "").trim() || "adjacent_role_match"
   };
   const skillFit = scoreSkillFit(classification);
-  const locationFit = scoreLocationFit(job.location, preference.locationPreference);
+  const locationConstraint = resolveLocationConstraint(job.location, preference.locationPreference);
+  const locationFit = scoreLocationFitFromConstraint(locationConstraint);
   const companyFit = scoreCompanyFit(classification, job);
   const jobQualityFit = scoreJobQualityFit(jobFeaturesView);
   const jobQualitySummary = buildJobQualitySummary(jobFeaturesView);
@@ -313,12 +330,15 @@ function buildJobScoringViewModel({
     locationFit,
     applicationAccessibilityFit
   });
-  const userPriorityScore = applyUserPriorityCompletenessCap(
-    applyExplicitRoleValueFloor(
-      clampScore(Number(rawUserPriorityScore || 0) - Number(industryConflictPenalty.preferencePenalty || 0)),
-      { classification, roleFit }
+  const userPriorityScore = applyLocationConstraintCap(
+    applyUserPriorityCompletenessCap(
+      applyExplicitRoleValueFloor(
+        clampScore(Number(rawUserPriorityScore || 0) - Number(industryConflictPenalty.preferencePenalty || 0)),
+        { classification, roleFit }
+      ),
+      { classification, jobFeaturesView, preference, locationFit }
     ),
-    { classification, jobFeaturesView, preference, locationFit }
+    { locationConstraint }
   );
   const baseScore = userPriorityScore;
   // feedback 只作为深层 tie-break 信号，不再进入主分，防止跨域岗位被反馈抬升。
@@ -333,6 +353,13 @@ function buildJobScoringViewModel({
   }
   if (industryConflictPenalty.scorePenalty > 0) {
     risks.push(industryConflictPenalty.reason || "行业冲突风险，已降权");
+  }
+  if (locationConstraint.state === "mismatch") {
+    risks.push("地点偏好不匹配，已降级为待确认");
+  } else if (locationConstraint.state === "unknown") {
+    risks.push("地点信息缺失，需确认后再推进");
+  } else if (locationConstraint.state === "broad_scope") {
+    risks.push("地点范围较宽，需确认目标城市");
   }
   if ((preference.skillPreference || []).length === 0) {
     risks.push("技能偏好未填写");
@@ -356,7 +383,8 @@ function buildJobScoringViewModel({
     classification,
     preference,
     resolvedPreferenceSource,
-    opportunityTypeInfo
+    opportunityTypeInfo,
+    locationConstraint
   });
   const skillGapView = buildSkillGapView({
     job,
@@ -383,6 +411,7 @@ function buildJobScoringViewModel({
     locationFit,
     companyFit,
     applicationAccessibilityFit,
+    locationConstraint,
     decisionVerdict,
     jobFeaturesView: jobFeaturesViewWithOpportunity,
     opportunityTypeInfo,
@@ -410,6 +439,7 @@ function buildJobScoringViewModel({
     },
     skillFit,
     locationFit,
+    locationConstraint,
     companyFit,
     jobQualityFit,
     jobQualitySummary,
@@ -549,6 +579,7 @@ function attachScoringToJobWorkspaceViewModel(jobWorkspaceViewModel = {}, scorin
             },
       skillFit: nullableNumberOr(scoringView.skillFit, null),
       locationFit: locationFitForView,
+      locationConstraint: normalizeLocationConstraint(scoringView.locationConstraint || scoringView.decisionVerdict?.locationConstraint),
       companyFit: nullableNumberOr(scoringView.companyFit, null),
       jobQualityFit: numberOr(scoringView.jobQualityFit, 0),
       jobQualitySummary: String(scoringView.jobQualitySummary || "").trim(),
@@ -2051,17 +2082,102 @@ function scoreSkillFit(classification = {}) {
   return Math.min(95, 50 + matchedCount * 20);
 }
 
-function scoreLocationFit(jobLocation = "", preferredLocations = []) {
-  const prefs = Array.isArray(preferredLocations) ? preferredLocations : [];
-  if (prefs.length === 0) return null;
+function normalizeLocationAlias(value = "") {
+  const text = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/市$/g, "");
+  if (!text) return "";
+  const matched = LOCATION_ALIAS_GROUPS.find((group) =>
+    group.some((alias) => text === String(alias || "").toLowerCase().replace(/\s+/g, "").replace(/市$/g, ""))
+  );
+  return matched ? matched[0] : text;
+}
+
+function resolveLocationConstraint(jobLocation = "", preferredLocations = []) {
+  const prefs = Array.isArray(preferredLocations)
+    ? preferredLocations.map((item) => normalizeLocationAlias(item)).filter(Boolean)
+    : [];
+  const uniquePrefs = unique(prefs);
+  if (uniquePrefs.length === 0) {
+    return {
+      state: "no_preference",
+      severity: "none",
+      rawLocation: String(jobLocation || "").trim(),
+      preferredLocations: [],
+      matchedLocation: "",
+      reason: "未设置地点偏好"
+    };
+  }
+
   const rawLocation = String(jobLocation || "").trim();
-  if (!rawLocation || /^(地点未说明|未说明|暂无|无|不限|待定|-|—|--)$/.test(rawLocation)) return null;
-  const jobCity = normalizeLocation(jobLocation);
-  if (!jobCity) return null;
-  const exact = prefs.some((item) => String(item || "").trim().toLowerCase() === String(jobLocation || "").trim().toLowerCase());
-  if (exact) return 88;
-  const sameCity = prefs.some((item) => normalizeLocation(item) === jobCity);
-  return sameCity ? 70 : 30;
+  if (!rawLocation || LOCATION_UNKNOWN_PATTERNS.test(rawLocation)) {
+    return {
+      state: "unknown",
+      severity: "review",
+      rawLocation,
+      preferredLocations: uniquePrefs,
+      matchedLocation: "",
+      reason: "岗位地点信息缺失，需确认后再推进"
+    };
+  }
+
+  const normalizedCorpus = normalizeLocation(rawLocation);
+  const compactCorpus = String(rawLocation || "").toLowerCase().replace(/\s+/g, "");
+  const matched = uniquePrefs.find((pref) => {
+    if (!pref) return false;
+    const aliasGroup = LOCATION_ALIAS_GROUPS.find((group) => group[0] === pref) || [pref];
+    return aliasGroup.some((alias) => {
+      const normalizedAlias = normalizeLocationAlias(alias);
+      const compactAlias = String(alias || "").toLowerCase().replace(/\s+/g, "");
+      return normalizedCorpus === normalizedAlias || normalizedCorpus.includes(normalizedAlias) || compactCorpus.includes(compactAlias);
+    });
+  });
+  if (matched) {
+    return {
+      state: "match",
+      severity: "none",
+      rawLocation,
+      preferredLocations: uniquePrefs,
+      matchedLocation: matched,
+      reason: "地点命中偏好"
+    };
+  }
+
+  if (LOCATION_BROAD_SCOPE_PATTERNS.test(rawLocation)) {
+    return {
+      state: "broad_scope",
+      severity: "review",
+      rawLocation,
+      preferredLocations: uniquePrefs,
+      matchedLocation: "",
+      reason: "岗位地点范围较宽，需确认是否覆盖目标城市"
+    };
+  }
+
+  return {
+    state: "mismatch",
+    severity: "review",
+    rawLocation,
+    preferredLocations: uniquePrefs,
+    matchedLocation: "",
+    reason: "岗位地点不在当前偏好城市内"
+  };
+}
+
+function scoreLocationFitFromConstraint(locationConstraint = {}) {
+  const state = String(locationConstraint?.state || "").trim();
+  if (state === "no_preference") return null;
+  if (state === "unknown") return null;
+  if (state === "match") return 88;
+  if (state === "broad_scope") return 52;
+  if (state === "mismatch") return 25;
+  return null;
+}
+
+function scoreLocationFit(jobLocation = "", preferredLocations = []) {
+  return scoreLocationFitFromConstraint(resolveLocationConstraint(jobLocation, preferredLocations));
 }
 
 function scoreCompanyFit(classification = {}, job = {}) {
@@ -2148,6 +2264,8 @@ function buildOpportunityTypeSummary(info = {}) {
 }
 
 function resolveOpportunityNextAction({ nextAction = "review", opportunityType = "single_role_job" } = {}) {
+  const locationFirstActions = new Set(["确认地点后再推进", "确认岗位地点", "确认目标城市覆盖"]);
+  if (locationFirstActions.has(String(nextAction || "").trim())) return nextAction;
   const normalizedType = normalizeOpportunityType(opportunityType);
   if (normalizedType === "high_value_role_pool") return "confirm_subrole";
   if (normalizedType === "broad_recruitment_entry") return "confirm_responsibility";
@@ -3055,6 +3173,14 @@ function applyUserPriorityCompletenessCap(score = 0, {
   return clampScore(Math.min(Number(score || 0), 84));
 }
 
+function applyLocationConstraintCap(score = 0, { locationConstraint = {} } = {}) {
+  const state = String(locationConstraint?.state || "").trim();
+  if (state === "mismatch") return clampScore(Math.min(Number(score || 0), 68));
+  if (state === "unknown") return clampScore(Math.min(Number(score || 0), 74));
+  if (state === "broad_scope") return clampScore(Math.min(Number(score || 0), 74));
+  return clampScore(score);
+}
+
 function scoreApplicationAccessibilityFit({
   classification = {},
   preference = {},
@@ -3325,7 +3451,8 @@ function buildDecisionVerdict({
   classification = {},
   preference = {},
   resolvedPreferenceSource = "legacy",
-  opportunityTypeInfo = {}
+  opportunityTypeInfo = {},
+  locationConstraint = {}
 } = {}) {
   const hardBlockers = [];
   const riskSignals = [];
@@ -3369,8 +3496,16 @@ function buildDecisionVerdict({
       }
     }
   }
+  const locationState = String(locationConstraint?.state || "").trim();
   if ((preference.locationPreference || []).length > 0 && isPresentDimensionScore(locationFit) && Number(locationFit) > 0 && Number(locationFit) <= 30) {
     riskSignals.push("地点偏好冲突");
+  }
+  if (locationState === "mismatch") {
+    riskSignals.push("城市硬偏好不匹配，需确认后再推进");
+  } else if (locationState === "unknown") {
+    riskSignals.push("岗位地点信息缺失，需确认目标城市");
+  } else if (locationState === "broad_scope") {
+    riskSignals.push("岗位地点范围较宽，需确认是否覆盖目标城市");
   }
 
   const normalizedScore = numberOr(score, 0);
@@ -3386,6 +3521,9 @@ function buildDecisionVerdict({
   if (hardBlockers.length > 0) {
     verdict = "no_go";
     grade = "F";
+  } else if (["mismatch", "unknown", "broad_scope"].includes(locationState) && (grade === "A" || grade === "B")) {
+    verdict = "review";
+    grade = "C";
   } else if (grade === "A" || grade === "B") {
     verdict = "go";
   } else if (grade === "F") {
@@ -3425,7 +3563,8 @@ function buildDecisionVerdict({
     preference,
     skillFit,
     primaryClearlyWeak,
-    riskSignals
+    riskSignals,
+    locationConstraint
   });
   const normalizedOpportunityTypeInfo = normalizeOpportunityTypeInfo(opportunityTypeInfo);
   const opportunityNextAction = resolveOpportunityNextAction({ nextAction, opportunityType: normalizedOpportunityTypeInfo.opportunityType });
@@ -3437,6 +3576,7 @@ function buildDecisionVerdict({
     hardBlockers: unique(hardBlockers).slice(0, 3),
     weightedSummary,
     nextAction: opportunityNextAction,
+    locationConstraint: normalizeLocationConstraint(locationConstraint),
     opportunityType: normalizedOpportunityTypeInfo.opportunityType,
     opportunityTypeConfidence: normalizedOpportunityTypeInfo.opportunityTypeConfidence,
     opportunityTypeLabel: normalizedOpportunityTypeInfo.opportunityTypeLabel,
@@ -3536,9 +3676,14 @@ function resolveNextAction({
   preference = {},
   skillFit = null,
   primaryClearlyWeak = false,
-  riskSignals = []
+  riskSignals = [],
+  locationConstraint = {}
 } = {}) {
+  const locationState = String(locationConstraint?.state || "").trim();
   if (hardBlockers.length > 0) return "命中排除项，建议跳过";
+  if (locationState === "mismatch") return "确认地点后再推进";
+  if (locationState === "unknown") return "确认岗位地点";
+  if (locationState === "broad_scope") return "确认目标城市覆盖";
   if (verdict === "go") return "优先投递";
   if (verdict === "no_go") return "不建议投递";
   if ((preference.skillPreference || []).length === 0) return "补充技能偏好后再判断";
@@ -3577,10 +3722,27 @@ function normalizeDecisionVerdict(input = {}) {
     hardBlockers: hardBlockers.slice(0, 3),
     weightedSummary,
     nextAction: nextAction || "建议人工复核",
+    locationConstraint: normalizeLocationConstraint(source.locationConstraint),
     opportunityType: normalizeOpportunityType(source.opportunityType),
     opportunityTypeConfidence: normalizeOpportunityTypeConfidence(source.opportunityTypeConfidence),
     opportunityTypeLabel: String(source.opportunityTypeLabel || OPPORTUNITY_TYPE_LABELS[normalizeOpportunityType(source.opportunityType)]).trim(),
     opportunityTypeSummary: String(source.opportunityTypeSummary || OPPORTUNITY_TYPE_SUMMARIES[normalizeOpportunityType(source.opportunityType)]).trim()
+  };
+}
+
+function normalizeLocationConstraint(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const state = String(source.state || "").trim();
+  const severity = String(source.severity || "").trim();
+  return {
+    state: ["no_preference", "match", "mismatch", "unknown", "broad_scope"].includes(state) ? state : "no_preference",
+    severity: ["none", "review"].includes(severity) ? severity : "none",
+    rawLocation: String(source.rawLocation || "").trim(),
+    preferredLocations: Array.isArray(source.preferredLocations)
+      ? source.preferredLocations.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 8)
+      : [],
+    matchedLocation: String(source.matchedLocation || "").trim(),
+    reason: String(source.reason || "").trim()
   };
 }
 
