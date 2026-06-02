@@ -236,3 +236,13 @@ review 任务必须明确写出：影响面、禁止改动层、预期不变行�
 若子线程返回“无发现”但未说明安全边界与对抗场景，主线程必须追问或重发 review，不得直接接受。  
 以上各项必须尽量证据化，至少包含文件/函数/调用链、触发条件、已执行命令/测试/冷启动结果或未覆盖原因。  
 只有标题、空泛判断或“看起来没问题”不算有效 review 证据。
+
+## Command Output
+
+Protect context usage. **Any command with unknown or potentially large output must be byte-capped.**
+
+Default pattern:
+
+```bash
+COMMAND 2>&1 | head -c 4000
+```
