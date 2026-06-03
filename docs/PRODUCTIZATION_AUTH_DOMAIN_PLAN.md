@@ -45,8 +45,8 @@
 - 生产环境不再依赖测试账号自动登录
 
 ## 4. 推荐产品化架构
-- `www.applyflow.xxx`：Landing / 产品介绍 / waitlist
-- `app.applyflow.xxx`：ApplyFlow 主应用
+- `www.apply-flow-use.com`：Landing / 产品介绍 / waitlist
+- `app.apply-flow-use.com`：ApplyFlow 主应用
 - `Cloudflare Worker API`：后端 API + D1 访问
 - `Managed Auth`：Clerk 优先，其次 Auth0 / Supabase Auth
 - `Cloudflare D1`：公共岗位池 + 用户态数据
@@ -243,7 +243,7 @@ Codex 禁止事项：
 - 发现越权、数据串号、测试账号残留时，状态必须标记为 `Blocked`
 
 ## 11. Decision Needed
-- 最终正式域名是什么（`www` / `app` 具体命名）
+- 最终正式域名是什么：已确定 `apply-flow-use.com`，当前命名为 `www.apply-flow-use.com` / `app.apply-flow-use.com`
 - 是否确认使用 Clerk 作为首选托管 Auth
 - 是否保留 demo 模式
 - demo 与真实用户数据如何物理/逻辑隔离
@@ -354,7 +354,7 @@ Codex 禁止事项：
 ### 16.2 你需要决定/操作的事项（非代码）
 | 事项 | 你来决定/操作 |
 |---|---|
-| 正式域名 | 购买哪个域名（如 `applyflow.xxx`），是否采用 `www + app` 子域 |
+| 正式域名 | 已购买 `apply-flow-use.com`，采用 `www + app` 子域；本轮先切 `app.apply-flow-use.com` |
 | Cloudflare 账号 | 域名是否接入 Cloudflare DNS，是否可添加 Custom Domain |
 | Auth 供应商 | 是否确认 Clerk（建议优先 Clerk） |
 | Clerk 账号 | 创建 production app，配置生产域名、OAuth、登录方式 |
@@ -410,7 +410,7 @@ Codex 严禁：
 ### 16.7 当前时点行动建议
 - 若 Batch 0 Close 已通过：进入 Batch 1（Custom Domain / Env / CORS Readiness）
 - 在 Batch 1 期间，你可并行完成：
-  - 正式域名方案决策（推荐 `www.yourdomain.com` + `app.yourdomain.com`）
+  - 正式域名方案决策：已确定 `www.apply-flow-use.com` + `app.apply-flow-use.com`
   - Auth 供应商决策（建议 Clerk）
   - demo 策略决策（建议保留但与真实用户数据隔离）
   - 首批用户范围决策（建议 3-5 人灰度）

@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
 
-const BASE_URL = (process.env.UI_SMOKE_BASE_URL || "https://applyflow.applyflow-eugene.workers.dev").replace(/\/+$/, "");
+const BASE_URL = (process.env.UI_SMOKE_BASE_URL || "https://app.apply-flow-use.com").replace(/\/+$/, "");
 const LOCAL_APP_JS_PATH = path.resolve(__dirname, "../../public/app.js");
 
 function assert(condition, message) {

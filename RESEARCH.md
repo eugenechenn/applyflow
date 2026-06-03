@@ -1,5 +1,8 @@
 # Research Notes
 
+- 2026-06-03：补充浏览 AI Agent 岗位面试方向与 OpenAI/Anthropic/Claude Code/Agent Harness 公开资料后，面试复习口径收敛为 8 个母题：意图识别与任务拆解、上下文/记忆/RAG、工具调用与权限、多智能体编排、Agent 评测与 tracing/harness、AI Coding、产品指标/A-B/失败复盘、项目深挖。结论是不要继续堆散题，而要用“概念 -> 主流做法 -> 项目证据/诚实边界 -> 评估验证”的回答骨架串联相似问法。
+- 2026-06-03：继续补充 AI Agent 开发岗高频题方向后，确认真实追问会明显偏工程落地：工具/API 超时、retry/降级/异步、状态持久化、分布式缓存、请求合并、结果缓存、流量分级、tracing、成本和线上指标。面试材料已补“后端稳定性与成本”方向，并用邮件分类回复 Agent 案例串联邮件解析、Prompt+few-shot 分类、模板动态加载、记忆、兜底确认和人工发送边界。
+
 - 2026-05-16：官方资料口径确认：OpenAI Agents SDK 强调 guardrails 可对 agent 输入/输出或工具调用做检查与阻断，tracing 会记录 LLM generations、tool calls、handoffs、guardrails 等事件；OpenAI Structured Outputs 通过开发者提供的 JSON Schema 与 constrained decoding 提升结构化输出可靠性；LangChain Human-in-the-loop 文档强调高风险工具调用应 pause、approve/edit/reject，并用 checkpointer 持久化状态。这些结论支持面试中“Prompt 是软约束，Schema/校验/追踪/HITL 是硬治理”的表述。
 - 2026-05-19：调研 Firefox Form Autofill 官方文档与开源自动填表扩展实践后，结论是复杂网申更稳定的做法不是“全表单万能填充”，而是按 section/field group 定位重复区块，只优先覆盖稳定的文本/选择字段；自定义 date picker、动态多步骤和验证码通常需要站点专用适配或直接降级为手填。这支持当前把 ApplyFlow 插件收口为“工作经历/项目经历等文本块优先，时间字段主动放弃”的策略。
 - 2026-05-19：复核 Anthropic Building Effective Agents、Anthropic Agent Evals、OpenAI Evals、OpenAI Agent Evals 与 Structured Outputs 官方资料后，结论是 AI/Agent 面试高频问题可统一归到场景价值、Agent 架构、系统边界、评估指标、数据迭代和工程落地；官方资料共同强调 workflow/agent 取舍、任务轨迹评估、schema adherence、可复现 eval 与 human feedback，这支持将面试准备从“背题库”改为“问题归类器 + 项目锚点”。

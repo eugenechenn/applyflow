@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const BASE_URL = process.env.UI_SMOKE_BASE_URL || "https://applyflow.applyflow-eugene.workers.dev";
+const BASE_URL = process.env.UI_SMOKE_BASE_URL || "https://app.apply-flow-use.com";
 const OUTPUT_DIR = path.resolve(__dirname, "../../tmp/production-onboarding-bootstrap");
 const OUTPUT_PATH = path.join(OUTPUT_DIR, "report.json");
 const WAIT_MS = Number.isFinite(Number(process.env.BOOTSTRAP_WAIT_MS)) ? Math.max(3000, Number(process.env.BOOTSTRAP_WAIT_MS)) : 22000;

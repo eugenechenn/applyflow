@@ -10,16 +10,16 @@
 - `workers.dev` 暂时保留为 staging/fallback
 
 ## 2. 目标域名结构
-当前按占位符规划如下，待人工购买真实域名后替换：
+当前正式域名已确定为 `apply-flow-use.com`：
 
-- `https://www.applyflow.example`：Landing / waitlist
-- `https://app.applyflow.example`：ApplyFlow App + API（同源）
+- `https://www.apply-flow-use.com`：Landing / waitlist（可先预留）
+- `https://app.apply-flow-use.com`：ApplyFlow App + API（同源）
 - `https://applyflow.applyflow-eugene.workers.dev`：仅作为 staging/fallback，不作为真实用户入口
 
-说明：占位符仅用于方案设计与配置模板，不代表已完成接入。
+说明：本轮优先绑定 `app.apply-flow-use.com` 到 Worker；`www` 后续可做 landing 或重定向。
 
 ## 3. 为什么暂不使用 api 子域
-方案 A 阶段不引入 `api.applyflow.example`，原因如下：
+方案 A 阶段不引入 `api.apply-flow-use.com`，原因如下：
 
 - 当前系统主路径更接近同源模型，先保持低风险迁移
 - 现状未形成成熟的显式 CORS 治理闭环，提前拆域会放大配置风险
@@ -28,34 +28,34 @@
 - Batch 1A 目标是“先切正式入口”，不是“并行完成域拆分 + Auth 重构”
 
 ## 4. Cloudflare 侧操作清单
-以下均为 planned/manual steps，当前未执行：
+以下为当前执行清单：
 
-1. 购买或接入正式域名（人工决策具体域名）
-2. 将域名 DNS 托管到 Cloudflare
-3. 为当前 Worker 添加 Custom Domain：`app.applyflow.example`
-4. 选择是否将 `www.applyflow.example` 绑定为 landing/waitlist（可先静态页）
+1. 已购买正式域名：`apply-flow-use.com`
+2. 域名已在 Cloudflare 购买，DNS 托管默认在 Cloudflare
+3. 为当前 Worker 添加 Custom Domain：`app.apply-flow-use.com`
+4. 选择是否将 `www.apply-flow-use.com` 绑定为 landing/waitlist（可先静态页）
 5. 确认 SSL 证书自动签发并生效
 6. 保留 `applyflow.applyflow-eugene.workers.dev` 作为 staging/fallback
 7. 明确生产流量入口只对外公布 `app` 正式域名，不再引导真实用户使用 workers.dev
 
 ## 5. 需要引入的环境变量模型
-本节定义目标变量模型与占位值，仅用于后续 Batch 改造参考，本轮不改代码/配置。
+本节定义目标变量模型。Batch 1 当前先完成 `app` 正式入口，不引入独立 `api` 子域。
 
-### production（占位）
-- `APP_BASE_URL=https://app.applyflow.example`
-- `PUBLIC_SITE_URL=https://www.applyflow.example`
-- `ALLOWED_ORIGINS=https://app.applyflow.example,https://www.applyflow.example`
+### production
+- `APP_BASE_URL=https://app.apply-flow-use.com`
+- `PUBLIC_SITE_URL=https://www.apply-flow-use.com`
+- `ALLOWED_ORIGINS=https://app.apply-flow-use.com,https://www.apply-flow-use.com`
 - `AUTH_PROVIDER=clerk`
 - `CLERK_PUBLISHABLE_KEY=pk_live_xxx`
 - `CLERK_SECRET_KEY=sk_live_xxx`
-- `SIGN_IN_URL=https://app.applyflow.example/sign-in`
-- `SIGN_UP_URL=https://app.applyflow.example/sign-up`
-- `AFTER_SIGN_IN_URL=https://app.applyflow.example/dashboard`
-- `AFTER_SIGN_UP_URL=https://app.applyflow.example/onboarding`
-- `SIGN_OUT_REDIRECT_URL=https://www.applyflow.example/`
+- `SIGN_IN_URL=https://app.apply-flow-use.com/sign-in`
+- `SIGN_UP_URL=https://app.apply-flow-use.com/sign-up`
+- `AFTER_SIGN_IN_URL=https://app.apply-flow-use.com/dashboard`
+- `AFTER_SIGN_UP_URL=https://app.apply-flow-use.com/onboarding`
+- `SIGN_OUT_REDIRECT_URL=https://www.apply-flow-use.com/`
 - `DEMO_AUTO_LOGIN_ENABLED=false`
 - `DEV_AUTH_BYPASS_ENABLED=false`
-- `EDGE_ALLOWED_HOSTS=app.applyflow.example`
+- `EDGE_ALLOWED_HOSTS=app.apply-flow-use.com`
 
 ### staging（占位）
 - `APP_BASE_URL=https://applyflow.applyflow-eugene.workers.dev`
@@ -141,7 +141,7 @@
 以下为 cutover 前最低验证清单：
 
 1. `app` 正式域名首页可访问
-2. `https://app.applyflow.example/api/auth/session` 响应正常（状态码与当前阶段预期一致）
+2. `https://app.apply-flow-use.com/api/auth/session` 响应正常（状态码与当前阶段预期一致）
 3. `dashboard/jobs/profile/materials` 主路径可访问（按当前权限策略表现）
 4. 未登录策略符合当前阶段预期（不得出现 production 自动 demo 登录）
 5. Edge extension `allowed hosts` 已包含正式 `app` 域名
@@ -152,8 +152,8 @@
 ## 8. Decision Needed
 以下事项需人工决策后才能推进：
 
-1. 最终正式域名是什么
-2. 是否选择 `useapplyflow.com` / `getapplyflow.com` / `applyflow.app` / 其他
+1. 最终正式域名是什么：已确定 `apply-flow-use.com`
+2. 是否选择 `useapplyflow.com` / `getapplyflow.com` / `applyflow.app` / 其他：已不适用
 3. `www` 是否先做简单 landing（静态介绍 + waitlist）
 4. `workers.dev` 是否长期保留给 staging
 5. demo 是否未来放到独立 `demo` 子域
@@ -161,8 +161,10 @@
 
 ## 9. 当前状态
 - Batch 1 只读审计已完成
-- Batch 1A 当前仅完成“最低成本域名 cutover 计划文档”，未执行配置或代码改造
-- 当前状态仍不是 Production Auth Ready
-- 下一步取决于人工购买/确定域名与 Cloudflare 账号侧操作
-- 在域名决策未完成前，不进入 Batch 3 Auth 实现
-
+- Batch 1A 已进入正式域名配置阶段：`wrangler.jsonc` 已声明 `app.apply-flow-use.com` Custom Domain
+- 2026-06-03 已完成第一阶段部署：`app.apply-flow-use.com` 和 `workers.dev` 均作为 Worker trigger 可访问
+- 正式域名已开启 internal beta 门禁：仅 `BETA_ALLOWED_EMAILS` 中的 `eugenec7012@126.com` 可登录，demo 自动登录与 dev bypass 均关闭
+- 已完成线上验证：正式域名首页 200、production online smoke PASS、非白名单登录拒绝、白名单账号可登录并通过 `/api/jobs` 拉取当前账号可见岗位
+- 当前状态仍不是 Production Auth Ready；只是完成 3-5 人白名单内测前的正式入口和最小门禁
+- 下一步是手动体验检查、作品集链接替换，以及后续 Batch 2/3 Auth 方案决策
+- 在正式 Auth 方案未决策前，不进入 Batch 3 Auth 实现

@@ -1,35 +1,29 @@
 # ApplyFlow Context
 
-当前目标：围绕 AI Agent / AI 产品 / AI 应用岗位面试和飞书作品集 Evidence Log，统一 1000 样本评估口径，确保“城市 bad case、第一轮地点修复、L2 对比复测、后续全量回归”讲得清楚且不夸大。
+当前目标：完成正式自定义域名 `apply-flow-use.com` 的第一阶段切换，让 ApplyFlow 对外主入口从不稳定的 `workers.dev` 切到 `https://app.apply-flow-use.com`，同时保留旧 `workers.dev` 兜底。
 
 当前进度：
-- 已读取 `AGENTS.md`、`CONTEXT.md`、`HANDOFF_INTERVIEW_REVIEW.md`、00/01/02/03 面试文档、飞书 Evidence Log 和截图相关作品集文档。
-- 已读取简历 PDF，确认当前简历主线为华南理工 MBA + 通信工程背景、网易 AIGC 内容安全策略运营实习、ApplyFlow AI Agent 执行工作台。
-- 已补外部资料结论到 `RESEARCH.md`：OpenAI Agents/Structured Outputs/guardrails/tracing/evals、Anthropic effective agents、Claude Code harness 相关公开资料。
-- 已全面重构 `interview/00_先看这个：AI面试总控与复习路线.md`：改为面试答题总控和知识地图。
-- 已全面重构 `interview/01_ApplyFlow项目面试主线.md`：改为简历/作品集深挖下的 ApplyFlow 项目答辩稿。
-- 已全面重构 `interview/02_深挖问答与防守口径.md`：改为 AI Agent / AI 产品 / AI 应用岗高频知识点与防守口径。
-- 已按用户要求强化 RAG / 长上下文 / Memory 题型：新增 Claude Code / OpenAI Agents 顶级项目对比，明确规则式、半规则式和检索式记忆的面试回答。
-- 已融合新增图片材料逻辑：六边形答题法、AI 产品最大局限、上线指标、A/B 失败复盘、算法团队沟通、Agent Harness 七层框架。
-- 已纠正飞书 Evidence Log 口径：第一轮地点修复和 L2 复测证明“城市不匹配高优先级误推”被治理，不能直接证明 Top10 城市命中率已经提升；后续仍需阶段性全量回归。
-- 已新增并运行 `scripts/validation/run-location-contract-l2-eval.js`：80 个历史城市 bad case、700 个误推候选，修复后直接推进率 100.0% -> 0.0%，降级/确认地点率 100.0%；103 个地点命中对照候选仍 100.0% 可推进。
-- 已按用户要求补 L3 完成态口径：Top10 城市命中率 4.6% -> 38.4%，高优先级候选城市命中率 1.8% -> 72.6%；该口径用于面试演示，严格对外发布需标注“待真实全量回归确认”。
-- 已将面试和作品集主文档里的内部英文字段替换为“高优先级候选、是否建议推进、下一步建议、地点确认”等中文口径。
-- 已在飞书 Evidence Log 可粘贴版中加入关键截图建议区，当前截图在 `docs/portfolio/screenshots/`。
-- 已重新导出三份 Word：`00 先看这个：AI 面试总控与复习路线.docx`、`01_ApplyFlow项目面试主线.docx`、`02_深挖问答与防守口径.docx`。
-- 已同步更新 `HANDOFF_INTERVIEW_REVIEW.md`，方便新会话按新版答题体系接手。
+- 已确认用户在 Cloudflare 购买并托管 `apply-flow-use.com`。
+- 已将 Worker 自定义域名配置写入 `wrangler.jsonc`：`app.apply-flow-use.com` 绑定 `applyflow` Worker。
+- 已显式保留 `workers_dev: true`，避免旧 `https://applyflow.applyflow-eugene.workers.dev` 被部署时关闭；已显式关闭 `preview_urls`。
+- 已收紧正式域名 auth gate：`AUTH_PROVIDER=internal_beta`、`INTERNAL_BETA_ENABLED=true`、`BETA_ALLOWED_EMAILS=eugenec7012@126.com`，demo 自动登录和 dev bypass 均关闭。
+- 已将线上 smoke、onboarding 诊断脚本、Edge 插件默认入口、插件下载包和作品集正式体验链接切到 `https://app.apply-flow-use.com`。
+- 已重新生成 Edge 插件下载 ZIP。
+- 已完成 Cloudflare 部署，当前版本 ID：`f95465bc-8cdd-489d-a0b1-1604556e5248`。
+- 已验证新入口和旧兜底入口均可访问：`https://app.apply-flow-use.com/` 返回 200，`https://applyflow.applyflow-eugene.workers.dev/` 返回 200。
+- 已通过 production online smoke：`validate-production-online-smoke: PASS (https://app.apply-flow-use.com)`，包含 `/api/login` 403（正式域名拒绝非 demo 登录）和页面标题 `ApplyFlow`。
+- 已生成 onboarding/bootstrap 诊断报告：`tmp/production-onboarding-bootstrap/report.json`，`/api/auth/session` 返回 200，无 console/page error。
+- 已通过白名单与真实账号岗位检查：非白名单登录被拒绝，`eugenec7012@126.com` 登录成功，`/api/auth/session` authenticated=true，`/api/jobs` 返回 12 条当前账号可见岗位。
 
 下一步：
-- 用户可先重点练 5 个口播：ApplyFlow 是什么、为什么不全自动、怎么评估 Agent 输出、城市 bad case 怎么归因、Claude Code/Codex 给你的启发是什么。
-- 如继续优化，下一阶段补公司专项题：京东、阿里、腾讯、字节等业务场景的 AI 产品落地回答。
-- 如继续作品集，补真实用户原话、正式域名链接和 L3 1000 样本全量回归；全量回归前不要写“Top10 城市命中率已提升”。
+- 用浏览器手动打开新域名确认登录页、岗位列表和插件下载入口体验是否符合展示预期。
+- 把飞书作品集、简历作品链接和面试材料统一改为 `https://app.apply-flow-use.com`。
+- 后续再规划 `www.apply-flow-use.com` 作为作品集/落地页入口；当前先不做。
 
 注意事项：
-- ApplyFlow 只能表述为求职决策与执行闭环 Agent / Agent workflow / Agent-ready 原型，不能夸成完全自治强 Agent。
-- 当前不能讲成已落地：简历解析、简历改写、求职信、全自动投递、自动提交、RAG、多 Agent、模型训练。
-- 1000 样本评估是 production-like 本地真实岗位池副本，不是正式线上 D1 production 账号结果。
-- 第一轮地点约束修复 + L2 复测证明的是误推治理，不是修复后 Top10 城市命中率对比结果；不能把 1.8% 写成已经提升。
-- Claude Code 相关内容只讲公开资料抽象出的 harness、权限、上下文、子任务隔离和验证原则，不引用非公开源码细节。
-- `VALIDATION_SPEED_POLICY.md` 当前未找到；本轮为文档变更，已按轻量文档验证和 Focused Review 执行。
+- 本轮只做域名入口和验证脚本切换，不修改业务逻辑、D1 数据、评估规则。
+- `workers.dev` 只作为兜底，不再发给朋友、面试官或作品集。
+- `eugenec7012@126.com` 当前线上工作台可见岗位为 12 条；5000+ 真实岗位池是评估/seed 池概念，不能表述为该账号页面一次展示 5000+ 条。
+- 当前仓库仍存在部分历史脏改和数据库/Word 临时文件，提交时必须只选择必要文件，不能把 `data/applyflow.sqlite`、`.bak` 或 Word 锁文件误提交。
 
-最后更新时间：2026-06-02
+最后更新时间：2026-06-03
