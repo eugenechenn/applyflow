@@ -11,7 +11,7 @@
 本文件优先级：涉及域名/Auth/多用户隔离任务时，必须先读本文件再执行。
 
 ## 2. 当前稳定生产基线
-- Production URL：`https://applyflow.applyflow-eugene.workers.dev`
+- Production URL：`https://www.apply-flow-use.com`
 - Production version id：`e0e59c7a-faa3-4483-bff2-43702f698f2f`
 - 代码基线：`main == origin/main @ 64839fa`
 - 排序与评估基线：
@@ -46,7 +46,7 @@
 
 ## 4. 推荐产品化架构
 - `www.apply-flow-use.com`：ApplyFlow 主应用与对外正式入口
-- `apply-flow-use.com`：根域名，后续可做 landing 或跳转
+- `apply-flow-use.com`：根域名，当前跳转到 `www.apply-flow-use.com`
 - `Cloudflare Worker API`：后端 API + D1 访问
 - `Managed Auth`：Clerk 优先，其次 Auth0 / Supabase Auth
 - `Cloudflare D1`：公共岗位池 + 用户态数据

@@ -180,7 +180,7 @@ AI 应用 / Agent 岗：Agent Workflow、偏好建模、状态管理、回归验
 
 0. 真实线上体验链接
    - 放在作品集第一屏。
-   - 当前可用链接：`https://applyflow.applyflow-eugene.workers.dev`。
+   - 当前可用链接：`https://www.apply-flow-use.com`。
    - 这不是 demo 账号或本地 demo，而是真实用户可以打开并使用核心流程的线上入口。
    - 面试官更喜欢能直接点开的真实产品链接，前提是链接稳定、数据脱敏、不会暴露隐私。
 
@@ -194,7 +194,7 @@ AI 应用 / Agent 岗：Agent Workflow、偏好建模、状态管理、回归验
 
 3. 线上体验入口
    - 使用真实线上可访问链接。
-   - 当前可用链接：`https://applyflow.applyflow-eugene.workers.dev`。
+   - 当前可用链接：`https://www.apply-flow-use.com`。
    - 不要让面试官安装任何东西。
    - 面试前必须重新 smoke：能打开、能进入岗位列表、能完成投递清单主路径、不会暴露他人数据。
 
@@ -230,7 +230,7 @@ ApplyFlow 作品集
 
 | 链接 | 优先级 | 面试官理解 |
 |---|---|---|
-| 真实线上体验链接：`https://applyflow.applyflow-eugene.workers.dev` | 第一优先 | 这个项目真的能打开，真实用户也能使用 |
+| 真实线上体验链接：`https://www.apply-flow-use.com` | 第一优先 | 这个项目真的能打开，真实用户也能使用 |
 | Evidence Log | 第二优先 | 这个项目不是摆拍，有用户反馈和迭代数据 |
 | GitHub | 第三优先 | 技术实现、工程规范、验证脚本可以被追问 |
 | README | 放在 GitHub 内 | 技术面深入时再看 |

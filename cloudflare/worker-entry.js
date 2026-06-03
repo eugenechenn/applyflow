@@ -13,6 +13,15 @@ const EXTENSION_DOWNLOAD_ROUTES = new Map([
   ["/downloads/applyflow-edge-mvp-v11-semantic-slots", "/downloads/applyflow-edge-mvp-v11-semantic-slots.zip"],
   ["/downloads/applyflow-edge-mvp-latest-v11", "/downloads/applyflow-edge-mvp-latest-v11.zip"]
 ]);
+const CANONICAL_HOST = "www.apply-flow-use.com";
+const REDIRECT_HOSTS = new Set(["apply-flow-use.com", "app.apply-flow-use.com"]);
+
+function buildCanonicalRedirect(request) {
+  const url = new URL(request.url);
+  if (!REDIRECT_HOSTS.has(url.hostname)) return null;
+  url.hostname = CANONICAL_HOST;
+  return Response.redirect(url.toString(), 301);
+}
 
 // 为插件分发包补齐明确下载头，避免浏览器把 ZIP 误当普通静态资源处理。
 async function buildExtensionDownloadResponse(assetResponse, assetPath) {
@@ -250,6 +259,9 @@ export default {
     const pathname = new URL(request.url).pathname;
 
     try {
+      const canonicalRedirect = buildCanonicalRedirect(request);
+      if (canonicalRedirect) return canonicalRedirect;
+
       if (EXTENSION_DOWNLOAD_ROUTES.has(pathname)) {
         const response = await handleExtensionDownloadFetch(request, env, EXTENSION_DOWNLOAD_ROUTES.get(pathname));
         logger.info("worker.download_request", {

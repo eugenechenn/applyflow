@@ -13,10 +13,11 @@
 当前正式域名已确定为 `apply-flow-use.com`：
 
 - `https://www.apply-flow-use.com`：ApplyFlow App + API（同源，对外正式入口）
-- `https://apply-flow-use.com`：根域名，后续可做跳转或 landing
+- `https://apply-flow-use.com`：根域名，301 跳转到 `www`
+- `https://app.apply-flow-use.com`：旧入口，301 跳转到 `www`
 - `https://applyflow.applyflow-eugene.workers.dev`：仅作为 staging/fallback，不作为真实用户入口
 
-说明：本轮按用户要求优先绑定 `www.apply-flow-use.com` 到 Worker；根域名后续可做 landing 或重定向。
+说明：本轮按用户要求以 `www.apply-flow-use.com` 作为唯一对外正式入口；根域名和旧 `app` 入口只做跳转兜底。
 
 ## 3. 为什么暂不使用 api 子域
 方案 A 阶段不引入 `api.apply-flow-use.com`，原因如下：
@@ -33,7 +34,7 @@
 1. 已购买正式域名：`apply-flow-use.com`
 2. 域名已在 Cloudflare 购买，DNS 托管默认在 Cloudflare
 3. 为当前 Worker 添加 Custom Domain：`www.apply-flow-use.com`
-4. 选择是否将 `www.apply-flow-use.com` 绑定为 landing/waitlist（可先静态页）
+4. 根域名 `apply-flow-use.com` 和旧 `app.apply-flow-use.com` 只作为 301 跳转兜底
 5. 确认 SSL 证书自动签发并生效
 6. 保留 `applyflow.applyflow-eugene.workers.dev` 作为 staging/fallback
 7. 明确生产流量入口只对外公布 `app` 正式域名，不再引导真实用户使用 workers.dev
@@ -165,6 +166,6 @@
 - 2026-06-03 已完成第一阶段部署：`www.apply-flow-use.com` 和 `workers.dev` 均作为 Worker trigger 可访问
 - 正式域名已开启 internal beta 门禁：仅 `BETA_ALLOWED_EMAILS` 中的 `eugenec7012@126.com` 可登录，demo 自动登录与 dev bypass 均关闭
 - 已完成线上验证：正式域名首页 200、production online smoke PASS、非白名单登录拒绝、白名单账号可登录并通过 `/api/jobs` 拉取当前账号可见岗位
-- 当前状态仍不是 Production Auth Ready；只是完成 3-5 人白名单内测前的正式入口和最小门禁
+- 当前状态仍不是 Production Auth Ready；只是完成 3-5 人白名单内测前的正式入口、跳转兜底和最小门禁
 - 下一步是手动体验检查、作品集链接替换，以及后续 Batch 2/3 Auth 方案决策
 - 在正式 Auth 方案未决策前，不进入 Batch 3 Auth 实现
