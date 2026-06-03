@@ -182,3 +182,4 @@
 - 2026-06-03：按用户要求将正式对外入口从 `app.apply-flow-use.com` 改为 `www.apply-flow-use.com`，重新部署并验证白名单登录与岗位接口。
 - 2026-06-03：完成正式域名入口风险审计，新增根域名与旧 `app` 入口到 `www` 的 301 跳转兜底，并开启 `run_worker_first` 避免静态资源缓存绕过 Worker。
 - 2026-06-03：将 production D1 真实岗位池导入 `eugenec7012@126.com`，线上目标用户从 12 条岗位扩展到 5001 条，并将正式 `/api/jobs` 展示上限提升到 500 后完成登录态页面 smoke。
+- 2026-06-03：完成正式域名 Playwright 全流程取证，修复白名单账号画像编码污染和 Worker 5001 岗位重排资源超限风险，补充 Evidence Log 线上截图。

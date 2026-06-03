@@ -1,31 +1,30 @@
 # ApplyFlow Context
 
-当前目标：完成正式自定义域名 `apply-flow-use.com` 的第一阶段切换，让 ApplyFlow 对外主入口从不稳定的 `workers.dev` 切到 `https://www.apply-flow-use.com`，同时保留旧 `workers.dev` 兜底。
+当前目标：正式域名 `https://www.apply-flow-use.com` 已上线，当前重点是保证面试官能稳定访问真实岗位池驱动的产品页面，并把 Playwright 截图补进 Evidence Log。
 
 当前进度：
-- 已确认用户在 Cloudflare 购买并托管 `apply-flow-use.com`。
-- 已将 Worker 自定义域名配置写入 `wrangler.jsonc`：`www.apply-flow-use.com` 绑定 `applyflow` Worker。
-- 已显式保留 `workers_dev: true`，避免旧 `https://applyflow.applyflow-eugene.workers.dev` 被部署时关闭；已显式关闭 `preview_urls`。
-- 已收紧正式域名 auth gate：`AUTH_PROVIDER=internal_beta`、`INTERNAL_BETA_ENABLED=true`、`BETA_ALLOWED_EMAILS=eugenec7012@126.com`，demo 自动登录和 dev bypass 均关闭。
-- 已将线上 smoke、onboarding 诊断脚本、Edge 插件默认入口、插件下载包和作品集正式体验链接切到 `https://www.apply-flow-use.com`。
-- 已重新生成 Edge 插件下载 ZIP。
-- 已完成 Cloudflare 部署，当前版本 ID：`98145b28-cb76-4dcf-9e64-b7055093fb90`。
-- 已完成正式入口风险审计并修复跳转兜底：`apply-flow-use.com` 和旧 `app.apply-flow-use.com` 均 301 到 `www.apply-flow-use.com`，避免用户漏写 `www` 或旧链接失效。
-- 已验证新入口和旧兜底入口均可访问：`https://www.apply-flow-use.com/` 返回 200，`https://applyflow.applyflow-eugene.workers.dev/` 返回 200。
-- 已通过 production online smoke：`validate-production-online-smoke: PASS (https://www.apply-flow-use.com)`，包含 `/api/login` 403（正式域名拒绝非 demo 登录）和页面标题 `ApplyFlow`。
-- 已生成 onboarding/bootstrap 诊断报告：`tmp/production-onboarding-bootstrap/report.json`，`/api/auth/session` 返回 200，无 console/page error。
-- 已完成 production D1 真实岗位池导入：`eugenec7012@126.com` 对应用户 `user_1191pcx1` 当前线上 D1 有 5001 条真实岗位；`/api/jobs` 默认展示去重后的 Top 494 条，登录态页面可正常渲染且无 console/page error。
+- `www.apply-flow-use.com` 是唯一正式对外入口；根域名 `apply-flow-use.com` 和旧 `app.apply-flow-use.com` 均 301 到 `www`。
+- Cloudflare Worker 当前线上版本 ID：`526e6606-2e32-4408-8fb5-952f64de352d`。
+- Auth 保持 internal beta：`eugenec7012@126.com` 是白名单账号，demo 自动登录和 dev bypass 均关闭。
+- production D1 中 `eugenec7012@126.com` 对应用户 `user_1191pcx1` 已挂 5001 条真实岗位。
+- 发现并修复正式账号画像编码污染：原画像出现 `????`，已改为正常中文偏好（AI 产品经理/产品经理，上海/北京/杭州/深圳等）。
+- 发现并修复线上 5001 岗位重排触发 Worker 资源超限风险：线上 `/api/jobs` 改为 D1 真实池保留 5001，Worker 每次取 Top 候选进入评分与页面展示；当前页面展示 116 条候选。
+- 已新增并运行 `npm run validate:production-real-pool-flow`，Playwright 验证登录、Dashboard、Jobs、投递辅助弹窗、Profile、插件下载入口均通过，无 console/page error。
+- 已生成正式线上截图：
+  - `docs/portfolio/screenshots/production-www-dashboard.png`
+  - `docs/portfolio/screenshots/production-real-pool-jobs-top-candidates.png`
+  - `docs/portfolio/screenshots/production-apply-plugin-flow.png`
+  - `docs/portfolio/screenshots/production-profile-autofill.png`
+- 已将正式线上截图、D1 5001 / 页面 Top 116 口径和隐患修复记录写入 `docs/portfolio/APPLYFLOW_FEISHU_EVIDENCE_LOG_READY.md`。
 
 下一步：
-- 用浏览器手动打开新域名确认登录页、岗位列表和插件下载入口体验是否符合展示预期。
-- 把飞书作品集、简历作品链接和面试材料统一改为 `https://www.apply-flow-use.com`，不要再使用 `workers.dev` 或 `app.apply-flow-use.com`。
-- 后续如需要，再规划根域名 `apply-flow-use.com` 的跳转或作品集落地页；当前先不做。
+- 提交并推送本轮正式入口全流程验证、性能护栏、Evidence Log 与截图。
+- 如继续完善作品集，可把 Evidence Log 内容复制到飞书，并配上上述 4 张截图。
+- 后续如有时间，再基于正式域名线上账号做小规模抽样评估，对照本地 production-like 1000 样本结果。
 
 注意事项：
-- 本轮只做域名入口和验证脚本切换，不修改业务逻辑、D1 数据、评估规则。
-- `workers.dev` 只作为兜底，不再发给朋友、面试官或作品集。
-- `www.apply-flow-use.com` 是唯一正式对外入口；根域名和旧 `app` 入口只是 301 跳转兜底。
-- `eugenec7012@126.com` 当前线上 D1 已挂 5001 条真实岗位；页面为了性能默认展示 Top 494 条，不要表述为浏览器一次渲染全部 5001 条。
-- 当前仓库仍存在部分历史脏改和数据库/Word 临时文件，提交时必须只选择必要文件，不能把 `data/applyflow.sqlite`、`.bak` 或 Word 锁文件误提交。
+- 不要说浏览器一次性渲染 5001 条岗位；正确说法是“线上 D1 挂 5001 条真实岗位，页面展示 Top 候选以保证稳定性”。
+- 不要把 ApplyFlow 包装成全自动投递、自动提交、RAG、多 Agent 或已落地简历改写。
+- 当前仓库仍有历史脏改和临时文件，提交时不要误提交 `data/applyflow.sqlite`、`.bak` 或旧 Word 副本。
 
 最后更新时间：2026-06-03
