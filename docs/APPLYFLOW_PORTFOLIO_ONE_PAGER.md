@@ -8,7 +8,7 @@ ApplyFlow 是一个面向求职场景的 AI 求职执行 Agent，核心不是“
 
 作品集材料：
 
-- 正式线上体验链接：`https://app.apply-flow-use.com`。`workers.dev` 在部分网络环境存在 DNS/TLS 污染风险，不再作为作品集正式入口推荐给面试官。
+- 正式线上体验链接：`https://www.apply-flow-use.com`。`workers.dev` 在部分网络环境存在 DNS/TLS 污染风险，不再作为作品集正式入口推荐给面试官。
 - Evidence Log：已补充。用于展示用户反馈、投递漏斗指标、production-like 1000 样本评估和下一轮迭代计划。
 - GitHub / README：待填。建议作为“技术面补充材料”，不要替代作品集正文。
 - 一页版 PDF：待填。用于投递邮件或飞书附件，方便快速转发。

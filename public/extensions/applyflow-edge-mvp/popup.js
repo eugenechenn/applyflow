@@ -34,7 +34,7 @@ const fillBtn = document.getElementById("fill-btn");
 const refreshBtn = document.getElementById("refresh-btn");
 const profileLink = document.getElementById("profile-link");
 
-const DEFAULT_APPLYFLOW_ORIGIN = "https://app.apply-flow-use.com";
+const DEFAULT_APPLYFLOW_ORIGIN = "https://www.apply-flow-use.com";
 
 function setResult(message, tone = "muted") {
   resultEl.className = tone;

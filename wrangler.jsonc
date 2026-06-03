@@ -15,7 +15,7 @@
 	},
 	"routes": [
 		{
-			"pattern": "app.apply-flow-use.com",
+			"pattern": "www.apply-flow-use.com",
 			"custom_domain": true
 		}
 	],

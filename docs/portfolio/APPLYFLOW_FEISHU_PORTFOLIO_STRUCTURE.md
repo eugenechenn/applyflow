@@ -11,7 +11,7 @@
 
 按钮/链接：
 
-- 正式 Demo 链接：`https://app.apply-flow-use.com`，`workers.dev` 不再作为正式作品集入口推荐
+- 正式 Demo 链接：`https://www.apply-flow-use.com`，`workers.dev` 不再作为正式作品集入口推荐
 - 一页版 PDF：待填
 - Evidence Log：已补用户反馈、投递漏斗、production-like 1000 样本评估和下一轮迭代
 - GitHub / README：可选，技术面再给

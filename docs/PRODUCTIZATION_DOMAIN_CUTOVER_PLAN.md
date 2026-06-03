@@ -12,11 +12,11 @@
 ## 2. 目标域名结构
 当前正式域名已确定为 `apply-flow-use.com`：
 
-- `https://www.apply-flow-use.com`：Landing / waitlist（可先预留）
-- `https://app.apply-flow-use.com`：ApplyFlow App + API（同源）
+- `https://www.apply-flow-use.com`：ApplyFlow App + API（同源，对外正式入口）
+- `https://apply-flow-use.com`：根域名，后续可做跳转或 landing
 - `https://applyflow.applyflow-eugene.workers.dev`：仅作为 staging/fallback，不作为真实用户入口
 
-说明：本轮优先绑定 `app.apply-flow-use.com` 到 Worker；`www` 后续可做 landing 或重定向。
+说明：本轮按用户要求优先绑定 `www.apply-flow-use.com` 到 Worker；根域名后续可做 landing 或重定向。
 
 ## 3. 为什么暂不使用 api 子域
 方案 A 阶段不引入 `api.apply-flow-use.com`，原因如下：
@@ -32,7 +32,7 @@
 
 1. 已购买正式域名：`apply-flow-use.com`
 2. 域名已在 Cloudflare 购买，DNS 托管默认在 Cloudflare
-3. 为当前 Worker 添加 Custom Domain：`app.apply-flow-use.com`
+3. 为当前 Worker 添加 Custom Domain：`www.apply-flow-use.com`
 4. 选择是否将 `www.apply-flow-use.com` 绑定为 landing/waitlist（可先静态页）
 5. 确认 SSL 证书自动签发并生效
 6. 保留 `applyflow.applyflow-eugene.workers.dev` 作为 staging/fallback
@@ -42,20 +42,20 @@
 本节定义目标变量模型。Batch 1 当前先完成 `app` 正式入口，不引入独立 `api` 子域。
 
 ### production
-- `APP_BASE_URL=https://app.apply-flow-use.com`
+- `APP_BASE_URL=https://www.apply-flow-use.com`
 - `PUBLIC_SITE_URL=https://www.apply-flow-use.com`
-- `ALLOWED_ORIGINS=https://app.apply-flow-use.com,https://www.apply-flow-use.com`
+- `ALLOWED_ORIGINS=https://www.apply-flow-use.com`
 - `AUTH_PROVIDER=clerk`
 - `CLERK_PUBLISHABLE_KEY=pk_live_xxx`
 - `CLERK_SECRET_KEY=sk_live_xxx`
-- `SIGN_IN_URL=https://app.apply-flow-use.com/sign-in`
-- `SIGN_UP_URL=https://app.apply-flow-use.com/sign-up`
-- `AFTER_SIGN_IN_URL=https://app.apply-flow-use.com/dashboard`
-- `AFTER_SIGN_UP_URL=https://app.apply-flow-use.com/onboarding`
+- `SIGN_IN_URL=https://www.apply-flow-use.com/sign-in`
+- `SIGN_UP_URL=https://www.apply-flow-use.com/sign-up`
+- `AFTER_SIGN_IN_URL=https://www.apply-flow-use.com/dashboard`
+- `AFTER_SIGN_UP_URL=https://www.apply-flow-use.com/onboarding`
 - `SIGN_OUT_REDIRECT_URL=https://www.apply-flow-use.com/`
 - `DEMO_AUTO_LOGIN_ENABLED=false`
 - `DEV_AUTH_BYPASS_ENABLED=false`
-- `EDGE_ALLOWED_HOSTS=app.apply-flow-use.com`
+- `EDGE_ALLOWED_HOSTS=www.apply-flow-use.com`
 
 ### staging（占位）
 - `APP_BASE_URL=https://applyflow.applyflow-eugene.workers.dev`
@@ -141,7 +141,7 @@
 以下为 cutover 前最低验证清单：
 
 1. `app` 正式域名首页可访问
-2. `https://app.apply-flow-use.com/api/auth/session` 响应正常（状态码与当前阶段预期一致）
+2. `https://www.apply-flow-use.com/api/auth/session` 响应正常（状态码与当前阶段预期一致）
 3. `dashboard/jobs/profile/materials` 主路径可访问（按当前权限策略表现）
 4. 未登录策略符合当前阶段预期（不得出现 production 自动 demo 登录）
 5. Edge extension `allowed hosts` 已包含正式 `app` 域名
@@ -161,8 +161,8 @@
 
 ## 9. 当前状态
 - Batch 1 只读审计已完成
-- Batch 1A 已进入正式域名配置阶段：`wrangler.jsonc` 已声明 `app.apply-flow-use.com` Custom Domain
-- 2026-06-03 已完成第一阶段部署：`app.apply-flow-use.com` 和 `workers.dev` 均作为 Worker trigger 可访问
+- Batch 1A 已进入正式域名配置阶段：`wrangler.jsonc` 已声明 `www.apply-flow-use.com` Custom Domain
+- 2026-06-03 已完成第一阶段部署：`www.apply-flow-use.com` 和 `workers.dev` 均作为 Worker trigger 可访问
 - 正式域名已开启 internal beta 门禁：仅 `BETA_ALLOWED_EMAILS` 中的 `eugenec7012@126.com` 可登录，demo 自动登录与 dev bypass 均关闭
 - 已完成线上验证：正式域名首页 200、production online smoke PASS、非白名单登录拒绝、白名单账号可登录并通过 `/api/jobs` 拉取当前账号可见岗位
 - 当前状态仍不是 Production Auth Ready；只是完成 3-5 人白名单内测前的正式入口和最小门禁

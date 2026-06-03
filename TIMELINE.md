@@ -178,4 +178,5 @@
 - 2026-06-03：重新导出三份 `_20260603-v3.docx` 最新版 Word 副本。
 - 2026-06-03：补充 02 自审记录后重新导出三份 `_20260603-v4.docx` 最新版 Word 副本。
 - 2026-06-03：按用户反馈将非 ApplyFlow 知识点改为自然回答口径，补充短期 7 个口播优先级，并导出 `_20260603-v5.docx`。
-- 2026-06-03：完成 `app.apply-flow-use.com` Cloudflare Worker 自定义域名切换，保留 `workers.dev` 兜底，收紧 internal beta 白名单并通过 production online smoke 与真实账号岗位接口验证。
+- 2026-06-03：完成 `www.apply-flow-use.com` Cloudflare Worker 自定义域名切换，保留 `workers.dev` 兜底，收紧 internal beta 白名单并通过 production online smoke 与真实账号岗位接口验证。
+- 2026-06-03：按用户要求将正式对外入口从 `app.apply-flow-use.com` 改为 `www.apply-flow-use.com`，重新部署并验证白名单登录与岗位接口。
