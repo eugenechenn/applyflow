@@ -83,6 +83,15 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
     .map((item) => String(item || "").trim().toLowerCase())
     .filter(Boolean)
     .slice(0, 4);
+  const industryTokens = (Array.isArray(preference.preferredIndustries)
+    ? preference.preferredIndustries
+    : Array.isArray(profile.targetIndustries)
+      ? profile.targetIndustries
+      : String(preference.preferredIndustries || profile.targetIndustries || "").split(",")
+  )
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 4);
   const clauses = [];
   const params = [userId];
   const titleExpr = "lower(coalesce(json_extract(json_text, '$.title'), ''))";
@@ -95,6 +104,10 @@ async function selectScopedJobRows(db, userId, _profile, scope = null) {
     clauses.push(`CASE WHEN ${titleExpr} LIKE ? THEN 220 ELSE 0 END`);
     params.push(`%${token}%`);
     clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 30 ELSE 0 END");
+    params.push(`%${token}%`);
+  });
+  industryTokens.forEach((token) => {
+    clauses.push("CASE WHEN lower(json_text) LIKE ? THEN 90 ELSE 0 END");
     params.push(`%${token}%`);
   });
   locationTokens.forEach((token) => {

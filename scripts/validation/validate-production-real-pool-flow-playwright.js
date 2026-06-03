@@ -89,6 +89,24 @@ async function main() {
   assert(jobViewModels.length >= 100, `/api/jobs expected at least 100 visible jobs, got ${jobViewModels.length}`);
   const jobsWithSourceUrl = jobViewModels.filter((jobVm) => String(jobVm?.jobSummary?.sourceUrl || "").trim()).length;
   assert(jobsWithSourceUrl > 0, "visible jobs should include real source URLs");
+  const gradeAt = (jobVm) => String(jobVm?.scoringView?.decisionVerdict?.grade || "").trim().toUpperCase();
+  const top10 = jobViewModels.slice(0, 10);
+  const top50 = jobViewModels.slice(0, 50);
+  assert(top10.length >= 10, `/api/jobs expected at least 10 jobs for top10 grade gate, got ${top10.length}`);
+  assert(top50.length >= 50, `/api/jobs expected at least 50 jobs for top50 grade gate, got ${top50.length}`);
+  const top10NonA = top10
+    .map((jobVm, index) => ({ index: index + 1, grade: gradeAt(jobVm), title: jobVm?.jobSummary?.title || "" }))
+    .filter((entry) => entry.grade !== "A");
+  const top50NonAB = top50
+    .map((jobVm, index) => ({ index: index + 1, grade: gradeAt(jobVm), title: jobVm?.jobSummary?.title || "" }))
+    .filter((entry) => !["A", "B"].includes(entry.grade));
+  assert(top10NonA.length === 0, `top10 grade gate expected all A, got ${JSON.stringify(top10NonA.slice(0, 5))}`);
+  assert(top50NonAB.length === 0, `top50 grade gate expected all A/B, got ${JSON.stringify(top50NonAB.slice(0, 5))}`);
+  const gradeDistribution = jobViewModels.reduce((acc, jobVm) => {
+    const grade = gradeAt(jobVm) || "UNKNOWN";
+    acc[grade] = (acc[grade] || 0) + 1;
+    return acc;
+  }, {});
 
   const unauthJobs = await fetch(`${BASE_URL}/api/jobs`);
   assert(unauthJobs.status === 401, `/api/jobs without session expected 401, got ${unauthJobs.status}`);
@@ -164,6 +182,11 @@ async function main() {
     userId,
     visibleJobs: jobViewModels.length,
     jobsWithSourceUrl,
+    gradeDistribution,
+    gradeGate: {
+      top10AllA: true,
+      top50AllAB: true
+    },
     firstJob: {
       title: jobViewModels[0]?.jobSummary?.title || "",
       company: jobViewModels[0]?.jobSummary?.company || "",
@@ -185,6 +208,8 @@ async function main() {
   console.log(`- userId: ${userId}`);
   console.log(`- visibleJobs: ${jobViewModels.length}`);
   console.log(`- jobsWithSourceUrl: ${jobsWithSourceUrl}`);
+  console.log(`- gradeDistribution: ${JSON.stringify(gradeDistribution)}`);
+  console.log("- gradeGate: top10AllA=true top50AllAB=true");
   console.log(`- report: ${path.relative(ROOT, reportPath).replace(/\\/g, "/")}`);
   Object.entries(screenshotPaths).forEach(([key, value]) => console.log(`- screenshot.${key}: ${value}`));
 }
