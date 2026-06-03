@@ -551,9 +551,9 @@ async function handleApiRequest(req, res, pathname) {
       const requestUrl = new URL(req.url, "http://localhost");
       const context = getRequestContext();
       const isCloudflareRuntime = String(context?.env?.APPLYFLOW_RUNTIME || "").trim().toLowerCase() === "cloudflare";
-      const defaultLimit = isCloudflareRuntime ? 50 : 100;
+      const defaultLimit = isCloudflareRuntime ? 500 : 100;
       const limitParam = Number(requestUrl.searchParams.get("limit") || String(defaultLimit));
-      const runtimeCandidateLimit = isCloudflareRuntime ? 100 : null;
+      const runtimeCandidateLimit = isCloudflareRuntime ? 500 : null;
       const profileParam = String(requestUrl.searchParams.get("profile") || "").trim().toLowerCase();
       return success(
         res,

@@ -181,3 +181,4 @@
 - 2026-06-03：完成 `www.apply-flow-use.com` Cloudflare Worker 自定义域名切换，保留 `workers.dev` 兜底，收紧 internal beta 白名单并通过 production online smoke 与真实账号岗位接口验证。
 - 2026-06-03：按用户要求将正式对外入口从 `app.apply-flow-use.com` 改为 `www.apply-flow-use.com`，重新部署并验证白名单登录与岗位接口。
 - 2026-06-03：完成正式域名入口风险审计，新增根域名与旧 `app` 入口到 `www` 的 301 跳转兜底，并开启 `run_worker_first` 避免静态资源缓存绕过 Worker。
+- 2026-06-03：将 production D1 真实岗位池导入 `eugenec7012@126.com`，线上目标用户从 12 条岗位扩展到 5001 条，并将正式 `/api/jobs` 展示上限提升到 500 后完成登录态页面 smoke。

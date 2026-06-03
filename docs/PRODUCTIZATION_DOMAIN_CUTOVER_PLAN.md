@@ -166,6 +166,7 @@
 - 2026-06-03 已完成第一阶段部署：`www.apply-flow-use.com` 和 `workers.dev` 均作为 Worker trigger 可访问
 - 正式域名已开启 internal beta 门禁：仅 `BETA_ALLOWED_EMAILS` 中的 `eugenec7012@126.com` 可登录，demo 自动登录与 dev bypass 均关闭
 - 已完成线上验证：正式域名首页 200、production online smoke PASS、非白名单登录拒绝、白名单账号可登录并通过 `/api/jobs` 拉取当前账号可见岗位
+- 2026-06-03 已将 production D1 真实岗位池导入白名单账号：目标用户 `user_1191pcx1` 有 5001 条真实岗位，页面默认展示去重后的 Top 494 条
 - 当前状态仍不是 Production Auth Ready；只是完成 3-5 人白名单内测前的正式入口、跳转兜底和最小门禁
 - 下一步是手动体验检查、作品集链接替换，以及后续 Batch 2/3 Auth 方案决策
 - 在正式 Auth 方案未决策前，不进入 Batch 3 Auth 实现
