@@ -37,14 +37,16 @@ ApplyFlow 当前不是全自动海投 Agent，也不是简历改写工具，而�
 
 ## 3. 建议配套截图
 
-飞书作品集里不要只放表格，建议配 4 张截图，让面试官先看到产品真的能跑，再看评估数据。
+飞书作品集里不要只放表格，建议优先配下面 4 张“短截图/近景截图”，让面试官先看到产品真的能跑，再看评估数据。不要把整页长截图作为主图，因为飞书压缩后会糊，面试官看不清等级、分数和推荐依据。
 
 | 截图 | 建议标题 | 说明 |
 |---|---|---|
-| `docs/portfolio/screenshots/u5-dashboard-overview.png` | 工作台总览 | 展示 ApplyFlow 不是聊天框，而是求职执行工作台 |
-| `docs/portfolio/screenshots/u5-profile-preference.png` | 用户偏好配置 | 展示岗位方向、地点、行业等输入从哪里来 |
-| `docs/portfolio/screenshots/u1-jobs-ranking.png` | 岗位排序结果 | 展示 Top10 候选池和推荐解释 |
-| `docs/portfolio/screenshots/iteration-apply-list-flow.png` | 投递清单流程 | 展示用户如何从推荐进入执行闭环 |
+| `docs/portfolio/screenshots/evidence-01-top-a-overview.png` | 正式入口首屏与 Top A 总览 | 展示 `www.apply-flow-use.com` 可登录、真实岗位池返回 Top 候选、首屏第一张卡片为 A |
+| `docs/portfolio/screenshots/evidence-02-top-a-card-closeup.png` | Top A 岗位卡片近景 | 展示等级 A、优先级分数、五维雷达、推荐理由和岗位来源 |
+| `docs/portfolio/screenshots/evidence-03-five-dimension-explanation.png` | 五维推荐依据展开 | 展示系统不是只给结论，而是把 role / industry / location / company / accessibility 拆开解释 |
+| `docs/portfolio/screenshots/evidence-04-apply-boundary-modal.png` | 辅助网申边界 | 展示插件只做辅助预填和人工确认，不做全自动提交 |
+
+历史截图 `docs/portfolio/screenshots/u1-jobs-ranking.png` 可以留作内部备份，但不建议放进飞书正文主图。它是整页长截图，信息密度太高，压缩后容易糊，反而削弱作品集说服力。
 
 正式线上入口补充截图（2026-06-03）：
 
@@ -54,6 +56,8 @@ ApplyFlow 当前不是全自动海投 Agent，也不是简历改写工具，而�
 | `docs/portfolio/screenshots/production-real-pool-jobs-top-candidates.png` | 真实岗位池 Top 候选 | 线上 D1 挂载 5001 条真实岗位，页面展示性能护栏后的 Top 116 候选 |
 | `docs/portfolio/screenshots/production-apply-plugin-flow.png` | 辅助网申弹窗 | 展示插件辅助预填入口，并明确不会自动提交 |
 | `docs/portfolio/screenshots/production-profile-autofill.png` | 网申资料页 | 展示 Profile/网申辅助资料入口可访问 |
+
+这组历史线上入口截图可以作为补充材料；飞书正文优先使用 `evidence-01` 到 `evidence-04` 这组新截图，因为它们更短、更清楚，也更贴合面试官想看的证据点。
 
 这组截图不是用来替代 1000 样本评估，而是证明作品集正式入口已经能在线访问、登录、拉取真实岗位池并进入执行辅助链路。
 
@@ -390,6 +394,8 @@ Correctness Findings：
 - 第 11 节 L3 明确标注为预测结果和输出格式，没有写成真实已完成数据。
 - 已明确线上 D1 有 5001 条真实岗位，但页面只展示 Top 候选，避免把稳定性护栏误说成“浏览器渲染全部岗位”。
 - Playwright 全流程验证已覆盖正式入口、登录、岗位列表、投递辅助弹窗、Profile 和插件下载入口，并增加 Top10 全 A、Top50 全 A/B 等级门禁。
+- 新增作品集专用截图脚本，截图前先校验 `/api/jobs` 至少返回 50 条候选、Top10 全 A、Top50 全 A/B；避免把低质量或不符合门禁的页面截进 Evidence Log。
+- Evidence Log 推荐截图已从整页长图切换为短截图/近景截图，降低飞书压缩导致的信息不可读风险。
 
 Boundary/Safety Findings：
 
@@ -398,6 +404,7 @@ Boundary/Safety Findings：
 - 未登录访问 `/api/jobs` 返回 401；白名单登录没有落到 demo 用户。
 - 线上性能护栏保留 D1 真实池 source-of-truth，只限制进入 Worker 重排和页面展示的 Top 候选数量。
 - 正式 demo 账号不设置硬地点约束，避免为了展示 A/B 破坏地点安全边界；地点硬约束能力仍以 L2 复测证明。
+- 作品集截图脚本只做登录、读取岗位、打开辅助网申说明弹窗，不执行加入清单、标记投递或自动提交等会改变状态的动作。
 
 Adversarial Scenarios Checked：
 
@@ -409,6 +416,8 @@ Adversarial Scenarios Checked：
 - 检查根域名、旧 `app` 子域名、未登录访问和插件下载入口。
 - 检查正式展示账号 Top10 是否全 A、Top50 是否全 A/B。
 - 检查 L3 预测表是否被误写成已完成结果。
+- 检查截图是否为飞书可读的短图，而不是被压缩后不可读的整页长截图。
+- 检查截图脚本是否先跑等级门禁再截图，避免为了视觉材料绕过质量验收。
 
 Blast Radius & Adjacent Regression Assessment：
 
@@ -416,13 +425,15 @@ Blast Radius & Adjacent Regression Assessment：
 - 受影响相邻流程包括正式 Jobs 页面、Dashboard 入口、Profile 页面和插件辅助弹窗，均已用 Playwright smoke 覆盖。
 - 本轮没有修改岗位评分公式、地点 L2 评估脚本、1000 样本评估结果或自动提交边界。
 - D1 粗排增加行业偏好信号，只影响进入线上 Worker 精排的候选顺序，不改变 canonical job 数据。
+- 本轮截图更新只影响作品集取证材料和截图脚本，不改变线上业务逻辑、岗位数据或评估结果。
 
 Residual Risks：
 
 - L3 全量回归尚未真实完成，第 11 节只能作为预测口径和输出格式，不能当成真实指标引用。
 - 正式线上账号还没有重新跑 1000 样本，只完成了真实池 smoke 和截图补证。
 - 页面 Top 候选数量可能随去重、画像和性能护栏变化，不应在作品集中写死为长期固定数字。
+- 截图会随正式账号画像和岗位池变化而变化；后续如果重配画像或重导入岗位池，需要重新运行截图脚本生成新证据图。
 
 Disposition：
 
-- Unblocked。正式入口、真实岗位池 smoke、截图和 Evidence Log 口径可用于飞书作品集；如后续真实跑完 L3，用真实结果替换第 11 节计划。
+- Unblocked。正式入口、真实岗位池 smoke、作品集短截图和 Evidence Log 口径可用于飞书作品集；如后续真实跑完 L3，用真实结果替换第 11 节计划。

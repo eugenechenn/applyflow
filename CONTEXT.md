@@ -1,6 +1,6 @@
 # ApplyFlow Context
 
-当前目标：正式域名 `https://www.apply-flow-use.com` 已上线，当前重点是保证面试官能稳定访问真实岗位池驱动的产品页面，并把 Playwright 截图补进 Evidence Log。
+当前目标：正式域名 `https://www.apply-flow-use.com` 已上线，当前重点是保证面试官能稳定访问真实岗位池驱动的产品页面，并把飞书可读的 Evidence Log 截图补齐。
 
 当前进度：
 - `www.apply-flow-use.com` 是唯一正式对外入口；根域名 `apply-flow-use.com` 和旧 `app.apply-flow-use.com` 均 301 到 `www`。
@@ -18,10 +18,16 @@
   - `docs/portfolio/screenshots/production-profile-autofill.png`
 - 已将正式线上截图、D1 5001 / 页面 Top 116 口径和隐患修复记录写入 `docs/portfolio/APPLYFLOW_FEISHU_EVIDENCE_LOG_READY.md`。
 - 已在 Evidence Log 第 11 节补充 L3 全量回归预测结果与正式输出格式；明确这不是已完成数据，后续真实跑完后替换。
+- 已新增 `scripts/validation/capture-portfolio-evidence-screenshots.js`，截图前校验 Top10 全 A、Top50 全 A/B，并生成 4 张飞书可读短截图：
+  - `docs/portfolio/screenshots/evidence-01-top-a-overview.png`
+  - `docs/portfolio/screenshots/evidence-02-top-a-card-closeup.png`
+  - `docs/portfolio/screenshots/evidence-03-five-dimension-explanation.png`
+  - `docs/portfolio/screenshots/evidence-04-apply-boundary-modal.png`
+- Evidence Log 第 3 节已改为优先推荐上述 4 张短截图；旧 `u1-jobs-ranking.png` 仅作为历史备份，不建议作为飞书正文主图。
 
 下一步：
-- 提交并推送本轮正式入口全流程验证、性能护栏、Evidence Log 与截图。
-- 如继续完善作品集，可把 Evidence Log 内容复制到飞书，并配上上述 4 张截图；第 11 节只能按“预测/计划”口径引用。
+- 提交并推送本轮作品集截图脚本、4 张短截图、Evidence Log 与交接文档更新。
+- 如继续完善作品集，可把 Evidence Log 内容复制到飞书，并配上 `evidence-01` 到 `evidence-04` 四张短截图；第 11 节只能按“预测/计划”口径引用。
 - 后续如有时间，再基于正式域名线上账号做小规模抽样评估，对照本地 production-like 1000 样本结果。
 
 注意事项：
@@ -29,6 +35,7 @@
 - 不要说“城市约束已经靠正式 demo 完全证明”；正式 demo 账号不设硬地点约束，城市约束治理仍引用 L2 地点专项复测。
 - 不要把第 11 节 L3 预测值说成真实完成指标；真实 L3 尚未跑完。
 - 不要把 ApplyFlow 包装成全自动投递、自动提交、RAG、多 Agent 或已落地简历改写。
+- 不要把旧整页长截图 `u1-jobs-ranking.png` 放成飞书主图；优先用新生成的短截图，避免压缩后看不清。
 - 当前仓库仍有历史脏改和临时文件，提交时不要误提交 `data/applyflow.sqlite`、`.bak` 或旧 Word 副本。
 
 最后更新时间：2026-06-03
