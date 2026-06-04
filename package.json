@@ -47,6 +47,7 @@
     "eval:job-preference-ranking:legacy-gate": "node scripts/eval-job-preference-ranking.js --mode=legacy-gate",
     "eval:job-preference-ranking:baseline": "node scripts/eval-job-preference-ranking.js --update-baseline",
     "validate:job-llm-scoring-layer": "node scripts/validation/validate-job-llm-scoring-layer.js",
+    "measure:ai-cost-latency": "node scripts/validation/measure-ai-cost-latency-profile.js",
     "validate:job-workspace-offline-json-coverage": "node scripts/validation/validate-job-workspace-offline-json-coverage.js",
     "validate:discovery-dedup": "node scripts/validation/validate-discovery-dedup.js",
     "validate:discovery-batch-decision": "node scripts/validation/validate-discovery-batch-decision.js",
